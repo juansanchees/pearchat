@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { generateReply, LlmError } from '@/server/agent/llm'
 import type { ChatMessage } from '@/server/agent/llm'
 import { buildSystemPrompt, HANDOFF_MARKER } from '@/server/agent/prompt'
+import { serviceTypesForPrompt } from '@/server/calendar/service-types'
 import { getBilling } from '@/server/settings/service'
 import { loadConversationItem, toMessageDTO } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
@@ -88,6 +89,8 @@ export async function enqueuePendingForWorkspace(workspaceId: string): Promise<n
   for (const c of convs) {
     const last = c.messages[0]
     if (!last || last.direction !== 'IN') continue
+    // Histórico importado do WhatsApp: a IA não responde a conversas anteriores à conexão.
+    if (last.imported) continue
     // Mensagem recém-chegada: o ingest cuida dela (evita corrida com o debounce).
     if (now.getTime() - last.createdAt.getTime() < 6_000) continue
     // A mensagem chegou numa hora em que a IA podia responder? (senão é de atendimento humano)
@@ -230,15 +233,17 @@ async function execute(job: AiJob): Promise<JobResult> {
 
   await setTyping(workspaceId, conversationId, true)
 
-  const [ws, kb] = await Promise.all([
+  const [ws, kb, servicos] = await Promise.all([
     db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true } }),
     db.knowledgeItem.findMany({ where: { agentId: agent.id }, orderBy: { createdAt: 'asc' } }),
+    serviceTypesForPrompt(workspaceId),
   ])
   const system = buildSystemPrompt({
     empresa: ws.nome,
     agente: { nome: agent.nome, tom: tomFromDb(agent.tom), prompt: agent.prompt },
     kb: kb.map((k) => ({ pergunta: k.pergunta, resposta: k.resposta })),
     handoffRules: agent.handoffRules,
+    servicos,
   })
 
   let texto: string

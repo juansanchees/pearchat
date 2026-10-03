@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { statusToKind } from '@/lib/mappers'
 import { ingestInboundMessage, updateMessageStatus } from '@/server/messages/ingest'
+import { queueHistoryMessages } from '@/server/whatsapp/history-import'
 import { normalizeEvolutionEvent } from '@/server/whatsapp/normalize'
 import { getProvider } from '@/server/whatsapp'
 import { setStatus } from '@/server/whatsapp/session'
@@ -63,6 +64,10 @@ export async function POST(req: Request) {
             timestamp: m.timestamp,
           })
         }
+        break
+      case 'history':
+        // Histórico do pareamento: grava em lote, sem acionar IA/follow-up/campanhas.
+        queueHistoryMessages(workspaceId, event.messages)
         break
       case 'status':
         for (const u of event.updates) {

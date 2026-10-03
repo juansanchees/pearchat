@@ -13,8 +13,9 @@ import { Composer } from './composer'
 import { ConversationList } from './conversation-list'
 import { MessageThread } from './message-thread'
 import { useConversations } from './use-conversations'
+import { useHistoryImport } from './use-history-import'
 
-const FALLBACK_SUBTITLE = 'Doce Ateliê · +55 11 98765-4321'
+const FALLBACK_SUBTITLE = 'Atendimento por WhatsApp'
 
 export default function Conversas(): JSX.Element {
   const { automations, agentName, openDrawer, user, wa, toast } = useAppState()
@@ -24,6 +25,7 @@ export default function Conversas(): JSX.Element {
   // Conversa pedida na URL (/whatsapp?c=<id>) no primeiro render, para a lista já abrir nela.
   const [initialParam] = useState(param)
   const c = useConversations(initialParam)
+  const history = useHistoryImport(c.reloadList)
   // Abaixo de 900 px a grade vira coluna única: lista -> conversa.
   const [showChat, setShowChat] = useState(false)
 
@@ -94,6 +96,7 @@ export default function Conversas(): JSX.Element {
           }}
           iaOn={automations.ia}
           agentName={agentName}
+          history={history}
         />
         </div>
 
@@ -133,7 +136,9 @@ export default function Conversas(): JSX.Element {
               <p className="max-w-[320px] text-xs leading-relaxed text-light-neutral-500">
                 {c.items.length > 0 || c.loadingList
                   ? 'Escolha um contato na lista para ver as mensagens.'
-                  : 'As conversas do seu WhatsApp aparecem aqui assim que os clientes escreverem.'}
+                  : history.importing
+                    ? 'Estamos trazendo as conversas recentes do seu WhatsApp.'
+                    : 'As conversas do seu WhatsApp aparecem aqui assim que os clientes escreverem.'}
               </p>
             </div>
           )}

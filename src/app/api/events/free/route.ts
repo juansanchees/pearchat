@@ -29,6 +29,8 @@ export const dynamic = 'force-dynamic'
 const querySchema = z.object({
   date: z.string().refine(isValidDateStr),
   duracaoMin: z.coerce.number().int().min(5).max(MAX_DURACAO_MIN).optional(),
+  serviceTypeId: z.string().min(1).optional(),
+  ignoreEventId: z.string().min(1).optional(),
 })
 
 /**
@@ -44,12 +46,26 @@ export async function GET(req: NextRequest) {
   const parsed = querySchema.safeParse({
     date: sp.get('date') ?? '',
     duracaoMin: sp.get('duracaoMin') ?? undefined,
+    serviceTypeId: sp.get('serviceTypeId') ?? undefined,
+    ignoreEventId: sp.get('ignoreEventId') ?? undefined,
   })
   if (!parsed.success) return badRequest('Parâmetros inválidos: date (YYYY-MM-DD) e duracaoMin')
   const { date } = parsed.data
 
   const conn = await getConnection(workspaceId)
-  const duracaoMin = parsed.data.duracaoMin ?? conn?.duracaoPadraoMin ?? 60
+  let duracaoMin = parsed.data.duracaoMin
+  if (duracaoMin === undefined && parsed.data.serviceTypeId) {
+    const st = await db.serviceType.findFirst({
+      where: { id: parsed.data.serviceTypeId, workspaceId },
+      select: { duracaoMin: true },
+    })
+    duracaoMin = st?.duracaoMin
+  }
+  duracaoMin = duracaoMin ?? conn?.duracaoPadraoMin ?? 60
+  const ignoreId = parsed.data.ignoreEventId
+  const ignored = ignoreId
+    ? await db.event.findFirst({ where: { id: ignoreId, workspaceId }, select: { googleEventId: true, inicio: true, duracaoMin: true } })
+    : null
 
   const dayStart = spToDate(date, '00:00')
   const dayEnd = addMin(dayStart, 24 * 60)
@@ -58,6 +74,7 @@ export async function GET(req: NextRequest) {
     where: {
       workspaceId,
       inicio: { gte: new Date(dayStart.getTime() - MAX_EVENT_MS), lt: dayEnd },
+      ...(ignoreId ? { id: { not: ignoreId } } : {}),
     },
     select: { inicio: true, duracaoMin: true },
   })
@@ -69,7 +86,11 @@ export async function GET(req: NextRequest) {
   let googleConsultado = false
   if (conn && isRealConnection(conn)) {
     try {
-      busy.push(...(await freeBusy(workspaceId, selectedIds(conn), dayStart, dayEnd)))
+      const gb = await freeBusy(workspaceId, selectedIds(conn), dayStart, dayEnd)
+      // O evento editado também aparece no free/busy do Google: tira só o seu intervalo antigo.
+      const oIni = ignored?.googleEventId ? ignored.inicio.getTime() : null
+      const oFim = ignored ? addMin(ignored.inicio, ignored.duracaoMin).getTime() : null
+      busy.push(...gb.filter((b) => !(oIni !== null && b.start.getTime() === oIni && b.end.getTime() === oFim)))
       googleConsultado = true
     } catch (err) {
       logGoogleFailure('freeBusy', err)

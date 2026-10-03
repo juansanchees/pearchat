@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, GoogleLogo, Info, Plus } from '@phosphor-icons/react'
+import { CaretRight, Check, GoogleLogo, Info, PencilSimple, Plus } from '@phosphor-icons/react'
 import { cn } from '@/lib/utils'
 import type { Lembrete } from '@/server/calendar/types'
 import { DUR_OPTS, LEMBRETE_OPTS } from './data'
@@ -11,6 +11,8 @@ export function Preferences({
   onDuracao,
   lembretes,
   onToggleLembrete,
+  tiposCount,
+  onEditTipos,
   oficial,
   email,
   demo,
@@ -21,6 +23,8 @@ export function Preferences({
   onDuracao: (d: 30 | 60 | 120) => void
   lembretes: Lembrete[]
   onToggleLembrete: (l: Lembrete) => void
+  tiposCount: number
+  onEditTipos: () => void
   oficial: boolean
   email: string
   demo?: boolean
@@ -46,6 +50,16 @@ export function Preferences({
           ))}
         </div>
       </div>
+      <button
+        type="button"
+        onClick={onEditTipos}
+        className="pc-btn pc-btn-secondary w-full justify-between px-2.5 py-2 text-[12.5px]"
+      >
+        <span className="flex items-center gap-1.5">
+          <PencilSimple size={13} className="text-light-accent-300" /> Tipos de atendimento · {tiposCount}
+        </span>
+        <CaretRight size={12} className="text-light-neutral-500" />
+      </button>
       {oficial && (
         <div className="flex gap-1.5 text-[11px] text-light-neutral-500 [text-wrap:pretty]">
           <Info size={12} className="mt-px flex-none" />

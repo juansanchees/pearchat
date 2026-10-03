@@ -20,6 +20,7 @@ export function NewContactCard({
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [tag, setTag] = useState<string>('Lead')
+  const [customTag, setCustomTag] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function submit(e: FormEvent) {
@@ -31,7 +32,7 @@ export function NewContactCard({
         name: name.trim(),
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
-        tags: [tag],
+        tags: [customTag.trim() || tag],
       })
       if (ok) onClose()
     } finally {
@@ -124,6 +125,15 @@ export function NewContactCard({
             </button>
           ))}
         </div>
+        <input
+          className="pc-input mt-2"
+          value={customTag}
+          onChange={(e) => setCustomTag(e.target.value)}
+          placeholder="+ etiqueta (opcional)"
+          maxLength={30}
+          aria-label="Nova etiqueta"
+          autoComplete="off"
+        />
       </div>
 
       <button type="submit" disabled={saving} className="pc-btn pc-btn-primary w-full">

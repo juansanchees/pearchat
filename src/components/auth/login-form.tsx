@@ -17,7 +17,7 @@ function Submit() {
   )
 }
 
-export function LoginForm() {
+export function LoginForm({ googleEnabled = false, oauthError }: { googleEnabled?: boolean; oauthError?: string }) {
   const [state, action] = useFormState(loginAction, undefined)
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
@@ -41,10 +41,16 @@ export function LoginForm() {
   const serverError = !edited ? state?.error : undefined
 
   return (
-    <form action={action} onSubmit={onSubmit} noValidate className="flex animate-pcIn flex-col gap-5">
+    <div className="flex animate-pcIn flex-col gap-5">
       <AuthTitle sub="Que bom ter você de volta.">Entrar</AuthTitle>
-      <GoogleButton label="Continuar com Google" />
+      {oauthError && (
+        <p role="alert" className="text-[12.5px] text-[#a0452f]">
+          {oauthError}
+        </p>
+      )}
+      <GoogleButton label="Continuar com Google" enabled={googleEnabled} />
       <OrDivider />
+      <form action={action} onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
       <div className="flex flex-col gap-3.5">
         <Field id="email" label="E-mail" error={errs.email}>
           <input
@@ -100,6 +106,7 @@ export function LoginForm() {
         </p>
       )}
       <Submit />
-    </form>
+      </form>
+    </div>
   )
 }

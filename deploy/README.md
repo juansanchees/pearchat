@@ -83,3 +83,26 @@ Atencao: ele disputa as portas 80/443 com o Caddy do PearChat. Pare antes `docke
     docker logs --tail 100 pearchat-caddy-1
     docker logs --tail 100 pearchat-evolution-1
     cd /opt/pearchat && docker compose -p pearchat -f deploy/docker-compose.prod.yml --env-file deploy/.env.production ps
+
+## Login com Google
+
+O botao "Continuar com Google" (login e cadastro) usa o mesmo cliente OAuth da Agenda (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` em `deploy/.env.production`; nada novo a embutir no build). Pede so `openid email profile`.
+
+No Google Cloud (APIs e servicos > Credenciais > cliente OAuth), em "URIs de redirecionamento autorizados", cadastre alem das da Agenda:
+
+    https://pearchat.online/api/auth/callback/google
+    http://localhost:3000/api/auth/callback/google
+
+Sem as credenciais o botao continua desabilitado ("Em breve"). Contas existentes com o mesmo e-mail sao vinculadas apenas se o Google informar e-mail verificado.
+
+## Importacao do historico do WhatsApp (conexao rapida)
+
+Ao conectar o numero por QR, o PearChat importa as conversas e contatos existentes (ate 200 conversas, 50 mensagens cada, ate 90 dias; grupos nao entram). O historico nunca aciona IA, follow-up nem campanhas (mensagens ficam marcadas `Message.imported`).
+
+Requisitos na Evolution (ja no `docker-compose.prod.yml`, servico `evolution`): `DATABASE_SAVE_DATA_INSTANCE/NEW_MESSAGE/CONTACTS/CHATS/HISTORIC` e `DATABASE_SAVE_MESSAGE_UPDATE` = true. Sem elas `chat/findChats|findMessages|findContacts` voltam vazios. Depois de alterar, recrie so a Evolution:
+
+    docker compose -p pearchat -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d evolution
+
+Migration `0006_history_import` (aditiva): rode `npx prisma migrate deploy` no deploy do app.
+
+Como funciona: a instancia nova ja nasce com `syncFullHistory` e os eventos `MESSAGES_SET`, `CHATS_SET`, `CONTACTS_SET`, `CHATS_UPSERT`. Instancias ja criadas recebem a configuracao (settings/set e webhook/set, idempotente) quando a importacao roda. O WhatsApp so entrega o historico completo no PAREAMENTO: para o numero que ja estava conectado, a Evolution passa a usar o que ja guardou desde que `DATABASE_SAVE_DATA_*` foi ligado; para trazer o historico antigo do celular e preciso desconectar e reconectar o QR. Importacao automatica ao conectar e aos 1, 3, 10 e 30 min; manual por `POST /api/wa/history/import`; status em `GET /api/wa/history`.

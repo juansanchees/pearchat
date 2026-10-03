@@ -53,6 +53,14 @@ services:
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_DB_PASSWORD}@evolution-db:5432/evolution
       DATABASE_CONNECTION_CLIENT_NAME: pearchat
+      # Persistência no banco da Evolution: sem isto os endpoints chat/find* (findChats, findMessages,
+      # findContacts) voltam vazios e o PearChat não consegue importar as conversas anteriores.
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      DATABASE_SAVE_DATA_HISTORIC: "true"
       CACHE_REDIS_ENABLED: "true"
       CACHE_REDIS_URI: redis://evolution-redis:6379/6
       CACHE_REDIS_PREFIX_KEY: evolution

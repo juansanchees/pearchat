@@ -89,7 +89,7 @@ export async function generateReply({
   if (anthropic) return { texto: await callAnthropic(anthropic, system, messages), simulado: false }
   const openai = process.env.OPENAI_API_KEY
   if (openai) return { texto: await callOpenAi(openai, system, messages), simulado: false }
-  return { texto: simulate ? simulate() : 'Posso te ajudar com encomendas, preços, entregas e pagamento. O que você precisa?', simulado: true }
+  return { texto: simulate ? simulate() : 'Posso ajudar com informações sobre nossos produtos e serviços, preços, horários e agendamentos. Sobre o que você quer saber?', simulado: true }
 }
 
 // ---- Simulador (protótipo, spec 04 "Testar o agente") ----
@@ -116,9 +116,9 @@ export function simulateReply(mensagem: string, tom: AgentTom, kb: KbPair[]): st
   const q = mensagem.toLowerCase().trim()
   const pre = PREFIXO[tom]
   const kbHit = kb.find((k) => k.pergunta.toLowerCase().split(/\W+/).some((w) => w.length > 4 && q.includes(w)))
-  if (/pre[cç]o|valor|quanto/.test(q)) return pre + 'O bolo de 1 kg sai a partir de R$ 98 e o de 2 kg a partir de R$ 189. Qual sabor você prefere?'
-  if (/entrega|entregam|frete/.test(q)) return pre + 'Entregamos em toda a zona leste com taxa de R$ 12 até 8 km. Qual o seu bairro?'
-  if (/pix|cart[aã]o|pagamento|pagar/.test(q)) return pre + 'Aceitamos Pix, crédito e débito. Para encomendas pedimos sinal de 50%.'
+  if (/pre[cç]o|valor|quanto/.test(q)) return pre + 'Os valores variam conforme o produto ou serviço. Me conta o que você procura que eu te ajudo com os detalhes.'
+  if (/entrega|entregam|frete/.test(q)) return pre + 'Sobre entrega e prazos, me conta o que você precisa que eu te ajudo com os detalhes.'
+  if (/pix|cart[aã]o|pagamento|pagar/.test(q)) return pre + 'Sobre formas de pagamento, me conta o que você precisa que eu te ajudo com os detalhes.'
   if (kbHit) return pre + kbHit.resposta
-  return pre + 'Posso te ajudar com encomendas, preços, entregas e pagamento. O que você precisa?'
+  return pre + 'Posso ajudar com informações sobre nossos produtos e serviços, preços, horários e agendamentos. Sobre o que você quer saber?'
 }

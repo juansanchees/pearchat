@@ -148,6 +148,7 @@ export type EvolutionEvent =
   | { kind: 'connection'; instance: string; status: ConnectionStatusKind }
   | { kind: 'messages'; instance: string; inbound: NormalizedInbound[] }
   | { kind: 'status'; instance: string; updates: NormalizedStatus[] }
+  | { kind: 'history'; instance: string; messages: HistoryMessage[] }
   | { kind: 'ignored' }
 
 const evoEnvelope = z.object({ event: str, instance: str, data: z.unknown().optional() }).passthrough()
@@ -251,6 +252,17 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
     return inbound.length ? { kind: 'messages', instance, inbound } : { kind: 'ignored' }
   }
 
+  if (name === 'messages.set') {
+    // Histórico enviado pelo WhatsApp logo após o pareamento (lotes grandes). Vai para o importador em lote.
+    const list = Array.isArray(data) ? data : asArray(isObj(data) ? data.messages : undefined)
+    const messages: HistoryMessage[] = []
+    for (const raw of list) {
+      const m = parseHistoryMessage(raw)
+      if (m) messages.push(m)
+    }
+    return messages.length ? { kind: 'history', instance, messages } : { kind: 'ignored' }
+  }
+
   if (name === 'messages.update') {
     const updates: NormalizedStatus[] = []
     for (const raw of asArray(data)) {
@@ -267,4 +279,127 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
   }
 
   return { kind: 'ignored' }
+}
+
+// ---------------------------------------------------------------- Histórico (Evolution)
+
+export type HistoryMessage = {
+  /** JID do chat (remoteJid). */
+  remoteJid: string
+  from: ContactRef
+  pushName?: string
+  fromMe: boolean
+  body: string
+  providerMessageId: string
+  timestamp: Date
+  status: 'ENVIADA' | 'ENTREGUE' | 'LIDA'
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** Só conversas individuais: ignora grupos, status/broadcast, canais (newsletter) e JIDs sem telefone. */
+export function isIndividualJid(jid: string): boolean {
+  const [user = '', host = ''] = jid.split('@')
+  if (host === 'lid') return user.length > 0
+  if (host === 's.whatsapp.net') return onlyDigits(user).length >= 8
+  return false
+}
+
+const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage']
+
+const MEDIA_LABEL: [string, string][] = [
+  ['imageMessage', '[Imagem]'],
+  ['audioMessage', '[Áudio]'],
+  ['videoMessage', '[Vídeo]'],
+  ['ptvMessage', '[Vídeo]'],
+  ['documentMessage', '[Documento]'],
+  ['stickerMessage', '[Figurinha]'],
+  ['locationMessage', '[Localização]'],
+  ['liveLocationMessage', '[Localização]'],
+  ['contactMessage', '[Contato]'],
+  ['contactsArrayMessage', '[Contato]'],
+]
+
+const SKIP_KEYS = new Set([
+  'messageContextInfo',
+  'senderKeyDistributionMessage',
+  'protocolMessage',
+  'reactionMessage',
+  'pollUpdateMessage',
+  'keepInChatMessage',
+  'encReactionMessage',
+])
+
+/** Texto da mensagem da Evolution/Baileys; mídia vira "[Imagem]" etc. null = não é conteúdo de conversa. */
+export function extractEvolutionBody(message: unknown): string | null {
+  let m: unknown = message
+  for (let i = 0; i < 4 && isObj(m); i++) {
+    const cur: Record<string, unknown> = m
+    const key = WRAPPERS.find((k) => isObj(cur[k]))
+    if (!key) break
+    const inner = cur[key]
+    m = isObj(inner) && isObj(inner.message) ? inner.message : inner
+  }
+  if (!isObj(m)) return null
+  if (typeof m.conversation === 'string' && m.conversation) return m.conversation
+  const ext = m.extendedTextMessage
+  if (isObj(ext) && typeof ext.text === 'string' && ext.text) return ext.text
+  for (const [key, label] of MEDIA_LABEL) {
+    const media = m[key]
+    if (isObj(media)) {
+      const caption = typeof media.caption === 'string' ? media.caption.trim() : ''
+      return caption ? `${label} ${caption}` : label
+    }
+  }
+  if (Object.keys(m).every((k) => SKIP_KEYS.has(k))) return null
+  return '[Mensagem não suportada]'
+}
+
+/** messageTimestamp (segundos, string, Long {low} ou ms) -> Date; null se inválido. */
+export function historyTimestamp(v: unknown): Date | null {
+  let n = NaN
+  if (typeof v === 'number') n = v
+  else if (typeof v === 'string') n = Number(v)
+  else if (isObj(v) && typeof v.low === 'number') n = v.low
+  if (!Number.isFinite(n) || n <= 0) return null
+  if (n > 1e12) n = n / 1000
+  return new Date(n * 1000)
+}
+
+/** Maior status entre os registros de MessageUpdate (ou `status` direto); recebidas ficam "entregue". */
+function historyStatus(raw: Record<string, unknown>, fromMe: boolean): HistoryMessage['status'] {
+  if (!fromMe) return 'ENTREGUE'
+  const found: string[] = []
+  if (Array.isArray(raw.MessageUpdate)) {
+    for (const u of raw.MessageUpdate) if (isObj(u) && typeof u.status === 'string') found.push(u.status)
+  }
+  if (typeof raw.status === 'string') found.push(raw.status)
+  let best: HistoryMessage['status'] = 'ENVIADA'
+  for (const s of found) {
+    const mapped = mapEvolutionMessageStatus(s)
+    if (mapped === 'lida') best = 'LIDA'
+    else if (mapped === 'entregue' && best === 'ENVIADA') best = 'ENTREGUE'
+  }
+  return best
+}
+
+/** Mensagem crua da Evolution (findMessages / MESSAGES_SET / lastMessage de findChats) -> HistoryMessage. */
+export function parseHistoryMessage(raw: unknown): HistoryMessage | null {
+  if (!isObj(raw) || !isObj(raw.key)) return null
+  const key = raw.key
+  const remoteJid = typeof key.remoteJid === 'string' ? key.remoteJid : ''
+  const id = typeof key.id === 'string' ? key.id : ''
+  if (!remoteJid || !id || !isIndividualJid(remoteJid)) return null
+  const timestamp = historyTimestamp(raw.messageTimestamp)
+  if (!timestamp) return null
+  const body = extractEvolutionBody(raw.message)
+  if (body === null || !body.trim()) return null
+  const fromMe = key.fromMe === true
+  const alt =
+    (typeof key.remoteJidAlt === 'string' ? key.remoteJidAlt : undefined) ??
+    (typeof key.senderPn === 'string' ? key.senderPn : undefined)
+  const from = jidToRef(remoteJid, alt)
+  if (!from) return null
+  const pushName = !fromMe && typeof raw.pushName === 'string' && raw.pushName.trim() ? raw.pushName.trim() : undefined
+  return { remoteJid, from, ...(pushName ? { pushName } : {}), fromMe, body, providerMessageId: id, timestamp, status: historyStatus(raw, fromMe) }
 }

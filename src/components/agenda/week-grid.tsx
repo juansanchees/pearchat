@@ -57,6 +57,9 @@ export function WeekGrid({
   loading,
   error,
   onRetry,
+  activeEventId,
+  onPickEvent,
+  onEditEvent,
   onPrev,
   onNext,
   onToday,
@@ -72,6 +75,12 @@ export function WeekGrid({
   loading: boolean
   error: boolean
   onRetry: () => void
+  /** Evento destacado (em edição ou selecionado). */
+  activeEventId?: string | null
+  /** Clique num evento editável (manual/IA): seleciona o dia dele. */
+  onPickEvent?: (dayIdx: number, ev: EventDto) => void
+  /** Duplo clique num evento editável: entra no modo de edição. */
+  onEditEvent?: (ev: EventDto, dayIdx: number) => void
   onPrev: () => void
   onNext: () => void
   onToday: () => void
@@ -198,14 +207,20 @@ export function WeekGrid({
                   const cols = layoutColumns(placed.map((x) => ({ ev: x.ev, start: x.pos.top, end: x.pos.top + x.pos.height })))
                   return placed.map(({ ev, pos }) => {
                     const ia = ev.origem === 'IA'
+                    const editavel = !ev.somenteLeitura && ev.origem !== 'GOOGLE'
+                    const ativo = activeEventId === ev.id
                     const c = cols.get(ev.id) ?? { col: 0, cols: 1 }
                     return (
                       <div
                         key={ev.id}
-                        title={`${toSp(ev.inicio).hm} · ${ev.titulo}${ev.agenda ? ` · ${ev.agenda}` : ''}`}
+                        title={`${toSp(ev.inicio).hm} · ${ev.titulo}${ev.agenda ? ` · ${ev.agenda}` : ''}${editavel ? ' (duplo clique para editar)' : ''}`}
+                        onClick={editavel ? () => onPickEvent?.(i, ev) : undefined}
+                        onDoubleClick={editavel ? () => onEditEvent?.(ev, i) : undefined}
                         className={cn(
-                          'pointer-events-none absolute overflow-hidden rounded-[7px] border border-l-[3px] border-solid px-[7px] py-[5px]',
+                          'absolute overflow-hidden rounded-[7px] border border-l-[3px] border-solid px-[7px] py-[5px]',
+                          editavel ? 'cursor-pointer' : 'pointer-events-none',
                           ia ? 'border-light-accent-700 bg-light-accent-900' : 'border-light-divider bg-light-surface',
+                          ativo && 'outline outline-2 outline-offset-0 outline-[#a8c23a]',
                         )}
                         style={{
                           top: pos.top,

@@ -32,6 +32,11 @@ export function addDays(date: string, n: number): string {
   return new Date(parts(date).utc + n * DAY_MS).toISOString().slice(0, 10)
 }
 
+/** Dias de `a` até `b` (datas "YYYY-MM-DD"); negativo se `b` é anterior. */
+export function diffDays(a: string, b: string): number {
+  return Math.round((parts(b).utc - parts(a).utc) / DAY_MS)
+}
+
 /** "2026-10-02" + "09:30" -> "2026-10-02T09:30:00-03:00" (aceito pelo back-end). */
 export function spInstant(date: string, hm: string): string {
   return `${date}T${hm}:00-03:00`

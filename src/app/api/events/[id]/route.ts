@@ -37,6 +37,7 @@ const patchSchema = z
     duracaoMin: z.number().int().min(5).max(MAX_DURACAO_MIN).optional(),
     titulo: z.string().trim().min(1).max(120).optional(),
     tipo: z.string().trim().min(1).max(60).optional(),
+    serviceTypeId: z.string().min(1).nullish(),
     cliente: z.string().trim().max(120).nullish(),
     contactId: z.string().min(1).nullish(),
   })
@@ -70,6 +71,16 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const data: Prisma.EventUncheckedUpdateInput = { inicio, duracaoMin }
   if (b.titulo !== undefined) data.titulo = b.titulo
   if (b.tipo !== undefined) data.tipo = b.tipo
+  if (b.serviceTypeId === null) data.serviceTypeId = null
+  else if (b.serviceTypeId) {
+    const st = await db.serviceType.findFirst({
+      where: { id: b.serviceTypeId, workspaceId },
+      select: { id: true, nome: true },
+    })
+    if (!st) return apiError('TIPO_INVALIDO', 'Tipo de atendimento não encontrado.', 422)
+    data.serviceTypeId = st.id
+    data.tipo = st.nome
+  }
   if (b.contactId !== undefined || b.cliente !== undefined) {
     const contact = await resolveContactId(workspaceId, b)
     if (!contact.ok) return apiError('CONTATO_INVALIDO', 'Contato não encontrado.', 422)
@@ -77,6 +88,11 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   }
 
   const updated = await db.event.update({ where: { id: current.id }, data, include: eventInclude })
+
+  // Horário mudou: os lembretes já registrados não valem mais; recomeçam para o novo horário.
+  if (inicio.getTime() !== current.inicio.getTime()) {
+    await db.eventReminder.deleteMany({ where: { eventId: current.id } })
+  }
 
   let googleSync: GoogleSyncStatus = 'desconectado'
   if (current.googleEventId) {

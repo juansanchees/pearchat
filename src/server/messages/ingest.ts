@@ -11,7 +11,7 @@ import { loadConversationItem, toMessageDTO } from './dto'
 
 const STATUS_RANK = { PENDENTE: 0, ENVIADA: 1, ENTREGUE: 2, LIDA: 3 } as const
 
-async function findOrCreateContact(
+export async function findOrCreateContact(
   workspaceId: string,
   from: ContactRef,
   nome: string | undefined,

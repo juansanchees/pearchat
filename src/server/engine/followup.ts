@@ -62,6 +62,8 @@ export async function planFollowUps(): Promise<number> {
     for (const c of convs) {
       const last = c.messages[0]
       if (!last || last.direction !== 'OUT' || last.createdAt >= cutoff) continue
+      // Histórico importado do WhatsApp: não planeja follow-up sobre conversas anteriores à conexão.
+      if (last.imported) continue
       if (last.status === 'FALHOU') continue
       // Conversa entregue a uma pessoa pela IA (passagem): quem tem que responder é a pessoa.
       if (c.mode === 'HUMANO' && last.author === 'IA') continue

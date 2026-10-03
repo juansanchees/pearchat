@@ -18,7 +18,11 @@ export const DEMO_SELECIONADAS = ['pedidos', 'pessoal']
 /** Cores usadas (em ciclo) para as agendas reais vindas do Google. */
 export const CAL_CORES = ['#a8c23a', '#d9a35b', '#5fa7a0']
 
-export const TIPOS_AG = ['Retirada de pedido', 'Entrega', 'Degustação', 'Reunião']
+/** Durações oferecidas para cada tipo de atendimento (min). */
+export const TIPO_DUR_OPTS = [15, 30, 45, 60, 90, 120, 180] as const
+
+/** Cores predefinidas para os tipos de atendimento (barrinha lateral dos eventos manuais). */
+export const TIPO_CORES = ['#a8c23a', '#d9a35b', '#5fa7a0', '#c9806b', '#8a9bd1', '#b58ac9'] as const
 
 export const DUR_OPTS: { min: 30 | 60 | 120; label: string }[] = [
   { min: 30, label: '30 min' },

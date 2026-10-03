@@ -1,7 +1,9 @@
 'use client'
 
 import { useId, useState, type ReactNode } from 'react'
+import { useFormStatus } from 'react-dom'
 import { Check, Eye, EyeSlash, GoogleLogo } from '@phosphor-icons/react'
+import { googleAction } from '@/app/(auth)/_lib/google-action'
 
 export function Spinner({ className = '' }: { className?: string }) {
   return (
@@ -174,8 +176,41 @@ export function CheckboxRow({
   )
 }
 
-// Login social ainda sem provedor configurado: botão visível, desabilitado, com "Em breve".
-export function GoogleButton({ label }: { label: string }) {
+function GoogleSubmit({ label }: { label: string }) {
+  const { pending } = useFormStatus()
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      aria-busy={pending}
+      className="pc-btn pc-btn-secondary w-full gap-[9px] px-3.5 py-2.5"
+    >
+      {pending ? <Spinner /> : <GoogleLogo size={16} weight="bold" aria-hidden="true" />}
+      {pending ? 'Abrindo o Google…' : label}
+    </button>
+  )
+}
+
+// "Continuar com Google": ativo quando o servidor tem credenciais do Google; senão fica desabilitado com "Em breve".
+export function GoogleButton({ label, enabled = false }: { label: string; enabled?: boolean }) {
+  if (enabled) {
+    return (
+      <form action={googleAction} className="flex flex-col gap-2">
+        <GoogleSubmit label={label} />
+        <p className="text-center text-[11.5px] leading-[1.45] text-light-neutral-500">
+          Ao continuar, você concorda com os{' '}
+          <a href="/termos" target="_blank" rel="noopener noreferrer" className="text-light-accent-200 underline underline-offset-2">
+            Termos de uso
+          </a>{' '}
+          e a{' '}
+          <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="text-light-accent-200 underline underline-offset-2">
+            Política de privacidade
+          </a>
+          .
+        </p>
+      </form>
+    )
+  }
   return (
     <span title="Em breve" className="block">
       <button

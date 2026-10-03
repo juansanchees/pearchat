@@ -1,17 +1,19 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarCheck, Clock, GoogleLogo, Plugs, Trash, Warning } from '@phosphor-icons/react'
+import { CalendarCheck, Clock, GoogleLogo, PencilSimple, Plugs, Trash, Warning } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
 import { emitAgendaChanged } from '@/components/app/events'
 import { Spinner } from '@/components/pear'
+import type { ServiceTypeDto } from '@/server/calendar/types'
 import type { CalendarStateDto, EventDeleteResponse, EventDto, EventWriteResponse, Lembrete } from '@/server/calendar/types'
 import { LEMBRETES } from '@/server/calendar/types'
-import { TIPOS_AG, api } from './data'
+import { api } from './data'
 import { Preferences } from './preferences'
+import { ServiceTypeEditor } from './service-type-editor'
 import { DayCard, NewBooking } from './side-panel'
-import { addDays, longLabel, shortLabel, spInstant, spToday, toSp, weekRange, weekTitle } from './time'
-import { useFreeSlots, useWeekEvents } from './use-agenda'
+import { addDays, diffDays, longLabel, shortLabel, spInstant, spToday, toSp, weekRange, weekTitle } from './time'
+import { useFreeSlots, useServiceTypes, useWeekEvents } from './use-agenda'
 import { WeekGrid } from './week-grid'
 
 export type CalendarPatch = Partial<Pick<CalendarStateDto, 'iaPodeAgendar' | 'duracaoPadraoMin' | 'lembretes'>>
@@ -41,13 +43,27 @@ export function ConnectedView({
   const [selIdx, setSelIdx] = useState(0)
   const [hora, setHora] = useState('')
   const [cliente, setCliente] = useState(clienteParam ?? '')
-  const [tipo, setTipo] = useState(TIPOS_AG[0])
+  const { tipos, setTipos } = useServiceTypes()
+  const [tipoId, setTipoId] = useState('')
+  const [duracao, setDuracao] = useState<number>(cal.duracaoPadraoMin)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editing, setEditing] = useState<EventDto | null>(null)
+  const [focusId, setFocusId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
 
   useEffect(() => {
     if (clienteParam) setCliente(clienteParam)
   }, [clienteParam])
+
+  // Seleciona o 1º tipo (e sua duração) quando os tipos chegam, ou quando o tipo escolhido deixa de existir.
+  useEffect(() => {
+    if (editing || tipos.length === 0) return
+    if (!tipos.some((t) => t.id === tipoId)) {
+      setTipoId(tipos[0].id)
+      setDuracao(tipos[0].duracaoMin)
+    }
+  }, [tipos, tipoId, editing])
 
   const weekStart = today ? addDays(today, offset * 7) : null
   const days = useMemo(
@@ -57,7 +73,7 @@ export function ConnectedView({
   const selDate = days[selIdx]?.date ?? null
 
   const week = useWeekEvents(weekStart)
-  const free = useFreeSlots(selDate, cal.duracaoPadraoMin)
+  const free = useFreeSlots(selDate, duracao, editing?.id ?? null)
 
   const eventsByDate = useMemo(() => {
     const m = new Map<string, EventDto[]>()
@@ -80,6 +96,58 @@ export function ConnectedView({
     if (sincronizadoEm && onSynced) onSynced(sincronizadoEm)
   }, [sincronizadoEm, onSynced])
 
+  /** Leva a grade e o dia selecionado até `date`. */
+  const goToDate = (date: string) => {
+    if (!today) return
+    const diff = diffDays(today, date)
+    const off = Math.floor(diff / 7)
+    setOffset(off)
+    setSelIdx(diff - off * 7)
+  }
+
+  const changeTipo = (id: string) => {
+    setTipoId(id)
+    const t = tipos.find((x) => x.id === id)
+    if (t) setDuracao(t.duracaoMin)
+    setHora('')
+  }
+
+  const startEdit = (ev: EventDto) => {
+    if (ev.somenteLeitura || ev.origem === 'GOOGLE') return
+    const t = tipos.find((x) => x.id === ev.serviceTypeId) ?? tipos.find((x) => x.nome.toLowerCase() === ev.tipo.toLowerCase())
+    const at = toSp(ev.inicio)
+    setEditorOpen(false)
+    setEditing(ev)
+    setFocusId(ev.id)
+    setCliente(ev.cliente ?? '')
+    setTipoId(t?.id ?? '')
+    setDuracao(ev.duracaoMin)
+    goToDate(at.date)
+    setHora(at.hm)
+  }
+
+  const cancelEdit = () => {
+    setEditing(null)
+    setCliente('')
+    setHora('')
+    const t = tipos[0] as ServiceTypeDto | undefined
+    if (t) {
+      setTipoId(t.id)
+      setDuracao(t.duracaoMin)
+    }
+  }
+
+  const tiposSalvos = (novos: ServiceTypeDto[]) => {
+    setTipos(novos)
+    setEditorOpen(false)
+    const t = novos.find((x) => x.id === tipoId) ?? novos[0]
+    if (t && !editing) {
+      setTipoId(t.id)
+      setDuracao(t.duracaoMin)
+    }
+    void free.reload()
+  }
+
   if (!today || !weekStart || !selDate) {
     return (
       <div className="grid flex-1 place-items-center">
@@ -93,14 +161,21 @@ export function ConnectedView({
   // Horários que já passaram hoje não são opção.
   const nowHm = toSp(new Date().toISOString()).hm
   const isToday = selDate === today
-  const horariosLivres = isToday ? free.horarios.filter((h) => h > nowHm) : free.horarios
+  const origAt = editing ? toSp(editing.inicio) : null
+  const isOrigDay = origAt !== null && origAt.date === selDate
+  let horariosLivres = isToday ? free.horarios.filter((h) => h > nowHm || (isOrigDay && h === origAt?.hm)) : free.horarios
+  // Em edição, o horário atual do próprio agendamento sempre aparece (mesmo fora do passo de 30 min).
+  if (origAt && isOrigDay && !free.loading && !horariosLivres.includes(origAt.hm) && !free.error) {
+    horariosLivres = [...horariosLivres, origAt.hm].sort()
+  }
 
   const agendar = async () => {
     if (!hora) {
       toast({ icon: <Clock size={18} weight="fill" />, title: 'Escolha um horário', text: 'Toque em um dos horários livres' })
       return
     }
-    if (isToday && hora <= nowHm) {
+    const mantemHorario = editing !== null && isOrigDay && hora === origAt?.hm
+    if (isToday && hora <= nowHm && !mantemHorario) {
       toast({ icon: <Clock size={18} weight="fill" />, title: 'Esse horário já passou', text: 'Escolha um horário a partir de agora' })
       setHora('')
       return
@@ -109,9 +184,49 @@ export function ConnectedView({
     setSaving(true)
     const nome = cliente.trim()
     try {
+      if (editing) {
+        const tipoSel = tipos.find((t) => t.id === tipoId)
+        const body: Record<string, unknown> = { inicio: spInstant(selDate, hora), duracaoMin: duracao }
+        if (nome !== (editing.cliente ?? '')) body.cliente = nome || null
+        if (tipoSel) {
+          body.serviceTypeId = tipoSel.id
+          if (tipoSel.nome !== editing.tipo && editing.titulo === editing.tipo) body.titulo = tipoSel.nome
+        }
+        const r = await api<EventWriteResponse>(`/api/events/${editing.id}`, { method: 'PATCH', body })
+        if (r.googleSync === 'falhou') {
+          toast({
+            icon: <Warning size={18} weight="fill" />,
+            title: 'Salvo no PearChat, mas não foi possível enviar ao Google',
+            text: `${nome || 'Cliente sem nome'} · ${diaCurto}, ${hora}`,
+          })
+        } else {
+          toast({
+            icon: <PencilSimple size={18} weight="fill" />,
+            title: 'Agendamento atualizado',
+            text: `${nome || 'Cliente sem nome'} · ${diaCurto}, ${hora}`,
+          })
+        }
+        setEditing(null)
+        setFocusId(null)
+        setCliente('')
+        setHora('')
+        const t0 = tipos[0] as ServiceTypeDto | undefined
+        if (t0) {
+          setTipoId(t0.id)
+          setDuracao(t0.duracaoMin)
+        }
+        emitAgendaChanged()
+        return
+      }
+      const tipoSel = tipos.find((t) => t.id === tipoId)
       const r = await api<EventWriteResponse>('/api/events', {
         method: 'POST',
-        body: { inicio: spInstant(selDate, hora), duracaoMin: cal.duracaoPadraoMin, tipo, cliente: nome || null },
+        body: {
+          inicio: spInstant(selDate, hora),
+          duracaoMin: duracao,
+          ...(tipoSel ? { serviceTypeId: tipoSel.id } : { tipo: 'Atendimento' }),
+          cliente: nome || null,
+        },
       })
       if (r.googleSync === 'falhou') {
         toast({
@@ -132,7 +247,7 @@ export function ConnectedView({
     } catch (e) {
       toast({
         icon: <Warning size={18} weight="fill" />,
-        title: 'Não foi possível agendar',
+        title: editing ? 'Não foi possível salvar o agendamento' : 'Não foi possível agendar',
         text: e instanceof Error ? e.message : 'Tente novamente em instantes.',
       })
     } finally {
@@ -154,6 +269,7 @@ export function ConnectedView({
       } else {
         toast({ icon: <Trash size={18} weight="fill" />, title: 'Agendamento excluído', text: 'Ele também sai do Google Agenda' })
       }
+      if (editing?.id === id) cancelEdit()
       emitAgendaChanged()
       void week.reload()
       void free.reload()
@@ -224,6 +340,15 @@ export function ConnectedView({
         loading={week.loading}
         error={week.error}
         onRetry={() => void week.reload()}
+        activeEventId={editing?.id ?? focusId}
+        onPickEvent={(i, ev) => {
+          setSelIdx(i)
+          setFocusId(ev.id)
+        }}
+        onEditEvent={(ev, i) => {
+          setSelIdx(i)
+          startEdit(ev)
+        }}
         onPrev={() => {
           setOffset((o) => o - 1)
           setHora('')
@@ -240,34 +365,62 @@ export function ConnectedView({
         onPickDay={(i) => {
           setSelIdx(i)
           setHora('')
+          setFocusId(null)
         }}
         onPickSlot={(i, h) => {
           setSelIdx(i)
           setHora(h)
+          setFocusId(null)
         }}
       />
 
       <div className="flex min-h-0 flex-col gap-3.5 overflow-y-auto max-[899px]:overflow-visible">
-        <DayCard title={longLabel(selDate, today)} events={eventsByDate.get(selDate) ?? []} agentName={agentName} onDelete={excluir} />
-        <NewBooking
-          cliente={cliente}
-          onCliente={setCliente}
-          tipo={tipo}
-          onTipo={setTipo}
-          diaCurto={diaCurto}
-          horarios={horariosLivres}
-          loadingFree={free.loading}
-          freeError={free.error}
-          hora={hora}
-          onHora={setHora}
-          saving={saving}
-          onSubmit={() => void agendar()}
+        <DayCard title={longLabel(selDate, today)} events={eventsByDate.get(selDate) ?? []}
+          agentName={agentName}
+          activeEventId={editing?.id ?? focusId}
+          onEdit={startEdit}
+          onDelete={excluir}
         />
+        {editorOpen ? (
+          <ServiceTypeEditor tipos={tipos} onCancel={() => setEditorOpen(false)} onSaved={tiposSalvos} />
+        ) : (
+          <NewBooking
+            editing={editing}
+            cliente={cliente}
+            onCliente={setCliente}
+            tipos={tipos}
+            tipoId={tipoId}
+            onTipoId={changeTipo}
+            tipoLegado={editing && !tipoId ? editing.tipo : null}
+            duracao={duracao}
+            onDuracao={(m) => {
+              setDuracao(m)
+              setHora(editing ? hora : '')
+            }}
+            onEditTipos={() => setEditorOpen(true)}
+            date={selDate}
+            onDate={(d) => {
+              goToDate(d)
+              setHora('')
+            }}
+            diaCurto={diaCurto}
+            horarios={horariosLivres}
+            loadingFree={free.loading}
+            freeError={free.error}
+            hora={hora}
+            onHora={setHora}
+            saving={saving}
+            onSubmit={() => void agendar()}
+            onCancelEdit={cancelEdit}
+          />
+        )}
         <Preferences
           duracao={cal.duracaoPadraoMin}
           onDuracao={(d) => void patch({ duracaoPadraoMin: d })}
           lembretes={cal.lembretes}
           onToggleLembrete={toggleLembrete}
+          tiposCount={tipos.length}
+          onEditTipos={() => setEditorOpen(true)}
           oficial={wa.provider === 'oficial'}
           email={cal.email || 'Google'}
           demo={cal.demo}

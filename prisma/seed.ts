@@ -107,6 +107,36 @@ function parseDuracao(dur: string): number {
   return dur.includes('h') ? n * 60 : n
 }
 
+// Tipos de atendimento de confeitaria (mantidos em sincronia com src/server/calendar/service-type-defaults.ts).
+const SEED_SERVICE_TYPES = [
+  { nome: 'Retirada de pedido', duracaoMin: 15 },
+  { nome: 'Entrega', duracaoMin: 30 },
+  { nome: 'Degustação', duracaoMin: 60 },
+  { nome: 'Reunião', duracaoMin: 30 },
+]
+
+// Idempotente: só cria se o workspace ainda não tem nenhum tipo; liga eventos sem tipo ao tipo de mesmo nome.
+async function seedServiceTypes(workspaceId: string) {
+  const total = await prisma.serviceType.count({ where: { workspaceId } })
+  if (total === 0) {
+    await prisma.serviceType.createMany({
+      data: SEED_SERVICE_TYPES.map((t, i) => ({ workspaceId, ...t, ordem: i })),
+      skipDuplicates: true,
+    })
+  }
+  const tipos = await prisma.serviceType.findMany({ where: { workspaceId } })
+  const eventos = await prisma.event.findMany({ where: { workspaceId, serviceTypeId: null }, select: { id: true, tipo: true } })
+  let ligados = 0
+  for (const ev of eventos) {
+    const key = ev.tipo.trim().toLowerCase()
+    const t = tipos.find((x) => x.nome.toLowerCase() === key) ?? tipos.find((x) => x.nome.toLowerCase().startsWith(key))
+    if (!t) continue
+    await prisma.event.update({ where: { id: ev.id }, data: { serviceTypeId: t.id } })
+    ligados++
+  }
+  console.log(`Tipos de atendimento de demonstração garantidos; ${ligados} evento(s) ligado(s).`)
+}
+
 // Idempotente: pula eventos cujo título já existe no workspace.
 async function seedEvents(workspaceId: string) {
   const monday = new Date()
@@ -301,6 +331,7 @@ async function main() {
     await seedConversations(existing.workspaceId)
     await seedContacts(existing.workspaceId)
     await seedEvents(existing.workspaceId)
+    await seedServiceTypes(existing.workspaceId)
     await seedDrawers(existing.workspaceId)
     return
   }
@@ -367,6 +398,7 @@ async function main() {
   await seedConversations(workspace.id)
   await seedContacts(workspace.id)
   await seedEvents(workspace.id)
+  await seedServiceTypes(workspace.id)
   await seedDrawers(workspace.id)
   console.log(`Seed criado: workspace ${workspace.id} (Doce Ateliê), login ${email} / pearchat123`)
 }

@@ -3,9 +3,9 @@ import { db } from '@/lib/db'
 import type { FollowUpDTO, FollowUpQueueItemDTO } from '@/lib/types'
 
 export const FU_MENSAGENS_PADRAO = [
-  'Oi, {primeiro_nome}! Conseguiu ver minha última mensagem? Fico à disposição para fechar seu pedido.',
-  'Passando para saber se ainda tem interesse. Se preferir, posso te ligar.',
-  'Último lembrete: ainda dá tempo de encomendar para esta semana.',
+  'Oi, {primeiro_nome}! Conseguiu ver minha última mensagem? Fico à disposição para o que precisar.',
+  'Oi, {primeiro_nome}! Ainda posso ajudar com o que você procurava? Se preferir, é só me chamar por aqui.',
+  'Oi, {primeiro_nome}! Vou encerrar por aqui para não incomodar. Quando quiser retomar, é só mandar uma mensagem.',
 ]
 export const FU_PARAR_PADRAO = ['Cliente respondeu', 'Pedido fechado']
 

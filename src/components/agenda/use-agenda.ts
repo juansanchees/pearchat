@@ -1,7 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CalendarStateDto, EventDto, EventListResponse, FreeSlotsResponse, GoogleListStatus } from '@/server/calendar/types'
+import type {
+  CalendarStateDto,
+  EventDto,
+  EventListResponse,
+  FreeSlotsResponse,
+  GoogleListStatus,
+  ServiceTypeDto,
+  ServiceTypeListResponse,
+} from '@/server/calendar/types'
 import { addDays } from './time'
 import { api } from './data'
 
@@ -66,7 +74,7 @@ export function useWeekEvents(start: string | null) {
 }
 
 /** Inícios livres "HH:MM" do dia (GET /api/events/free). */
-export function useFreeSlots(date: string | null, duracaoMin: number) {
+export function useFreeSlots(date: string | null, duracaoMin: number, ignoreEventId?: string | null) {
   const [horarios, setHorarios] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
@@ -78,7 +86,7 @@ export function useFreeSlots(date: string | null, duracaoMin: number) {
     setLoading(true)
     setError(false)
     try {
-      const r = await api<FreeSlotsResponse>(`/api/events/free?date=${date}&duracaoMin=${duracaoMin}`)
+      const r = await api<FreeSlotsResponse>(`/api/events/free?date=${date}&duracaoMin=${duracaoMin}${ignoreEventId ? `&ignoreEventId=${encodeURIComponent(ignoreEventId)}` : ''}`)
       if (id === seq.current) setHorarios(r.horarios)
     } catch {
       if (id === seq.current) {
@@ -88,11 +96,33 @@ export function useFreeSlots(date: string | null, duracaoMin: number) {
     } finally {
       if (id === seq.current) setLoading(false)
     }
-  }, [date, duracaoMin])
+  }, [date, duracaoMin, ignoreEventId])
 
   useEffect(() => {
     void load()
   }, [load])
 
   return { horarios, loading, error, reload: load }
+}
+
+/** Tipos de atendimento do negócio (GET /api/service-types). */
+export function useServiceTypes() {
+  const [tipos, setTipos] = useState<ServiceTypeDto[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    try {
+      setTipos((await api<ServiceTypeListResponse>('/api/service-types')).tipos)
+    } catch {
+      /* mantém o último valor conhecido */
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  return { tipos, setTipos, loading, reload: load }
 }

@@ -31,6 +31,7 @@ export async function POST() {
     metaWabaId: null,
     evolutionInstance: null,
     sessionData: null,
+    resetHistory: true,
   })
   await Promise.all([
     db.aiAgent.updateMany({ where: { workspaceId }, data: { enabled: false } }),

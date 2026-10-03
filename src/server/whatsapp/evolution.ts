@@ -9,6 +9,8 @@ import type { ContactRef, WhatsAppProvider } from './provider'
 export const instanceNameFor = (workspaceId: string) => `pc_${workspaceId}`
 
 const WEBHOOK_EVENTS = ['QRCODE_UPDATED', 'CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONTACTS_UPSERT']
+// Histórico enviado pelo WhatsApp logo após o pareamento.
+export const HISTORY_WEBHOOK_EVENTS = ['MESSAGES_SET', 'CHATS_SET', 'CONTACTS_SET', 'CHATS_UPSERT']
 
 function baseUrl(): string {
   const url = process.env.EVOLUTION_API_URL
@@ -23,7 +25,7 @@ function webhookUrl(): string {
   return `${app}/api/wa/evolution`
 }
 
-async function evo(method: string, path: string, body?: unknown): Promise<unknown> {
+async function evo(method: string, path: string, body?: unknown, timeoutMs = 15_000): Promise<unknown> {
   const apiKey = process.env.EVOLUTION_API_KEY
   if (!apiKey) throw new Error('EVOLUTION_API_KEY não configurada')
   let res: Response
@@ -33,7 +35,7 @@ async function evo(method: string, path: string, body?: unknown): Promise<unknow
       headers: { apikey: apiKey, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: 'no-store',
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   } catch {
     throw new WhatsAppProviderError('Evolution API inacessível', 0, null)
@@ -85,12 +87,15 @@ export class EvolutionProvider implements WhatsAppProvider {
         instanceName: instance,
         integration: 'WHATSAPP-BAILEYS',
         qrcode: true,
+        // Histórico: o WhatsApp só o entrega no pareamento; sem isto vem pouco ou nada.
+        syncFullHistory: true,
+        groupsIgnore: true,
         webhook: {
           url: webhookUrl(),
           byEvents: false,
           base64: false,
           headers: { apikey: process.env.EVOLUTION_API_KEY ?? '' },
-          events: WEBHOOK_EVENTS,
+          events: [...WEBHOOK_EVENTS, ...HISTORY_WEBHOOK_EVENTS],
         },
       })
     } catch (e) {
@@ -128,6 +133,76 @@ export class EvolutionProvider implements WhatsAppProvider {
     if (!jid) return undefined
     const digits = onlyDigits(jid.split('@')[0] ?? '')
     return digits.length >= 10 ? toE164(digits) : undefined
+  }
+
+  /**
+   * Instâncias já criadas: garante syncFullHistory nas configurações e os eventos de histórico no webhook.
+   * Idempotente (só escreve se algo faltar). A configuração vale a partir da próxima conexão do socket.
+   */
+  async ensureHistoryConfig(workspaceId: string): Promise<{ settingsChanged: boolean; webhookChanged: boolean }> {
+    const instance = encodeURIComponent(instanceNameFor(workspaceId))
+    let settingsChanged = false
+    let webhookChanged = false
+
+    try {
+      const raw = await evo('GET', `/settings/find/${instance}`)
+      const cur = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+      if (cur.syncFullHistory !== true) {
+        // settings/set sobrescreve tudo: reenvia os valores atuais junto.
+        const body: Record<string, unknown> = { syncFullHistory: true }
+        for (const k of ['rejectCall', 'groupsIgnore', 'alwaysOnline', 'readMessages', 'readStatus'] as const) {
+          body[k] = typeof cur[k] === 'boolean' ? cur[k] : false
+        }
+        if (typeof cur.msgCall === 'string') body.msgCall = cur.msgCall
+        await evo('POST', `/settings/set/${instance}`, body)
+        settingsChanged = true
+      }
+    } catch (e) {
+      console.error('[wa/history] settings:', e instanceof Error ? e.message : 'erro')
+    }
+
+    try {
+      const raw = await evo('GET', `/webhook/find/${instance}`)
+      const cur = (raw && typeof raw === 'object' ? raw : {}) as { enabled?: unknown; url?: unknown; events?: unknown; headers?: unknown }
+      const events = Array.isArray(cur.events) ? cur.events.filter((v): v is string => typeof v === 'string') : []
+      const wanted = Array.from(new Set([...WEBHOOK_EVENTS, ...events, ...HISTORY_WEBHOOK_EVENTS]))
+      if (cur.enabled !== true || wanted.length !== events.length || typeof cur.url !== 'string') {
+        await evo('POST', `/webhook/set/${instance}`, {
+          webhook: {
+            enabled: true,
+            url: typeof cur.url === 'string' && cur.url ? cur.url : webhookUrl(),
+            byEvents: false,
+            base64: false,
+            headers: { apikey: process.env.EVOLUTION_API_KEY ?? '' },
+            events: wanted,
+          },
+        })
+        webhookChanged = true
+      }
+    } catch (e) {
+      console.error('[wa/history] webhook:', e instanceof Error ? e.message : 'erro')
+    }
+    return { settingsChanged, webhookChanged }
+  }
+
+  /** POST /chat/findChats: uma página de chats (mais recentes primeiro). Devolve o corpo cru. */
+  findChats(workspaceId: string, take: number, skip: number): Promise<unknown> {
+    return evo('POST', `/chat/findChats/${encodeURIComponent(instanceNameFor(workspaceId))}`, { take, skip }, 60_000)
+  }
+
+  /** POST /chat/findMessages: página (1-based) de mensagens de um chat, da mais nova para a mais antiga. */
+  findMessages(workspaceId: string, remoteJid: string, page: number, offset: number): Promise<unknown> {
+    return evo(
+      'POST',
+      `/chat/findMessages/${encodeURIComponent(instanceNameFor(workspaceId))}`,
+      { where: { key: { remoteJid } }, page, offset },
+      60_000,
+    )
+  }
+
+  /** POST /chat/findContacts (todos os contatos salvos na Evolution). */
+  findContacts(workspaceId: string): Promise<unknown> {
+    return evo('POST', `/chat/findContacts/${encodeURIComponent(instanceNameFor(workspaceId))}`, {}, 60_000)
   }
 
   async sendText(workspaceId: string, to: ContactRef, text: string): Promise<{ providerMessageId: string }> {

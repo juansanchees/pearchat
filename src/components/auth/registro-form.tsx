@@ -38,7 +38,7 @@ type Key = 'nome' | 'email' | 'tel' | 'senha' | 'termos'
 type Errs = Partial<Record<Key, string>>
 const SERVER_KEY: Record<Key, string> = { nome: 'nome', email: 'email', tel: 'tel', senha: 'password', termos: 'termos' }
 
-export function RegistroForm() {
+export function RegistroForm({ googleEnabled = false }: { googleEnabled?: boolean }) {
   const [state, action] = useFormState(registroAction, undefined)
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
@@ -77,7 +77,7 @@ export function RegistroForm() {
   }
 
   return (
-    <form action={action} onSubmit={onSubmit} noValidate className="flex animate-pcIn flex-col gap-[18px]">
+    <div className="flex animate-pcIn flex-col gap-[18px]">
       <AuthTitle
         sub={
           <span className="flex flex-wrap items-center gap-[7px]">
@@ -90,8 +90,9 @@ export function RegistroForm() {
       >
         Criar conta
       </AuthTitle>
-      <GoogleButton label="Criar com Google" />
+      <GoogleButton label="Criar com Google" enabled={googleEnabled} />
       <OrDivider />
+      <form action={action} onSubmit={onSubmit} noValidate className="flex flex-col gap-[18px]">
       <div className="flex flex-col gap-[13px]">
         <Field id="nome" label="Seu nome" error={eNome}>
           <input
@@ -190,6 +191,7 @@ export function RegistroForm() {
         </p>
       )}
       <Submit />
-    </form>
+      </form>
+    </div>
   )
 }

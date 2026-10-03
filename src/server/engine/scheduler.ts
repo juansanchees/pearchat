@@ -3,6 +3,7 @@ import { runCalendarSync } from './calendar-sync'
 import { runDueCampaigns } from './campaigns'
 import { planFollowUps, runDueFollowUps } from './followup'
 import { runDueReminders } from './reminders'
+import { runDueHistoryImports } from '@/server/whatsapp/history-import'
 import { engineDisabled, log, logError } from './util'
 
 // Agendador em processo, baseado no banco (sem Redis). A cada 5 s executa as tarefas devidas.
@@ -17,6 +18,7 @@ export type TickSummary = {
   followup: { planejados: number; processados: number }
   lembretes: { enviados: number }
   agenda: { sincronizadas: number }
+  historico: { importacoes: number }
   ignoradas: string[]
 }
 
@@ -44,7 +46,7 @@ async function task<T>(name: string, fallback: T, fn: () => Promise<T>, skipped:
 /** Um ciclo completo. Também usado pela rota de desenvolvimento /api/dev/engine/tick. */
 export async function runTick(): Promise<TickSummary> {
   const ignoradas: string[] = []
-  const [ia, disparos, followup, lembretes, agenda] = await Promise.all([
+  const [ia, disparos, followup, lembretes, agenda, historico] = await Promise.all([
     task('ia', { varridas: 0, executadas: 0 }, async () => ({ varridas: await sweepPending(), executadas: await runDueAiJobs() }), ignoradas),
     task('disparos', { enviadas: 0 }, async () => ({ enviadas: await runDueCampaigns() }), ignoradas),
     task(
@@ -56,8 +58,10 @@ export async function runTick(): Promise<TickSummary> {
     task('lembretes', { enviados: 0 }, async () => ({ enviados: await runDueReminders() }), ignoradas),
     // Google Agenda -> PearChat: o intervalo de 2 min por workspace é controlado dentro da tarefa.
     task('agenda', { sincronizadas: 0 }, async () => ({ sincronizadas: await runCalendarSync() }), ignoradas),
+    // Histórico do WhatsApp: passagens incrementais depois de conectar (1, 3, 10 e 30 min).
+    task('historico', { importacoes: 0 }, async () => ({ importacoes: await runDueHistoryImports() }), ignoradas),
   ])
-  return { ia, disparos, followup, lembretes, agenda, ignoradas }
+  return { ia, disparos, followup, lembretes, agenda, historico, ignoradas }
 }
 
 /** Inicia o laço (uma vez por processo). Desligável com ENGINE_DISABLED=true. */

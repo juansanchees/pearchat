@@ -89,6 +89,7 @@ model Workspace {
   followUpRule       FollowUpRule?
   calendarConnection CalendarConnection?
   events             Event[]
+  serviceTypes       ServiceType[]
   invoices           Invoice[]
   usageCounters      UsageCounter[]
   aiJobs             AiJob[]
@@ -163,6 +164,13 @@ model WhatsAppSession {
   evolutionInstance String?
   lastQr            String?
   lastQrAt          DateTime?
+  // Importação do histórico (conexão rápida): quando conectou e o andamento da importação.
+  connectedAt       DateTime?
+  historyStatus     String           @default("nao_iniciada") // nao_iniciada | importando | concluida | erro
+  historyStartedAt  DateTime?
+  historyImportedAt DateTime?
+  historyStats      Json?
+  historyPasses     Int              @default(0) // passagens agendadas já feitas (1, 3, 10 e 30 min)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -226,10 +234,13 @@ model Message {
   mediaUrl          String?
   status            MessageStatus    @default(PENDENTE)
   providerMessageId String?
+  // Veio da importação do histórico: o motor (IA, follow-up) não age sobre estas mensagens.
+  imported          Boolean          @default(false)
   createdAt         DateTime         @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
+  @@unique([conversationId, providerMessageId])
   @@index([conversationId, createdAt])
 }
 
@@ -395,14 +406,36 @@ model Event {
   googleEventId String?
   // Agenda do Google onde o evento foi criado (pode diferir do destino atual).
   googleCalendarId String?
+  // Tipo de atendimento escolhido (o texto `tipo` guarda o nome na hora do agendamento).
+  serviceTypeId String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  contact   Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  reminders EventReminder[]
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact     Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  serviceType ServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: SetNull)
+  reminders   EventReminder[]
 
   @@index([workspaceId, inicio])
+}
+
+// Tipos de atendimento/serviços do negócio (aparecem ao agendar, nos lembretes e no prompt da IA).
+model ServiceType {
+  id          String   @id @default(cuid())
+  workspaceId String
+  nome        String
+  duracaoMin  Int
+  cor         String?
+  ordem       Int
+  ativo       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  events    Event[]
+
+  @@unique([workspaceId, nome])
+  @@index([workspaceId, ativo, ordem])
 }
 
 model Invoice {

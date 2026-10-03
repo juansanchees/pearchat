@@ -22,7 +22,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     db.whatsAppSession.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} }),
     db.aiAgent.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} }),
     db.followUpRule.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} }),
-    db.user.findUniqueOrThrow({ where: { id: userId }, select: { nome: true, email: true, fotoUrl: true } }),
+    db.user.findUniqueOrThrow({ where: { id: userId }, select: { nome: true, email: true, fotoUrl: true, image: true } }),
     db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true, plano: true, horarioAtendimento: true, disparosAtivos: true } }),
     db.contact.count({ where: { workspaceId } }),
     listCampaigns(workspaceId),
@@ -36,7 +36,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       initial={{
         wa: { provider: wa.provider ? providerToKind(wa.provider) : null, status: statusToKind(wa.status), numero: wa.numero },
         automations: { ia: connected && agent.enabled, followup: connected && followUp.enabled, disparos: connected && workspace.disparosAtivos },
-        user: { nome: user.nome, email: user.email, empresa: workspace.nome, fotoUrl: user.fotoUrl },
+        user: { nome: user.nome, email: user.email, empresa: workspace.nome, fotoUrl: user.fotoUrl ?? user.image },
         agentName: agent.nome,
         fuQueueCount,
       }}

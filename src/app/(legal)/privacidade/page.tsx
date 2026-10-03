@@ -119,6 +119,7 @@ const secoes: LegalSection[] = [
     titulo: 'Uso de dados do Google',
     corpo: (
       <>
+        <P>Se você entrar com o Google, o PearChat recebe o nome, o e-mail e a foto do seu perfil, usados apenas para criar e identificar a sua conta.</P>
         <P>Se você conectar o Google Agenda, o PearChat pede acesso por meio do login do Google (OAuth), com os escopos:</P>
         <UL>
           <li><code>https://www.googleapis.com/auth/calendar.events</code>: ver, criar, atualizar e excluir eventos;</li>

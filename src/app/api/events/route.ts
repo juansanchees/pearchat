@@ -79,9 +79,10 @@ export async function GET(req: NextRequest) {
 const bodySchema = z
   .object({
     inicio: z.string().datetime({ offset: true }),
-    duracaoMin: z.number().int().min(5).max(MAX_DURACAO_MIN),
+    duracaoMin: z.number().int().min(5).max(MAX_DURACAO_MIN).optional(),
     titulo: z.string().trim().min(1).max(120).optional(),
-    tipo: z.string().trim().min(1).max(60),
+    tipo: z.string().trim().min(1).max(60).optional(),
+    serviceTypeId: z.string().min(1).nullish(),
     cliente: z.string().trim().max(120).nullish(),
     contactId: z.string().min(1).nullish(),
   })
@@ -99,9 +100,22 @@ export async function POST(req: NextRequest) {
   const parsed = bodySchema.safeParse(json)
   if (!parsed.success) return badRequest('Dados do agendamento inválidos')
   const b = parsed.data
+  if (!b.tipo && !b.serviceTypeId) return badRequest('Informe o tipo do agendamento')
+
+  let st: { id: string; nome: string; duracaoMin: number } | null = null
+  if (b.serviceTypeId) {
+    st = await db.serviceType.findFirst({
+      where: { id: b.serviceTypeId, workspaceId },
+      select: { id: true, nome: true, duracaoMin: true },
+    })
+    if (!st) return apiError('TIPO_INVALIDO', 'Tipo de atendimento não encontrado.', 422)
+  }
+  const tipo = st?.nome ?? b.tipo ?? ''
+  const conn0 = await getConnection(workspaceId)
+  const duracaoMin = b.duracaoMin ?? st?.duracaoMin ?? conn0?.duracaoPadraoMin ?? 60
 
   const inicio = new Date(b.inicio)
-  const fim = addMin(inicio, b.duracaoMin)
+  const fim = addMin(inicio, duracaoMin)
 
   const conflicts = await findOverlapping(workspaceId, inicio, fim)
   if (conflicts.length > 0) return conflictResponse(toEventDto(conflicts[0]))
@@ -109,15 +123,16 @@ export async function POST(req: NextRequest) {
   const contact = await resolveContactId(workspaceId, b)
   if (!contact.ok) return apiError('CONTATO_INVALIDO', 'Contato não encontrado.', 422)
 
-  const titulo = b.titulo ?? b.tipo
+  const titulo = b.titulo ?? tipo
   const created = await db.event.create({
     data: {
       workspaceId,
       contactId: contact.id,
       inicio,
-      duracaoMin: b.duracaoMin,
+      duracaoMin,
+      serviceTypeId: st?.id ?? null,
       titulo,
-      tipo: b.tipo,
+      tipo,
       origem: 'MANUAL',
     },
     include: eventInclude,

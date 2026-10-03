@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import type { AgentDTO, AgentHorario, AgentTestResultDTO, AgentTom, KnowledgeItemDTO } from '@/lib/types'
 import { detectHandoff, generateReply, hasLlmKey, simulateReply } from './llm'
+import { serviceTypesForPrompt } from '@/server/calendar/service-types'
 import { buildSystemPrompt, HANDOFF_MARKER } from './prompt'
 
 // Valores no banco (slugs) <-> rótulos da interface.
@@ -13,7 +14,7 @@ const HORARIO_FROM_DB = invert(HORARIO_DB)
 
 /** Prompt padrão (spec 05) quando o agente ainda não tem instruções salvas. */
 export function defaultPrompt(nome: string, empresa: string): string {
-  return `Você é ${nome}, atendente virtual de ${empresa}. Responda de forma calorosa e objetiva, em até 3 frases. Antes de fechar uma encomenda, confirme os detalhes do pedido. Não ofereça descontos; se o cliente pedir, passe a conversa para o dono do negócio.`
+  return `Você é ${nome}, atendente virtual de ${empresa}. Atenda com simpatia e objetividade, em até 3 frases. Tire dúvidas sobre produtos, serviços, preços, horários e agendamentos. Antes de confirmar um pedido ou agendamento, confirme os detalhes com o cliente. Não ofereça descontos; se o cliente pedir, passe a conversa para o dono do negócio.`
 }
 
 export const agentUpdateSchema = z.object({
@@ -132,7 +133,8 @@ export async function testAgent(
   const handoff = detectHandoff(input.mensagem, handoffRules, responsavel)
   if (handoff) return { resposta: handoff, handoff: true, simulado: !hasLlmKey() }
 
-  const system = buildSystemPrompt({ empresa: ws.nome, agente: { nome, tom, prompt }, kb, handoffRules })
+  const servicos = await serviceTypesForPrompt(workspaceId)
+  const system = buildSystemPrompt({ empresa: ws.nome, agente: { nome, tom, prompt }, kb, handoffRules, servicos })
   const r = await generateReply({
     system,
     messages: [{ role: 'user', content: input.mensagem }],

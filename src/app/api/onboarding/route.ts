@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { apiSession, fail, parseBody, unauthorized } from '@/server/settings/http'
 import { defaultPrompt } from '@/server/agent/service'
+import { ensureServiceTypes } from '@/server/calendar/service-types'
 import { OBJETIVOS, SEGMENTOS } from './constants'
 
 export const dynamic = 'force-dynamic'
@@ -42,6 +43,8 @@ export async function POST(req: Request) {
       await db.aiAgent.update({ where: { id: agent.id }, data: { prompt: `${defaultPrompt(d.agenteNome, d.empresa)} ${extra}` } })
       promptSalvo = true
     }
+    // Tipos de atendimento iniciais do segmento (só se o negócio ainda não tem nenhum).
+    await ensureServiceTypes(s.workspaceId, d.segmento).catch(() => undefined)
     return NextResponse.json({ ok: true, promptSalvo })
   } catch {
     return fail('Não foi possível salvar agora. Tente de novo em instantes.', 500)

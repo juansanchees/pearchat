@@ -1,9 +1,11 @@
+import { Prisma } from '@prisma/client'
 import type { ConnectionStatus, WhatsAppSession } from '@prisma/client'
 import { db } from '@/lib/db'
 import { kindToProvider, kindToStatus, providerToKind, statusToKind } from '@/lib/mappers'
 import type { ConnectionStatusKind, ProviderKind, WhatsAppStatusDTO } from '@/lib/types'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { decrypt, encrypt } from './crypto'
+import { scheduleInitialImport } from './history-import'
 
 export function getSession(workspaceId: string): Promise<WhatsAppSession | null> {
   return db.whatsAppSession.findUnique({ where: { workspaceId } })
@@ -36,6 +38,8 @@ export type SessionExtra = {
   evolutionInstance?: string | null
   /** Valor já criptografado. */
   sessionData?: string | null
+  /** Zera o andamento da importação de histórico (ao desconectar). */
+  resetHistory?: boolean
 }
 
 /** Grava o status no banco e avisa os clientes (evento connection.update). */
@@ -54,6 +58,12 @@ export async function setStatus(
     metaWabaId?: string | null
     evolutionInstance?: string | null
     sessionData?: string | null
+    connectedAt?: Date | null
+    historyStatus?: string
+    historyStartedAt?: Date | null
+    historyImportedAt?: Date | null
+    historyStats?: Prisma.NullableJsonNullValueInput
+    historyPasses?: number
   } = { status: kindToStatus(status) }
   if (extra.provider !== undefined) data.provider = extra.provider ? kindToProvider(extra.provider) : null
   if (extra.numero !== undefined) data.numero = extra.numero
@@ -69,11 +79,35 @@ export async function setStatus(
   if (extra.evolutionInstance !== undefined) data.evolutionInstance = extra.evolutionInstance
   if (extra.sessionData !== undefined) data.sessionData = extra.sessionData
 
+  // Transição para CONECTADO = nova conexão: marca o instante e agenda a importação do histórico.
+  let newConnection = false
+  if (status === 'conectado') {
+    const prev = await db.whatsAppSession.findUnique({
+      where: { workspaceId },
+      select: { status: true, connectedAt: true, historyStatus: true },
+    })
+    if (prev?.status !== 'CONECTADO' && (!prev?.connectedAt || Date.now() - prev.connectedAt.getTime() > 3_600_000)) {
+      newConnection = true
+      data.connectedAt = new Date()
+      data.historyPasses = 0
+      if (prev?.historyStatus !== 'importando') data.historyStatus = 'nao_iniciada'
+    }
+  }
+  if (extra.resetHistory) {
+    data.connectedAt = null
+    data.historyStatus = 'nao_iniciada'
+    data.historyStartedAt = null
+    data.historyImportedAt = null
+    data.historyStats = Prisma.JsonNull
+    data.historyPasses = 0
+  }
+
   const row = await db.whatsAppSession.upsert({
     where: { workspaceId },
     create: { workspaceId, ...data },
     update: data,
   })
+  if (newConnection && row.provider === 'RAPIDA' && process.env.WA_MOCK !== 'true') scheduleInitialImport(workspaceId)
   const dto = toStatusDTO(row)
   emitToWorkspace(workspaceId, 'connection.update', {
     workspaceId,

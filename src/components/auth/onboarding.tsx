@@ -96,7 +96,7 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
   const primeiro = nome.trim().split(/\s+/)[0] || 'você'
   const [view, setView] = useState<'onboarding' | 'pronto'>('onboarding')
   const [step, setStep] = useState(1)
-  const [emp, setEmp] = useState<{ nome: string; seg: SegId; equipe: string }>({ nome: '', seg: 'confeitaria', equipe: 'Só eu' })
+  const [emp, setEmp] = useState<{ nome: string; seg: SegId; equipe: string }>({ nome: '', seg: 'outro', equipe: 'Só eu' })
   const [obj, setObj] = useState<ObjId[]>(['ia', 'agenda'])
   const [wa, setWa] = useState<{ conectarAgora: boolean }>({ conectarAgora: false })
   const [ag, setAg] = useState<{ nome: string; tom: Tom }>({ nome: 'Luna', tom: 'Amigável' })

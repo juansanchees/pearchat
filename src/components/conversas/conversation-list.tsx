@@ -44,6 +44,7 @@ export function ConversationList({
   onSelect,
   iaOn,
   agentName,
+  history,
 }: {
   items: Item[]
   total: number
@@ -58,6 +59,7 @@ export function ConversationList({
   onSelect: (id: string) => void
   iaOn: boolean
   agentName: string
+  history: { canImport: boolean; importing: boolean; syncing: boolean; failed: boolean; start: () => Promise<void> }
 }) {
   const mock = process.env.NEXT_PUBLIC_WA_MOCK === 'true'
 
@@ -97,6 +99,16 @@ export function ConversationList({
         </div>
       </div>
 
+      {history.importing && total > 0 ? (
+        <div
+          className="mx-3.5 mb-2 flex items-center gap-2 rounded-md bg-light-accent-900 px-3 py-2 text-xs text-light-accent-200"
+          role="status"
+        >
+          <Spinner size={14} />
+          Importando suas conversas do WhatsApp…
+        </div>
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex justify-center py-10 text-light-accent-400">
@@ -113,10 +125,37 @@ export function ConversationList({
         ) : total === 0 ? (
           <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
             <ChatCircleDots size={32} className="text-light-neutral-600" />
-            <p className="text-[13.5px] font-medium">Nenhuma conversa ainda</p>
-            <p className="text-xs leading-relaxed text-light-neutral-500">
-              Quando um cliente escrever para o seu WhatsApp, a conversa aparece aqui.
-            </p>
+            {history.importing || history.syncing ? (
+              <>
+                <Spinner size={22} />
+                <p className="text-[13.5px] font-medium" role="status">
+                  Importando suas conversas do WhatsApp…
+                </p>
+                <p className="text-xs leading-relaxed text-light-neutral-500">
+                  Trazemos as conversas recentes do seu WhatsApp. Grupos não são importados.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-[13.5px] font-medium">Nenhuma conversa ainda</p>
+                <p className="text-xs leading-relaxed text-light-neutral-500">
+                  Quando um cliente escrever para o seu WhatsApp, a conversa aparece aqui.
+                </p>
+                {history.canImport ? (
+                  <>
+                    <p className="text-xs leading-relaxed text-light-neutral-500">
+                      Trazemos as conversas recentes do seu WhatsApp. Grupos não são importados.
+                    </p>
+                    {history.failed ? (
+                      <p className="text-xs text-light-neutral-500">A última importação não terminou. Tente de novo.</p>
+                    ) : null}
+                    <button type="button" onClick={() => void history.start()} className="pc-btn pc-btn-secondary mt-1 text-[12px]">
+                      Importar conversas anteriores
+                    </button>
+                  </>
+                ) : null}
+              </>
+            )}
             {mock ? (
               <button
                 type="button"

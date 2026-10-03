@@ -41,4 +41,4 @@ export type ImportResult = {
   erros: { linha: number; motivo: string }[]
 }
 
-export const TAG_OPTIONS = ['Lead', 'Cliente', 'VIP', 'Casamento'] as const
+export const TAG_OPTIONS = ['Lead', 'Cliente', 'VIP'] as const

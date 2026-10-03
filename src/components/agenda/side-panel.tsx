@@ -1,11 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarPlus, Check, GoogleLogo, Sparkle, TrashSimple, User } from '@phosphor-icons/react'
+import { CalendarPlus, Check, GoogleLogo, PencilSimple, Sparkle, TrashSimple, User } from '@phosphor-icons/react'
 import { Spinner } from '@/components/pear'
 import { cn } from '@/lib/utils'
-import type { EventDto, EventOrigem } from '@/server/calendar/types'
-import { TIPOS_AG } from './data'
+import type { EventDto, EventOrigem, ServiceTypeDto } from '@/server/calendar/types'
+import { TIPO_DUR_OPTS } from './data'
 import { GRID_END_HOUR, GRID_START_HOUR, durLabel, toSp } from './time'
 
 const cardCls = 'flex flex-col rounded-md bg-light-surface p-4'
@@ -31,11 +31,17 @@ export function DayCard({
   title,
   events,
   agentName,
+  activeEventId,
+  onEdit,
   onDelete,
 }: {
   title: string
   events: EventDto[]
   agentName: string
+  /** Evento em edição (destacado). */
+  activeEventId?: string | null
+  /** Entra no modo de edição do evento. */
+  onEdit: (ev: EventDto) => void
   /** Exclui o evento; devolve true se excluiu. */
   onDelete: (id: string) => Promise<boolean>
 }) {
@@ -61,7 +67,14 @@ export function DayCard({
         const o = origemInfo(ev.origem, agentName)
         const fora = foraDaGrade(ev)
         return (
-          <div key={ev.id} className="flex gap-[11px] rounded-md border border-solid border-light-divider px-[11px] py-2.5">
+          <div
+            key={ev.id}
+            onDoubleClick={ev.somenteLeitura ? undefined : () => onEdit(ev)}
+            className={cn(
+              'flex gap-[11px] rounded-md border border-solid px-[11px] py-2.5',
+              activeEventId === ev.id ? 'border-light-accent-600 bg-light-accent-900' : 'border-light-divider',
+            )}
+          >
             <div className="w-[42px] flex-none">
               <div className="text-[12.5px] font-medium leading-none text-light-accent-200">
                 {ev.diaInteiro ? 'Dia todo' : toSp(ev.inicio).hm}
@@ -83,6 +96,7 @@ export function DayCard({
                   {o.label}
                 </span>
                 {fora && <span className="text-light-neutral-500">{fora}</span>}
+                {ev.somenteLeitura && <span className="text-light-neutral-500">Edite no Google Agenda</span>}
               </div>
             </div>
             <div className="flex flex-none items-start">
@@ -107,6 +121,16 @@ export function DayCard({
                   </button>
                 </div>
               ) : (
+                <div className="flex items-center">
+                <button
+                  type="button"
+                  title="Editar agendamento"
+                  aria-label={`Editar ${ev.titulo}`}
+                  onClick={() => onEdit(ev)}
+                  className="grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent p-0 text-light-neutral-500 hover:bg-[rgba(29,33,23,.07)] hover:text-light-text"
+                >
+                  <PencilSimple size={13} />
+                </button>
                 <button
                   type="button"
                   title="Excluir agendamento"
@@ -116,6 +140,7 @@ export function DayCard({
                 >
                   <TrashSimple size={13} />
                 </button>
+                </div>
               )}
             </div>
           </div>
@@ -130,12 +155,20 @@ export function DayCard({
   )
 }
 
-/** Card "Novo agendamento": cliente, tipo, pílulas de horários livres e botão "Agendar {dia}, {hora}". */
+/** Card "Novo agendamento" / "Editar agendamento": cliente, tipo, duração, horários livres e botão de salvar. */
 export function NewBooking({
+  editing,
   cliente,
   onCliente,
-  tipo,
-  onTipo,
+  tipos,
+  tipoId,
+  onTipoId,
+  tipoLegado,
+  duracao,
+  onDuracao,
+  onEditTipos,
+  date,
+  onDate,
   diaCurto,
   horarios,
   loadingFree,
@@ -144,11 +177,22 @@ export function NewBooking({
   onHora,
   saving,
   onSubmit,
+  onCancelEdit,
 }: {
+  /** Agendamento em edição (null = novo). */
+  editing: EventDto | null
   cliente: string
   onCliente: (v: string) => void
-  tipo: string
-  onTipo: (v: string) => void
+  tipos: ServiceTypeDto[]
+  tipoId: string
+  onTipoId: (v: string) => void
+  /** Texto do tipo do agendamento em edição quando o tipo não existe mais (tipoId vazio). */
+  tipoLegado: string | null
+  duracao: number
+  onDuracao: (m: number) => void
+  onEditTipos: () => void
+  date: string
+  onDate: (d: string) => void
   diaCurto: string
   horarios: string[]
   loadingFree: boolean
@@ -157,11 +201,20 @@ export function NewBooking({
   onHora: (h: string) => void
   saving: boolean
   onSubmit: () => void
+  onCancelEdit: () => void
 }) {
+  const durs = (TIPO_DUR_OPTS as readonly number[]).includes(duracao)
+    ? [...TIPO_DUR_OPTS]
+    : [...TIPO_DUR_OPTS, duracao].sort((a, b) => a - b)
   return (
     <div className={cn(cardCls, 'gap-2.5')}>
       <h2 className="m-0 flex items-center gap-[7px] text-[14px] font-medium leading-[1.2] tracking-normal">
-        <CalendarPlus size={15} className="text-light-accent-300" /> Novo agendamento
+        {editing ? (
+          <PencilSimple size={15} className="text-light-accent-300" />
+        ) : (
+          <CalendarPlus size={15} className="text-light-accent-300" />
+        )}
+        {editing ? 'Editar agendamento' : 'Novo agendamento'}
       </h2>
       <input
         className="pc-input"
@@ -171,13 +224,42 @@ export function NewBooking({
         aria-label="Nome do cliente"
         maxLength={120}
       />
-      <select className="pc-input" value={tipo} onChange={(e) => onTipo(e.target.value)} aria-label="Tipo de agendamento">
-        {TIPOS_AG.map((t) => (
-          <option key={t} value={t}>
-            {t}
+      <select className="pc-input" value={tipoId} onChange={(e) => onTipoId(e.target.value)} aria-label="Tipo de agendamento">
+        {tipoLegado !== null && <option value="">{tipoLegado} (atual)</option>}
+        {tipos.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.nome} · {durLabel(t.duracaoMin)}
           </option>
         ))}
       </select>
+      <button
+        type="button"
+        onClick={onEditTipos}
+        className="inline-flex items-center gap-1 self-start rounded-md border-0 bg-transparent p-0 text-[11.5px] text-light-accent-300 hover:underline"
+      >
+        <PencilSimple size={11} /> Editar tipos
+      </button>
+      <div className="flex items-center gap-2">
+        <label className="flex-none text-[11.5px] text-light-neutral-500" htmlFor="ag-dur">
+          Duração
+        </label>
+        <select id="ag-dur" className="pc-input" value={duracao} onChange={(e) => onDuracao(Number(e.target.value))}>
+          {durs.map((d) => (
+            <option key={d} value={d}>
+              {durLabel(d)}
+            </option>
+          ))}
+        </select>
+      </div>
+      {editing && (
+        <input
+          type="date"
+          className="pc-input"
+          value={date}
+          onChange={(e) => e.target.value && onDate(e.target.value)}
+          aria-label="Dia do agendamento"
+        />
+      )}
       <div className="flex items-center gap-2 text-[11.5px] text-light-neutral-500">
         Horários livres · {diaCurto}
         {loadingFree && <Spinner size={12} />}
@@ -209,8 +291,14 @@ export function NewBooking({
         )}
       </div>
       <button type="button" onClick={onSubmit} disabled={saving} className="pc-btn pc-btn-primary mt-[5.6px] w-full">
-        {saving ? <Spinner size={14} /> : <Check size={14} />} {hora ? `Agendar ${diaCurto}, ${hora}` : 'Escolha um horário'}
+        {saving ? <Spinner size={14} /> : <Check size={14} />}{' '}
+        {editing ? 'Salvar alterações' : hora ? `Agendar ${diaCurto}, ${hora}` : 'Escolha um horário'}
       </button>
+      {editing && (
+        <button type="button" onClick={onCancelEdit} disabled={saving} className="pc-btn pc-btn-secondary w-full">
+          Cancelar
+        </button>
+      )}
     </div>
   )
 }

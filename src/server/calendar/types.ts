@@ -19,6 +19,8 @@ export interface EventDto {
   tipo: string
   origem: EventOrigem
   contactId: string | null
+  /** Tipo de atendimento escolhido (o texto `tipo` guarda o nome na hora do agendamento). */
+  serviceTypeId?: string | null
   /** Nome do contato; null = "Cliente sem nome". */
   cliente: string | null
   /** true se o evento existe no Google Agenda (googleEventId preenchido). */
@@ -27,7 +29,7 @@ export interface EventDto {
   somenteLeitura?: boolean
   /** true = evento de dia inteiro (inicio/fim à meia-noite de São Paulo; fim exclusivo). */
   diaInteiro?: boolean
-  /** Cor da agenda do Google (backgroundColor), quando o evento vem dela. */
+  /** Cor da agenda do Google (backgroundColor) ou, em eventos manuais, a cor do tipo de atendimento. */
   cor?: string | null
   /** Nome da agenda do Google de onde o evento foi lido. */
   agenda?: string | null
@@ -111,3 +113,20 @@ export interface ApiErrorBody {
 }
 
 export const MSG_CONFLITO = 'Já existe um compromisso nesse horário.'
+
+/** Tipo de atendimento do negócio (GET/POST/PATCH /api/service-types). */
+export interface ServiceTypeDto {
+  id: string
+  nome: string
+  duracaoMin: number
+  /** Cor "#rrggbb" ou null. */
+  cor: string | null
+  ordem: number
+}
+
+/** GET /api/service-types */
+export interface ServiceTypeListResponse {
+  tipos: ServiceTypeDto[]
+}
+
+export const MSG_ULTIMO_TIPO = 'Mantenha ao menos um tipo de atendimento ativo.'

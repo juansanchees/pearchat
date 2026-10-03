@@ -21,7 +21,7 @@ export type ListaId = 'todos' | 'clientes' | 'aniv' | 'frios'
 export type DispState = { lista: ListaId; msg: string; quando: 'Agora' | 'Agendar'; intervalo: string; data: string }
 export const DISP_INICIAL: DispState = {
   lista: 'clientes',
-  msg: 'Oi, {primeiro_nome}! Neste fim de semana o bolo de pote de ninho com morango sai por R$ 8. Quer garantir o seu?',
+  msg: 'Oi, {primeiro_nome}! Temos novidades esta semana. Quer saber mais?',
   quando: 'Agora',
   intervalo: '15–30 s',
   data: '',
@@ -49,9 +49,9 @@ export const FU_INICIAL = {
   espera: '24 h',
   tentativas: '2',
   msgs: [
-    'Oi, {primeiro_nome}! Conseguiu ver minha última mensagem? Fico à disposição para fechar seu pedido.',
-    'Passando para saber se ainda tem interesse. Se preferir, posso te ligar.',
-    'Último lembrete: ainda dá tempo de encomendar para esta semana.',
+    'Oi, {primeiro_nome}! Conseguiu ver minha última mensagem? Fico à disposição para o que precisar.',
+    'Oi, {primeiro_nome}! Ainda posso ajudar com o que você procurava? Se preferir, é só me chamar por aqui.',
+    'Oi, {primeiro_nome}! Vou encerrar por aqui para não incomodar. Quando quiser retomar, é só mandar uma mensagem.',
   ],
 }
 export const FU_PARAR_OPCOES = ['Cliente respondeu', 'Pedido fechado', 'Cliente pediu para parar']

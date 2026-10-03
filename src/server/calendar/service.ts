@@ -14,7 +14,10 @@ import {
   type Lembrete,
 } from './types'
 
-export const eventInclude = { contact: { select: { id: true, nome: true, telefone: true } } } satisfies Prisma.EventInclude
+export const eventInclude = {
+  contact: { select: { id: true, nome: true, telefone: true } },
+  serviceType: { select: { cor: true } },
+} satisfies Prisma.EventInclude
 export type EventRow = Prisma.EventGetPayload<{ include: typeof eventInclude }>
 
 // Duração máxima de um evento (12 h): permite pré-filtrar por `inicio` nas consultas de sobreposição.
@@ -38,6 +41,8 @@ export function toEventDto(e: EventRow): EventDto {
     tipo: e.tipo,
     origem: e.origem,
     contactId: e.contactId,
+    serviceTypeId: e.serviceTypeId,
+    ...(e.origem === 'MANUAL' && e.serviceType?.cor ?{ cor: e.serviceType.cor } : {}),
     cliente: e.contact?.nome ?? null,
     noGoogle: e.googleEventId !== null,
   }

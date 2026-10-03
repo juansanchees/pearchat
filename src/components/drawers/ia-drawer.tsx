@@ -137,7 +137,7 @@ export function IaDrawer() {
         <div className="flex flex-col gap-2 rounded-md border border-dashed border-light-neutral-700 p-3">
           <input
             className="pc-input"
-            placeholder="Pergunta do cliente (ex: Vocês fazem bolo sem lactose?)"
+            placeholder="Pergunta do cliente (ex.: Qual o horário de atendimento?)"
             value={kbP}
             onChange={(e) => setKbP(e.target.value)}
           />
