@@ -1,0 +1,17 @@
+{
+    email j.dslsanches@gmail.com
+}
+
+pearchat.online {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+    reverse_proxy app:3000
+}
+
+www.pearchat.online {
+    redir https://pearchat.online{uri} permanent
+}

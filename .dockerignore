@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env*
+deploy/.env*
+docs
+*.log
+.claude-dev.log
+*.tsbuildinfo
+next-env.d.ts
+Dockerfile
+.dockerignore
+deploy/Caddyfile
+deploy/zapfloo-*
+deploy/last-*

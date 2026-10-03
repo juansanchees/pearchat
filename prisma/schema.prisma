@@ -1,0 +1,465 @@
+// Schema do PearChat. Multi-tenant por workspaceId.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Provider {
+  OFICIAL
+  RAPIDA
+}
+
+enum ConnectionStatus {
+  DESCONECTADO
+  AGUARDANDO_QR
+  CONECTANDO
+  CONECTADO
+  ERRO
+}
+
+// null = ninguem atendeu ainda
+enum ConversationMode {
+  IA
+  HUMANO
+}
+
+enum MessageAuthor {
+  CLIENTE
+  USER
+  IA
+}
+
+enum MessageDirection {
+  IN
+  OUT
+}
+
+enum MessageStatus {
+  PENDENTE
+  ENVIADA
+  ENTREGUE
+  LIDA
+  FALHOU
+}
+
+enum EventOrigin {
+  IA
+  GOOGLE
+  MANUAL
+}
+
+enum TemplateCategory {
+  MARKETING
+  UTILIDADE
+}
+
+enum TemplateStatus {
+  APROVADO
+  EM_ANALISE
+  REJEITADO
+}
+
+enum Plan {
+  ESSENCIAL
+  PRO
+  NEGOCIOS
+}
+
+model Workspace {
+  id                 String   @id @default(cuid())
+  nome               String
+  horarioAtendimento String?
+  plano              Plan     @default(PRO)
+  statusAssinatura   String   @default("ativa")
+  disparosAtivos     Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  users              User[]
+  whatsappSession    WhatsAppSession?
+  contacts           Contact[]
+  conversations      Conversation[]
+  aiAgent            AiAgent?
+  templates          Template[]
+  campaigns          Campaign[]
+  followUpRule       FollowUpRule?
+  calendarConnection CalendarConnection?
+  events             Event[]
+  invoices           Invoice[]
+  usageCounters      UsageCounter[]
+  aiJobs             AiJob[]
+}
+
+model User {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  nome          String
+  email         String    @unique
+  passwordHash  String?
+  fotoUrl       String?
+  notifs        String[]  @default([])
+  papel         String    @default("owner")
+  emailVerified DateTime? // compat Auth.js
+  image         String? // compat Auth.js
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  accounts  Account[]
+  sessions  Session[]
+
+  @@index([workspaceId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model WhatsAppSession {
+  id                String           @id @default(cuid())
+  workspaceId       String           @unique
+  provider          Provider?
+  numero            String?
+  status            ConnectionStatus @default(DESCONECTADO)
+  sessionData       String? // criptografado
+  metaPhoneNumberId String?          @unique
+  metaWabaId        String?
+  evolutionInstance String?
+  lastQr            String?
+  lastQrAt          DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Contact {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  waUserId     String? // BSUID do WhatsApp
+  telefone     String? // E.164
+  nome         String
+  email        String?
+  tags         String[]
+  endereco     String?
+  aniversario  DateTime?
+  notas        String?
+  optOut       Boolean   @default(false)
+  pedidos      Int       @default(0)
+  totalGasto   Decimal   @default(0)
+  clienteDesde DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  workspace    Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation Conversation?
+  events       Event[]
+  recipients   CampaignRecipient[]
+
+  @@unique([workspaceId, waUserId])
+  @@unique([workspaceId, telefone])
+  @@index([workspaceId])
+}
+
+model Conversation {
+  id            String            @id @default(cuid())
+  workspaceId   String
+  contactId     String            @unique
+  mode          ConversationMode?
+  unread        Int               @default(0)
+  lastMessageAt DateTime?
+  typing        Boolean           @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact   Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  jobs      FollowUpJob[]
+  aiJobs    AiJob[]
+
+  @@index([workspaceId, lastMessageAt])
+}
+
+model Message {
+  id                String           @id @default(cuid())
+  conversationId    String
+  direction         MessageDirection
+  author            MessageAuthor
+  body              String
+  mediaUrl          String?
+  status            MessageStatus    @default(PENDENTE)
+  providerMessageId String?
+  createdAt         DateTime         @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model AiAgent {
+  id           String   @id @default(cuid())
+  workspaceId  String   @unique
+  enabled      Boolean  @default(false)
+  nome         String   @default("Luna")
+  tom          String   @default("amigavel")
+  prompt       String   @default("")
+  horario      String   @default("sempre")
+  handoffRules String[]
+  canSchedule  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledge KnowledgeItem[]
+}
+
+model KnowledgeItem {
+  id        String   @id @default(cuid())
+  agentId   String
+  pergunta  String
+  resposta  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agent AiAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+}
+
+model Template {
+  id          String           @id @default(cuid())
+  workspaceId String
+  name        String
+  category    TemplateCategory
+  status      TemplateStatus
+  body        String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
+}
+
+model Campaign {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  lista          String
+  mensagem       String
+  templateId     String?
+  scheduledAt    DateTime?
+  intervaloMin   Int
+  intervaloMax   Int
+  intervaloFaixa String?
+  status         String
+  total          Int
+  enviadas       Int       @default(0)
+  respostas      Int       @default(0)
+  pausedAt       DateTime?
+  nextSendAt     DateTime? // motor de disparos: não enviar antes deste instante
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  workspace  Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  recipients CampaignRecipient[]
+
+  @@index([workspaceId])
+}
+
+// Fila de envio de uma campanha. O worker de disparos (próxima etapa) consome os "pendente".
+model CampaignRecipient {
+  id         String    @id @default(cuid())
+  campaignId String
+  contactId  String
+  status     String    @default("pendente")
+  sentAt     DateTime?
+  error      String?
+  repliedAt  DateTime? // cliente respondeu ao disparo (contado em Campaign.respostas)
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
+}
+
+model FollowUpRule {
+  id             String   @id @default(cuid())
+  workspaceId    String   @unique
+  enabled        Boolean  @default(false)
+  esperaHoras    Int      @default(6)
+  tentativas     Int      @default(2)
+  mensagens      String[]
+  stopConditions String[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model FollowUpJob {
+  id             String   @id @default(cuid())
+  conversationId String
+  tentativa      Int
+  runAt          DateTime
+  status         String // pendente | executando | enviado | erro | cancelado
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAt])
+  @@index([conversationId, status])
+}
+
+model CalendarConnection {
+  id               String   @id @default(cuid())
+  workspaceId      String   @unique
+  provider         String   @default("google")
+  email            String
+  tokens           String? // criptografado
+  calendarios      Json?
+  destinoId        String?
+  iaPodeAgendar    Boolean  @default(false)
+  duracaoPadraoMin Int      @default(60)
+  lembretes        String[]
+  // Sincronização com o Google: syncToken por agenda ({ [calendarId]: token }), última leitura
+  // bem-sucedida (exibida na tela), última tentativa do agendador e sinal de acesso revogado.
+  syncTokens        Json?
+  ultimaSyncEm      DateTime?
+  syncTentadaEm     DateTime?
+  precisaReconectar Boolean   @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+// Nonce de uso único do state do OAuth do Google (validade de 10 min).
+model CalendarOAuthState {
+  id          String   @id
+  workspaceId String
+  expiraEm    DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([expiraEm])
+}
+
+model Event {
+  id            String      @id @default(cuid())
+  workspaceId   String
+  contactId     String?
+  inicio        DateTime
+  duracaoMin    Int
+  titulo        String
+  tipo          String
+  origem        EventOrigin
+  googleEventId String?
+  // Agenda do Google onde o evento foi criado (pode diferir do destino atual).
+  googleCalendarId String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact   Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  reminders EventReminder[]
+
+  @@index([workspaceId, inicio])
+}
+
+model Invoice {
+  id          String   @id @default(cuid())
+  workspaceId String
+  valor       Decimal
+  status      String
+  pdfUrl      String?
+  emitidaEm   DateTime
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model UsageCounter {
+  id                   String   @id @default(cuid())
+  workspaceId          String
+  mes                  String // YYYY-MM
+  mensagensAtendimento Int      @default(0)
+  respostasIa          Int      @default(0)
+  disparos             Int      @default(0)
+  updatedAt            DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, mes])
+}
+
+// Resposta da IA agendada (debounce de 4 s). O agendador do motor consome os "pendente".
+model AiJob {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  conversationId String
+  status         String // pendente | executando | feito | erro
+  runAt          DateTime
+  attempts       Int      @default(0)
+  error          String?
+  createdAt      DateTime @default(now())
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAt])
+  @@index([conversationId, status])
+}
+
+// Lembrete de agenda já enviado (uma vez por evento e tipo).
+model EventReminder {
+  id      String   @id @default(cuid())
+  eventId String
+  kind    String // 24h | 2h | 30min
+  sentAt  DateTime @default(now())
+  result  String? // enviado | pulado:<motivo>
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, kind])
+}

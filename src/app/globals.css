@@ -1,0 +1,148 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Tokens PearChat (espelham src/lib/tokens.ts) */
+    --dark-bg: #14170f;
+    --dark-surface: #1d2117;
+    --dark-text: #eef0e8;
+    --dark-divider: #2e3426;
+    --dark-neutral-100: #eef0e8;
+    --dark-neutral-200: #dde1d4;
+    --dark-neutral-300: #c6ccbb;
+    --dark-neutral-400: #a9b09d;
+    --dark-neutral-500: #8a927d;
+    --dark-neutral-600: #69725d;
+    --dark-neutral-700: #4a5240;
+    --dark-neutral-800: #333a2a;
+    --dark-neutral-900: #262b1f;
+    --dark-accent-100: #eff5d0;
+    --dark-accent-200: #e0eba6;
+    --dark-accent-300: #cfe07e;
+    --dark-accent-400: #bcd35a;
+    --dark-accent-500: #a8c23a;
+    --dark-accent-600: #6a8226;
+    --dark-accent-700: #41511e;
+    --dark-accent-800: #2c3617;
+    --dark-accent-900: #1f2512;
+    --light-bg: #f6f7ef;
+    --light-surface: #ffffff;
+    --light-text: #1d2117;
+    --light-divider: #e3e7d6;
+    --light-neutral-100: #1d2117;
+    --light-neutral-200: #2c3025;
+    --light-neutral-300: #3e4335;
+    --light-neutral-400: #565c4a;
+    --light-neutral-500: #727a63;
+    --light-neutral-600: #a3aa92;
+    --light-neutral-700: #c9cfb8;
+    --light-neutral-800: #e2e6d5;
+    --light-neutral-900: #eff1e6;
+    --light-accent-100: #3a4711;
+    --light-accent-200: #4f6118;
+    --light-accent-300: #667c1f;
+    --light-accent-400: #86a028;
+    --light-accent-500: #a8c23a;
+    --light-accent-600: #b3ca52;
+    --light-accent-700: #d1e092;
+    --light-accent-800: #e6efc3;
+    --light-accent-900: #f3f7e2;
+    --google: #6bb39a;
+    --manual: #d9a35b;
+    --amber-bg: #fbf5e8;
+    --amber-border: #ecd9b3;
+    --amber-text: #6b5427;
+
+    /* shadcn/ui mapeado para o tema claro (valores HSL sem hsl()) */
+    --background: 67 33% 95%;
+    --foreground: 84 18% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 84 18% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 84 18% 11%;
+    --primary: 71 54% 49%;
+    --primary-foreground: 84 18% 11%;
+    --secondary: 71 28% 92%;
+    --secondary-foreground: 84 18% 11%;
+    --muted: 71 28% 92%;
+    --muted-foreground: 81 10% 43%;
+    --accent: 71 28% 92%;
+    --accent-foreground: 84 18% 11%;
+    --destructive: 6 63% 46%;
+    --border: 74 26% 87%;
+    --input: 74 26% 87%;
+    --ring: 71 54% 49%;
+    --chart-1: 71 54% 49%;
+    --chart-2: 160 30% 55%;
+    --chart-3: 35 60% 61%;
+    --chart-4: 81 10% 43%;
+    --chart-5: 84 18% 11%;
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-light-bg font-sans text-light-text antialiased;
+    font-weight: 400;
+  }
+  h1, h2, h3, h4 {
+    font-weight: 500;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* ===== PearChat shell (agente A) ===== */
+@keyframes zfFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+:focus { outline: none; }
+:focus-visible { outline: 2px solid #a8c23a; outline-offset: 2px; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #c9cfb8; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@layer components {
+  .pc-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; font-weight: 500; font-size: 14px; line-height: 1.2; color: var(--light-text); background: transparent; border: 1px solid transparent; padding: 5.6px 10.08px; border-radius: 8px; }
+  .pc-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .pc-btn-primary { color: #a8c23a; border-color: #a8c23a; }
+  .pc-btn-primary:hover { background: color-mix(in srgb, #a8c23a 12%, transparent); }
+  .pc-btn-primary:active { background: color-mix(in srgb, #a8c23a 22%, transparent); }
+  .pc-btn-secondary { border-color: var(--light-divider); }
+  .pc-btn-secondary:hover { background: color-mix(in srgb, var(--light-text) 7%, transparent); }
+  .pc-btn-ghost { color: #a8c23a; padding-inline: 2.8px; }
+  .pc-btn-ghost:hover { background: color-mix(in srgb, #a8c23a 10%, transparent); }
+  .pc-btn-icon { width: 36px; height: 36px; padding: 0; }
+  .pc-label { display: block; font-size: 12px; margin-bottom: 5px; color: color-mix(in srgb, var(--light-text) 70%, transparent); }
+  .pc-input { width: 100%; min-height: 36px; padding: 6px 10px; font: inherit; font-size: 14px; color: var(--light-text); caret-color: #a8c23a; background: var(--light-surface); border: 1px solid var(--light-divider); border-radius: 8px; }
+  .pc-input:hover { border-color: color-mix(in srgb, var(--light-text) 45%, transparent); }
+  .pc-input:focus-visible { border-color: #a8c23a; outline-offset: 0; }
+  textarea.pc-input { min-height: 90px; resize: vertical; }
+  .pc-seg { display: flex; overflow: hidden; border: 1px solid var(--light-divider); border-radius: 8px; }
+  .pc-seg-opt { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; border: none; background: transparent; color: var(--light-neutral-400); }
+  .pc-seg-opt[aria-pressed="true"] { background: var(--light-accent-800); color: var(--light-accent-200); }
+  .pc-seg-opt:focus-visible { outline-offset: -2px; }
+  .pc-section-label { font-weight: 500; font-size: 11px; line-height: 1; letter-spacing: .12em; text-transform: uppercase; color: var(--light-neutral-500); }
+  .pc-note { padding: 10px 12px; border-radius: 8px; background: var(--light-bg); border: 1px solid var(--light-divider); font-size: 12px; line-height: 1.45; color: var(--light-neutral-400); }
+}
+
+/* ===== Telas de acesso ===== */
+.pc-input[aria-invalid="true"] { border-color: #c9806b; }
+.pc-input[aria-invalid="true"]:focus-visible { border-color: #c9806b; }
+.pc-code-box:focus { border-color: #86a028; box-shadow: 0 0 0 3px #f3f7e2; outline: none; }
+.pc-code-box:focus-visible { outline: none; }
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-pc"] { animation: none !important; }
+  .pc-reduce-motion, .pc-reduce-motion * { transition: none !important; }
+}

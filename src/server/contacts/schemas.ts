@@ -1,0 +1,80 @@
+import { z } from 'zod'
+import { normalizePhone } from './phone'
+import { normalizeTags, parseFilterTag } from './tags'
+
+export const DEFAULT_TAKE = 30
+export const MAX_TAKE = 100
+
+export const listQuerySchema = z.object({
+  q: z.string().trim().max(100).default(''),
+  tag: z
+    .string()
+    .trim()
+    .max(20)
+    .default('')
+    .transform((v, ctx) => {
+      if (!v) return null
+      const tag = parseFilterTag(v)
+      if (!tag) ctx.addIssue({ code: 'custom', message: 'Filtro de etiqueta inválido' })
+      return tag
+    }),
+  cursor: z.string().trim().max(60).optional(),
+  take: z.coerce.number().int().min(1).max(MAX_TAKE).default(DEFAULT_TAKE),
+})
+
+const name = z.string().trim().min(1, 'Falta o nome').max(120)
+const phone = z
+  .string()
+  .trim()
+  .transform((v, ctx) => {
+    const n = normalizePhone(v)
+    if (!n) ctx.addIssue({ code: 'custom', message: 'Telefone inválido. Use DDD + número' })
+    return n ?? ''
+  })
+const email = z
+  .union([z.literal(''), z.string().trim().email('E-mail inválido').max(160)])
+  .nullable()
+  .transform((v) => (v ? v : null))
+const tags = z.array(z.string().max(60)).max(30).transform(normalizeTags)
+const address = z
+  .string()
+  .trim()
+  .max(300)
+  .nullable()
+  .transform((v) => (v ? v : null))
+const birthday = z
+  .string()
+  .trim()
+  .nullable()
+  .transform((v, ctx) => {
+    if (!v) return null
+    const d = new Date(v)
+    if (Number.isNaN(d.getTime())) ctx.addIssue({ code: 'custom', message: 'Aniversário inválido' })
+    return d
+  })
+const notes = z.string().max(2000)
+
+export const createSchema = z.object({
+  name,
+  phone: phone.refine((v) => v !== '', 'Informe o WhatsApp do contato'),
+  email: email.optional(),
+  tags: tags.optional(),
+  address: address.optional(),
+  birthday: birthday.optional(),
+  notes: notes.optional(),
+})
+
+export const patchSchema = z
+  .object({
+    name: name.optional(),
+    email: email.optional(),
+    tags: tags.optional(),
+    address: address.optional(),
+    birthday: birthday.optional(),
+    notes: notes.optional(),
+    optOut: z.boolean().optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), 'Nada para atualizar')
+
+export type CreateInput = z.infer<typeof createSchema>
+export type PatchInput = z.infer<typeof patchSchema>

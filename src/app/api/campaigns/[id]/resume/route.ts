@@ -1,0 +1,15 @@
+import { NextResponse } from 'next/server'
+import { CampaignError, resumeCampaign } from '@/server/campaigns/service'
+import { apiSession, fail, notFound, unauthorized } from '@/server/settings/http'
+
+export async function POST(_req: Request, { params }: { params: { id: string } }) {
+  const s = await apiSession()
+  if (!s) return unauthorized()
+  try {
+    const c = await resumeCampaign(s.workspaceId, params.id)
+    return c ? NextResponse.json(c) : notFound('Campanha')
+  } catch (e) {
+    if (e instanceof CampaignError) return fail(e.message, e.status)
+    throw e
+  }
+}
