@@ -9,6 +9,7 @@ import type {
   BillingDTO,
   CampaignDTO,
   CampaignListDTO,
+  DisparosSettingsDTO,
   DrawerKey,
   FollowUpDTO,
   FollowUpQueueItemDTO,
@@ -62,6 +63,8 @@ export type DrawerData = {
   fuParar: string[]
   setFuParar: Dispatch<SetStateAction<string[]>>
   fuFila: FollowUpQueueItemDTO[]
+  silencio: DisparosSettingsDTO
+  setSilencio: Dispatch<SetStateAction<DisparosSettingsDTO>>
   horarioAtendimento: string
   setHorarioAtendimento: Dispatch<SetStateAction<string>>
   notifs: string[]
@@ -99,6 +102,7 @@ export function DrawerDataProvider({
   const [fu, setFu] = useState<Fu>(FU_INICIAL)
   const [fuParar, setFuParar] = useState(FU_PARAR_INICIAL)
   const [fuFila, setFuFila] = useState<FollowUpQueueItemDTO[]>([])
+  const [silencio, setSilencio] = useState<DisparosSettingsDTO>({ silencioAtivo: true, silencioInicio: 21, silencioFim: 8 })
   const [horarioAtendimento, setHorarioAtendimento] = useState(initial.horarioAtendimento ?? HORARIO_ATENDIMENTO_PADRAO)
   const [notifs, setNotifs] = useState(NOTIF_INICIAL)
   const [plano, setPlano] = useState<PlanoNome>(initial.plano)
@@ -127,11 +131,13 @@ export function DrawerDataProvider({
           setFuFila(q)
           setFuQueueCount(q.length)
         } else if (key === 'disparos') {
-          const [l, c, t] = await Promise.all([
+          const [l, c, t, sil] = await Promise.all([
             api<CampaignListDTO[]>('/api/campaigns/lists'),
             api<CampaignDTO[]>('/api/campaigns'),
             api<TemplateDTO[]>('/api/templates'),
+            api<DisparosSettingsDTO>('/api/campaigns/settings'),
           ])
+          setSilencio(sil)
           const tpls = t.map(toTemplate)
           setListas(l)
           setCampanhas(c.map(toCampanha))
@@ -161,13 +167,13 @@ export function DrawerDataProvider({
   const value = useMemo<DrawerData>(
     () => ({
       agente, setAgente, kb, setKb, handoff, setHandoff, disp, setDisp, listas, campanhas, setCampanhas,
-      templates, setTemplates, tplSel, setTplSel, fu, setFu, fuParar, setFuParar, fuFila,
+      templates, setTemplates, tplSel, setTplSel, fu, setFu, fuParar, setFuParar, fuFila, silencio, setSilencio,
       horarioAtendimento, setHorarioAtendimento, notifs, setNotifs, plano, setPlano, billing,
       contatosCount: initial.contatosCount,
       loadDrawer,
       failToast,
     }),
-    [agente, kb, handoff, disp, listas, campanhas, templates, tplSel, fu, fuParar, fuFila, horarioAtendimento, notifs, plano, billing, initial.contatosCount, loadDrawer, failToast],
+    [agente, kb, handoff, disp, listas, campanhas, templates, tplSel, fu, fuParar, fuFila, silencio, horarioAtendimento, notifs, plano, billing, initial.contatosCount, loadDrawer, failToast],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

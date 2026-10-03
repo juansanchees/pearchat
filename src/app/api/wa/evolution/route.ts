@@ -6,7 +6,7 @@ import { ingestInboundMessage, updateMessageStatus } from '@/server/messages/ing
 import { queueHistoryMessages } from '@/server/whatsapp/history-import'
 import { normalizeEvolutionEvent } from '@/server/whatsapp/normalize'
 import { getProvider } from '@/server/whatsapp'
-import { setStatus } from '@/server/whatsapp/session'
+import { disableAutomations, setStatus } from '@/server/whatsapp/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,7 +47,10 @@ export async function POST(req: Request) {
           await setStatus(workspaceId, 'conectado', { numero: numero ?? session.numero })
         } else if (event.status === 'desconectado') {
           // Enquanto espera a leitura do QR a Evolution também reporta "close": não derruba a tela do QR.
-          if (current === 'conectado' || current === 'conectando') await setStatus(workspaceId, 'desconectado')
+          if (current === 'conectado' || current === 'conectando') {
+            await setStatus(workspaceId, 'desconectado')
+            await disableAutomations(workspaceId)
+          }
         } else if (current !== 'aguardando_qr' && current !== 'conectado') {
           // "connecting" durante a espera do QR é ambíguo: mantém aguardando_qr.
           await setStatus(workspaceId, 'conectando')

@@ -1,7 +1,7 @@
 'use client'
 
 import { PaperPlaneRight, Paperclip } from '@phosphor-icons/react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 
 export function Composer({
@@ -12,12 +12,20 @@ export function Composer({
   onSend: (text: string) => Promise<boolean>
 }) {
   const [draft, setDraft] = useState('')
+  // Texto em envio: Enter repetido/duplo clique com o mesmo texto não dispara outro envio antes de o primeiro terminar.
+  const inFlight = useRef<string | null>(null)
 
   async function submit() {
     const text = draft.trim()
-    if (!text) return
+    if (!text || inFlight.current === text) return
+    inFlight.current = text
     setDraft('')
-    const ok = await onSend(text)
+    let ok = false
+    try {
+      ok = await onSend(text)
+    } finally {
+      inFlight.current = null
+    }
     // Rollback: devolve o texto ao campo se nada novo foi digitado.
     if (!ok) setDraft((cur) => (cur === '' ? text : cur))
   }
@@ -35,7 +43,7 @@ export function Composer({
         type="button"
         title="Anexar"
         aria-label="Anexar"
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md p-0 text-light-accent-500 hover:bg-[rgba(168,194,58,.10)]"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-md p-0 text-light-accent-500 hover:bg-[rgba(46,154,72,.10)]"
       >
         <Paperclip size={17} />
       </button>
@@ -51,7 +59,7 @@ export function Composer({
       <button
         type="button"
         onClick={() => void submit()}
-        className="inline-flex items-center justify-center gap-1.5 rounded-md border border-solid border-light-accent-500 px-3.5 py-2 text-sm font-medium leading-tight text-light-accent-500 hover:bg-[rgba(168,194,58,.12)] active:bg-[rgba(168,194,58,.22)]"
+        className="inline-flex items-center justify-center gap-1.5 rounded-md border border-solid border-light-accent-500 px-3.5 py-2 text-sm font-medium leading-tight text-light-accent-300 hover:bg-[rgba(46,154,72,.12)] active:bg-[rgba(46,154,72,.22)]"
       >
         <PaperPlaneRight size={16} />
         Enviar

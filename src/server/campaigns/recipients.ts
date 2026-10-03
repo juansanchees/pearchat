@@ -1,11 +1,15 @@
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { spParts } from '@/server/engine/util'
 import type { CampaignListDTO, CampaignListId } from '@/lib/types'
 
 export const LIST_IDS: CampaignListId[] = ['todos', 'clientes', 'aniv', 'frios']
 
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 export const FRIOS_DIAS = 30
+
+/** Mês (0-11) de São Paulo: o servidor pode rodar em UTC e virar o mês 3 h antes do cliente. */
+const spMonth = (d: Date): number => Number(spParts(d).ymd.slice(5, 7)) - 1
 
 /** Nome exibido de cada lista (aniversariantes seguem o mês corrente). */
 export function listName(id: string, now: Date = new Date()): string {
@@ -15,7 +19,7 @@ export function listName(id: string, now: Date = new Date()): string {
     case 'clientes':
       return 'Clientes que já compraram'
     case 'aniv':
-      return `Aniversariantes de ${MESES[now.getMonth()]}`
+      return `Aniversariantes de ${MESES[spMonth(now)]}`
     case 'frios':
       return 'Sem conversa há 30 dias'
     default:
@@ -44,7 +48,8 @@ export function recipientWhere(workspaceId: string, lista: CampaignListId, now: 
     case 'todos':
       return base
     case 'clientes':
-      return { ...base, tags: { has: 'Cliente' } }
+      // "Cliente" = etiqueta Cliente ou pelo menos um pedido fechado.
+      return { AND: [base, { OR: [{ tags: { has: 'Cliente' } }, { pedidos: { gt: 0 } }] }] }
     case 'aniv':
       return { ...base, aniversario: { not: null } }
     case 'frios': {
@@ -55,9 +60,9 @@ export function recipientWhere(workspaceId: string, lista: CampaignListId, now: 
           base,
           {
             OR: [
-              { conversation: { is: { lastMessageAt: { lt: corte } } } },
-              { conversation: { is: { lastMessageAt: null } }, createdAt: { lt: corte } },
-              { conversation: null, createdAt: { lt: corte } },
+              { conversation: { is: { lastMessageAt: { lte: corte } } } },
+              { conversation: { is: { lastMessageAt: null } }, createdAt: { lte: corte } },
+              { conversation: null, createdAt: { lte: corte } },
             ],
           },
         ],
@@ -75,7 +80,7 @@ export async function resolveRecipientIds(workspaceId: string, lista: CampaignLi
   if (lista === 'aniv') {
     // O ano do aniversário é placeholder (2000, UTC): só o mês importa.
     const rows = await db.contact.findMany({ where, select: { id: true, aniversario: true } })
-    return rows.filter((r) => r.aniversario && r.aniversario.getUTCMonth() === now.getMonth()).map((r) => r.id)
+    return rows.filter((r) => r.aniversario && r.aniversario.getUTCMonth() === spMonth(now)).map((r) => r.id)
   }
   const rows = await db.contact.findMany({ where, select: { id: true } })
   return rows.map((r) => r.id)

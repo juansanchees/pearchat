@@ -1,9 +1,10 @@
 'use client'
 
 import { ArrowClockwise, Sparkle, Warning } from '@phosphor-icons/react'
-import { useLayoutEffect, useRef } from 'react'
+import { Fragment, useLayoutEffect, useRef } from 'react'
 import { Spinner } from '@/components/pear'
 import type { MessageDTO } from '@/lib/types'
+import { dayKey, formatDayLabel } from './format'
 import { MessageBubble } from './message-bubble'
 
 const NEAR_BOTTOM_PX = 80
@@ -83,7 +84,7 @@ export function MessageThread({
       onScroll={onScroll}
       className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-6 py-[22px]"
       style={{
-        background: 'radial-gradient(700px 360px at 60% 0%, #f3f7e2, transparent 70%), #f6f7ef',
+        background: 'radial-gradient(700px 360px at 60% 0%, #f0faea, transparent 70%), #f6f7ef',
       }}
     >
       {error && !loading && messages.length === 0 ? (
@@ -110,11 +111,15 @@ export function MessageThread({
               {loadingOlder ? 'Carregando…' : 'Carregar mensagens anteriores'}
             </button>
           ) : null}
-          <span className="self-center rounded-pill border border-solid border-light-divider bg-light-surface px-2.5 py-1 text-[11px] text-light-neutral-500">
-            Hoje
-          </span>
-          {messages.map((m) => (
-            <MessageBubble key={m.id} message={m} agentName={agentName} />
+          {messages.map((m, i) => (
+            <Fragment key={m.id}>
+              {i === 0 || dayKey(messages[i - 1].createdAt) !== dayKey(m.createdAt) ? (
+                <span className="self-center rounded-pill border border-solid border-light-divider bg-light-surface px-2.5 py-1 text-[11px] text-light-neutral-500">
+                  {formatDayLabel(m.createdAt)}
+                </span>
+              ) : null}
+              <MessageBubble message={m} agentName={agentName} />
+            </Fragment>
           ))}
           {typing ? (
             <div className="flex justify-end">

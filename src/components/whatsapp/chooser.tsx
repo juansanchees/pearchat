@@ -32,7 +32,7 @@ function Card({
       onClick={onClick}
       className={cn(
         'flex min-w-0 flex-[1_1_320px] cursor-pointer flex-col gap-3.5 rounded-lg border p-[22px] text-left text-light-text transition-[border-color,box-shadow] duration-200 hover:border-light-accent-500 hover:shadow-[0_10px_30px_rgba(29,33,23,.08)]',
-        recommended ? 'border-light-accent-600 bg-[color-mix(in_srgb,#a8c23a_7%,#ffffff)]' : 'border-light-divider bg-light-surface',
+        recommended ? 'border-light-accent-600 bg-[color-mix(in_srgb,#2e9a48_7%,#ffffff)]' : 'border-light-divider bg-light-surface',
       )}
     >
       <div className="flex w-full items-center gap-3">

@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { sendPasswordResetEmail } from '@/server/mail/send-password-reset'
+import { sendMail } from '@/server/mail/send'
+import { passwordResetEmail } from '@/server/mail/templates'
 import { RESET_TTL_MS, clientIp, hashToken, newToken, resetIdentifier, tooMany } from '../_lib/shared'
 
 export const runtime = 'nodejs'
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   const base = process.env.NEXT_PUBLIC_APP_URL || process.env.AUTH_URL || req.nextUrl.origin
   const link = `${base.replace(/\/$/, '')}/redefinir-senha?token=${encodeURIComponent(token)}`
-  void sendPasswordResetEmail({ to: email, link })
+  void sendMail({ to: email, ...passwordResetEmail({ link }) })
 
   return NextResponse.json(GENERIC)
 }

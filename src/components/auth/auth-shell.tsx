@@ -1,35 +1,12 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { CalendarDots, Leaf, LockSimple, PaperPlaneTilt, Sparkle } from '@phosphor-icons/react/dist/ssr'
-
-export function LogoMark({ size = 28, glow = false }: { size?: number; glow?: boolean }) {
-  return (
-    <div
-      aria-hidden="true"
-      className={`grid place-items-center rounded-lg border ${glow ? 'border-dark-accent-600 bg-dark-accent-900 shadow-[0_0_18px_#2c3617]' : 'border-light-accent-600 bg-light-accent-900'}`}
-      style={{ width: size, height: size }}
-    >
-      <Leaf size={size > 28 ? 16 : 15} weight="fill" className={glow ? 'text-dark-accent-300' : 'text-light-accent-300'} />
-    </div>
-  )
-}
-
-export function Wordmark({ dark = false, size = 18 }: { dark?: boolean; size?: number }) {
-  return (
-    <div className="font-medium leading-none" style={{ fontSize: size }}>
-      <span className="sr-only">PearChat</span>
-      <span aria-hidden="true" className={dark ? 'tracking-[-0.01em]' : ''}>
-        Pear<span className={dark ? 'text-dark-accent-400' : 'text-light-accent-400'}>Chat</span>
-      </span>
-    </div>
-  )
-}
+import { CalendarDots, LockSimple, PaperPlaneTilt, Sparkle } from '@phosphor-icons/react/dist/ssr'
+import { Logo } from '@/components/brand/logo'
 
 export function Brand({ dark = false }: { dark?: boolean }) {
   return (
-    <Link href="/login" className="flex items-center gap-[9px] rounded-md" aria-label="PearChat">
-      <LogoMark size={dark ? 30 : 28} glow={dark} />
-      <Wordmark dark={dark} size={dark ? 19 : 18} />
+    <Link href="/login" className="-ml-1 flex items-center rounded-md" aria-label="PearChat">
+      <Logo theme={dark ? 'dark' : 'light'} height={dark ? 44 : 40} priority />
     </Link>
   )
 }
@@ -46,7 +23,7 @@ function BrandPanel() {
       className="relative hidden max-w-[600px] min-w-0 flex-[1_1_380px] flex-col gap-9 overflow-hidden bg-dark-bg px-10 py-8 text-dark-text min-[800px]:flex"
       style={{
         background:
-          'radial-gradient(700px 420px at 10% 0%, #2c3617, transparent 70%), radial-gradient(600px 400px at 100% 100%, #1f2512, transparent 70%), #14170f',
+          'radial-gradient(700px 420px at 10% 0%, #173322, transparent 70%), radial-gradient(600px 400px at 100% 100%, #12251a, transparent 70%), #14170f',
       }}
     >
       <Brand dark />

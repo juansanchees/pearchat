@@ -1,7 +1,9 @@
+import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import type { AgentDTO, AgentHorario, AgentTestResultDTO, AgentTom, KnowledgeItemDTO } from '@/lib/types'
-import { detectHandoff, generateReply, hasLlmKey, simulateReply } from './llm'
+import { generateReply, hasLlmKey, simulateReply } from './llm'
+import { detectHandoffRule, formatAgora, genericHandoffMessage } from '@/server/engine/rules'
 import { serviceTypesForPrompt } from '@/server/calendar/service-types'
 import { buildSystemPrompt, HANDOFF_MARKER } from './prompt'
 
@@ -53,7 +55,15 @@ function toAgentDTO(a: { nome: string; tom: string; prompt: string; horario: str
 }
 
 async function ensureAgent(workspaceId: string) {
-  return db.aiAgent.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} })
+  try {
+    return await db.aiAgent.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} })
+  } catch (e) {
+    // Requisições simultâneas numa conta nova: outra criou o agente entre a busca e a criação (P2002).
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      return db.aiAgent.findUniqueOrThrow({ where: { workspaceId } })
+    }
+    throw e
+  }
 }
 
 export async function getAgent(workspaceId: string): Promise<AgentDTO> {
@@ -122,7 +132,7 @@ export async function testAgent(
   const [agent, kb, ws] = await Promise.all([
     getAgent(workspaceId),
     listKnowledge(workspaceId),
-    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true } }),
+    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true, horarioAtendimento: true } }),
   ])
   const nome = input.nome ?? agent.nome
   const tom = input.tom ?? agent.tom
@@ -130,18 +140,27 @@ export async function testAgent(
   const handoffRules = input.handoffRules ?? agent.handoffRules
   const responsavel = responsavelNome.trim().split(/\s+/)[0] || 'o responsável'
 
-  const handoff = detectHandoff(input.mensagem, handoffRules, responsavel)
-  if (handoff) return { resposta: handoff, handoff: true, simulado: !hasLlmKey() }
+  // Mesma detecção do motor real (rules.ts): desconto, reclamação, atendente e valor acima de R$ N.
+  const hit = detectHandoffRule(input.mensagem, handoffRules)
+  if (hit) return { resposta: hit.mensagem(responsavel), handoff: true, simulado: !hasLlmKey() }
 
   const servicos = await serviceTypesForPrompt(workspaceId)
-  const system = buildSystemPrompt({ empresa: ws.nome, agente: { nome, tom, prompt }, kb, handoffRules, servicos })
+  const system = buildSystemPrompt({
+    empresa: ws.nome,
+    agente: { nome, tom, prompt },
+    kb,
+    handoffRules,
+    servicos,
+    horarioAtendimento: ws.horarioAtendimento,
+    agora: formatAgora(new Date()),
+  })
   const r = await generateReply({
     system,
     messages: [{ role: 'user', content: input.mensagem }],
     simulate: () => simulateReply(input.mensagem, tom, kb),
   })
   if (r.texto.includes(HANDOFF_MARKER)) {
-    return { resposta: `Claro, já estou passando sua conversa para ${responsavel}.`, handoff: true, simulado: r.simulado }
+    return { resposta: genericHandoffMessage(responsavel), handoff: true, simulado: r.simulado }
   }
   return { resposta: r.texto, handoff: false, simulado: r.simulado }
 }

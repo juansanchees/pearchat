@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { statusToKind } from '@/lib/mappers'
 import { getApiSession } from '@/server/whatsapp/auth'
 import { getProvider } from '@/server/whatsapp'
-import { getSession, setStatus, toStatusDTO } from '@/server/whatsapp/session'
+import { disableAutomations, getSession, setStatus, toStatusDTO } from '@/server/whatsapp/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,6 +26,7 @@ export async function GET() {
         row = await setStatus(workspaceId, 'conectado', { numero })
       } else if (real === 'desconectado' && current === 'conectado') {
         row = await setStatus(workspaceId, 'desconectado')
+        await disableAutomations(workspaceId)
       } else if (current === 'aguardando_qr') {
         // Na Evolution "connecting" também aparece enquanto espera a leitura: continua mostrando o QR.
         const stale = !row.lastQrAt || Date.now() - row.lastQrAt.getTime() > QR_TTL_MS

@@ -12,13 +12,13 @@ const FILTERS: { key: ConversationFilter; label: string }[] = [
   { key: 'com_ia', label: 'Com IA' },
 ]
 
-// Clientes fictícios (spec 05) para simular mensagens com WA_MOCK.
+// Clientes fictícios (só com WA_MOCK) com mensagens genéricas: servem a qualquer segmento, não só à conta de demonstração.
 const MOCK_CLIENTS = [
-  { nome: 'Ana Paula Ribeiro', telefone: '+5511998124471', body: 'Oi! Vocês fazem bolo de pote para festa?' },
-  { nome: 'Carlos Menezes', telefone: '+5511982205567', body: 'Boa tarde. Qual o valor do bolo de 2 kg de ninho com morango?' },
-  { nome: 'Juliana Freitas', telefone: '+5511977442210', body: 'Vocês entregam no Tatuapé?' },
+  { nome: 'Ana Paula Ribeiro', telefone: '+5511998124471', body: 'Oi! Vocês podem me passar um orçamento?' },
+  { nome: 'Carlos Menezes', telefone: '+5511982205567', body: 'Boa tarde. Qual o valor do serviço e o prazo?' },
+  { nome: 'Juliana Freitas', telefone: '+5511977442210', body: 'Vocês atendem no sábado de manhã?' },
   { nome: 'Fernanda Lopes', telefone: '+5511966338812', body: 'Consigo pagar no Pix?' },
-  { nome: 'Beatriz Sousa', telefone: '+5511981107742', body: 'Oi! Vi o cardápio de vocês no Instagram.' },
+  { nome: 'Beatriz Sousa', telefone: '+5511981107742', body: 'Oi! Vi o perfil de vocês no Instagram.' },
 ]
 
 async function simulateInbound() {
@@ -33,6 +33,7 @@ async function simulateInbound() {
 export function ConversationList({
   items,
   total,
+  truncated,
   loading,
   error,
   onRetry,
@@ -48,6 +49,7 @@ export function ConversationList({
 }: {
   items: Item[]
   total: number
+  truncated: boolean
   loading: boolean
   error: boolean
   onRetry: () => void
@@ -167,16 +169,28 @@ export function ConversationList({
             ) : null}
           </div>
         ) : (
-          items.map((item) => (
-            <ConversationItem
-              key={item.id}
-              item={item}
-              active={item.id === activeId}
-              iaOn={iaOn}
-              agentName={agentName}
-              onSelect={onSelect}
-            />
-          ))
+          <>
+            {items.length === 0 ? (
+              <p className="px-6 py-10 text-center text-xs leading-relaxed text-light-neutral-500">
+                Nenhuma conversa encontrada{query.trim() ? ` para “${query.trim()}”` : ''}.
+              </p>
+            ) : null}
+            {items.map((item) => (
+              <ConversationItem
+                key={item.id}
+                item={item}
+                active={item.id === activeId}
+                iaOn={iaOn}
+                agentName={agentName}
+                onSelect={onSelect}
+              />
+            ))}
+            {truncated && !query.trim() ? (
+              <p className="border-0 border-t border-solid border-light-divider px-4 py-3 text-center text-[11px] leading-relaxed text-light-neutral-500">
+                Mostrando as 200 conversas mais recentes. Use a busca para achar as outras.
+              </p>
+            ) : null}
+          </>
         )}
       </div>
     </div>

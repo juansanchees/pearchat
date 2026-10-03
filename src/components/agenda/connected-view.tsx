@@ -238,7 +238,8 @@ export function ConnectedView({
         toast({
           icon: <CalendarCheck size={18} weight="fill" />,
           title: 'Agendamento criado',
-          text: `${nome || 'Cliente sem nome'} · ${diaCurto}, ${hora} · enviado ao Google Agenda`,
+          // Só afirma o envio quando houve sincronização de verdade (no modo de demonstração não há).
+          text: `${nome || 'Cliente sem nome'} · ${diaCurto}, ${hora}${r.googleSync === 'ok' ? ' · enviado ao Google Agenda' : ''}`,
         })
       }
       setCliente('')
@@ -267,7 +268,11 @@ export function ConnectedView({
           text: 'Apague o evento direto no Google Agenda',
         })
       } else {
-        toast({ icon: <Trash size={18} weight="fill" />, title: 'Agendamento excluído', text: 'Ele também sai do Google Agenda' })
+        toast({
+          icon: <Trash size={18} weight="fill" />,
+          title: 'Agendamento excluído',
+          text: r.googleSync === 'ok' ? 'Ele também sai do Google Agenda' : undefined,
+        })
       }
       if (editing?.id === id) cancelEdit()
       emitAgendaChanged()

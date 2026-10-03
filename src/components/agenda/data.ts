@@ -3,26 +3,26 @@ import { redirectIfUnauthorized } from '@/lib/auth-redirect'
 import type { EventOrigem, Lembrete } from '@/server/calendar/types'
 
 export const GOOGLE_CONTAS = [
-  { nome: 'Doce Ateliê', email: 'doceatelie.sp@gmail.com', sigla: 'DA' },
-  { nome: 'Mariana Costa', email: 'mariana.costa@gmail.com', sigla: 'MC' },
+  { nome: 'Minha empresa', email: 'empresa@gmail.com', sigla: 'ME' },
+  { nome: 'Conta pessoal', email: 'pessoal@gmail.com', sigla: 'CP' },
 ] as const
 
 /** Agendas do fluxo simulado; padrão marcado: pedidos e pessoal; "pedidos" é o destino. */
 export const DEMO_CALS = [
-  { id: 'pedidos', nome: 'Doce Ateliê · Pedidos', desc: 'Onde os novos agendamentos são criados', cor: '#a8c23a' },
+  { id: 'pedidos', nome: 'Minha empresa · Agendamentos', desc: 'Onde os novos agendamentos são criados', cor: '#2e9a48' },
   { id: 'pessoal', nome: 'Pessoal', desc: 'Só para bloquear horários ocupados', cor: '#d9a35b' },
   { id: 'feriados', nome: 'Feriados no Brasil', desc: 'Evita agendar em feriados', cor: '#5fa7a0' },
 ] as const
 export const DEMO_DESTINO = 'pedidos'
 export const DEMO_SELECIONADAS = ['pedidos', 'pessoal']
 /** Cores usadas (em ciclo) para as agendas reais vindas do Google. */
-export const CAL_CORES = ['#a8c23a', '#d9a35b', '#5fa7a0']
+export const CAL_CORES = ['#2e9a48', '#d9a35b', '#5fa7a0']
 
 /** Durações oferecidas para cada tipo de atendimento (min). */
 export const TIPO_DUR_OPTS = [15, 30, 45, 60, 90, 120, 180] as const
 
 /** Cores predefinidas para os tipos de atendimento (barrinha lateral dos eventos manuais). */
-export const TIPO_CORES = ['#a8c23a', '#d9a35b', '#5fa7a0', '#c9806b', '#8a9bd1', '#b58ac9'] as const
+export const TIPO_CORES = ['#2e9a48', '#d9a35b', '#5fa7a0', '#c9806b', '#8a9bd1', '#b58ac9'] as const
 
 export const DUR_OPTS: { min: 30 | 60 | 120; label: string }[] = [
   { min: 30, label: '30 min' },
@@ -38,7 +38,7 @@ export const LEMBRETE_OPTS: { value: Lembrete; label: string }[] = [
 ]
 
 export const ORIGEM_BAR: Record<EventOrigem, string> = {
-  IA: '#a8c23a',
+  IA: '#2e9a48',
   GOOGLE: '#5fa7a0',
   MANUAL: '#d9a35b',
 }

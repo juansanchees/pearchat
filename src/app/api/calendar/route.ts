@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
 import { invalidateGoogleCache } from '@/server/calendar/live'
 import { readTokens, revokeToken } from '@/server/calendar/google'
 import { apiError, getConnection, isRealConnection, parseCalendarios, toCalendarState } from '@/server/calendar/service'
@@ -42,7 +42,7 @@ export async function PATCH(req: NextRequest) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
 
-  const json: unknown = await req.json().catch(() => null)
+  const json = await readJson(req)
   const parsed = patchSchema.safeParse(json)
   if (!parsed.success) return badRequest('Preferências inválidas')
   const b = parsed.data

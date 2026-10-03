@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { cleanText } from '@/server/messages/api'
 import { normalizePhone } from './phone'
 import { normalizeTags, parseFilterTag } from './tags'
 
@@ -6,7 +7,11 @@ export const DEFAULT_TAKE = 30
 export const MAX_TAKE = 100
 
 export const listQuerySchema = z.object({
-  q: z.string().trim().max(100).default(''),
+  q: z
+    .string()
+    .max(300)
+    .transform((v) => cleanText(v).trim().slice(0, 100))
+    .default(''),
   tag: z
     .string()
     .trim()
@@ -18,7 +23,11 @@ export const listQuerySchema = z.object({
       if (!tag) ctx.addIssue({ code: 'custom', message: 'Filtro de etiqueta inválido' })
       return tag
     }),
-  cursor: z.string().trim().max(60).optional(),
+  cursor: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{1,60}$/, 'Cursor inválido')
+    .optional(),
   take: z.coerce.number().int().min(1).max(MAX_TAKE).default(DEFAULT_TAKE),
 })
 
@@ -48,8 +57,11 @@ const birthday = z
   .nullable()
   .transform((v, ctx) => {
     if (!v) return null
-    const d = new Date(v)
-    if (Number.isNaN(d.getTime())) ctx.addIssue({ code: 'custom', message: 'Aniversário inválido' })
+    // Só datas ISO (AAAA-MM-DD...) em um intervalo razoável; "2" ou o ano 275760 não são aniversários.
+    const d = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:\d{2})?)?$/.test(v) ? new Date(v) : new Date(NaN)
+    if (Number.isNaN(d.getTime()) || d.getUTCFullYear() < 1900 || d.getUTCFullYear() > 2100) {
+      ctx.addIssue({ code: 'custom', message: 'Aniversário inválido' })
+    }
     return d
   })
 const notes = z.string().max(2000)

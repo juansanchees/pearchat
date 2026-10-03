@@ -42,7 +42,7 @@ function StepIndicator({ step }: { step: Step }) {
             <span
               className={cn(
                 'grid h-[22px] w-[22px] place-items-center rounded-pill border text-[11px] font-medium leading-none',
-                state === 'done' && 'border-light-accent-500 bg-light-accent-500 text-[#f6f7ef]',
+                state === 'done' && 'border-light-accent-500 bg-light-accent-fill text-white',
                 state === 'current' && 'border-light-accent-500 bg-light-accent-900 text-light-accent-200',
                 state === 'future' && 'border-light-divider bg-transparent text-light-neutral-500',
               )}

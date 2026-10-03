@@ -10,12 +10,15 @@ import type { ConversationItem } from './types'
 export function ChatHeader({
   conversation,
   iaOn,
+  followupOn = false,
   agentName,
   onMode,
   onBack,
 }: {
   conversation: ConversationItem
   iaOn: boolean
+  /** Follow-up ligado: também permite devolver a conversa para a automação. */
+  followupOn?: boolean
   agentName: string
   onMode: (mode: ConversationModeKind) => void
   /** Volta para a lista (só aparece abaixo de 900 px). */
@@ -77,20 +80,20 @@ export function ChatHeader({
         <button
           type="button"
           onClick={() => onMode('humano')}
-          className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-solid border-light-accent-500 px-[13px] py-1.5 text-xs font-medium leading-tight text-light-accent-500 hover:bg-[rgba(168,194,58,.12)] active:bg-[rgba(168,194,58,.22)]"
+          className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-solid border-light-accent-500 px-[13px] py-1.5 text-xs font-medium leading-tight text-light-accent-300 hover:bg-[rgba(46,154,72,.12)] active:bg-[rgba(46,154,72,.22)]"
         >
           <Hand size={14} />
           Assumir conversa
         </button>
       ) : null}
-      {iaOn && conversation.mode === 'humano' ? (
+      {(iaOn || followupOn) && conversation.mode === 'humano' ? (
         <button
           type="button"
           onClick={() => onMode('ia')}
           className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-solid border-light-divider px-[13px] py-1.5 text-xs font-medium leading-tight text-light-text hover:bg-[rgba(29,33,23,.07)] active:bg-[rgba(29,33,23,.14)]"
         >
           <Sparkle size={14} />
-          Devolver para IA
+          {iaOn ? 'Devolver para IA' : 'Devolver para automação'}
         </button>
       ) : null}
     </div>

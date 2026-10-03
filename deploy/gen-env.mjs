@@ -48,6 +48,10 @@ const env = {
   NEXT_PUBLIC_META_APP_ID: prev.NEXT_PUBLIC_META_APP_ID ?? '', NEXT_PUBLIC_META_CONFIG_ID: prev.NEXT_PUBLIC_META_CONFIG_ID ?? '',
   GOOGLE_CLIENT_ID: prev.GOOGLE_CLIENT_ID ?? '', GOOGLE_CLIENT_SECRET: prev.GOOGLE_CLIENT_SECRET ?? '', GOOGLE_REDIRECT_URI: prev.GOOGLE_REDIRECT_URI ?? '',
   CAMPAIGN_DAILY_LIMIT: src.CAMPAIGN_DAILY_LIMIT ?? '200',
+  // E-mail transacional (Resend): copia do .env local quando existir; senão preserva o valor já gerado.
+  RESEND_API_KEY: src.RESEND_API_KEY || prev.RESEND_API_KEY || '',
+  MAIL_FROM: src.MAIL_FROM || prev.MAIL_FROM || '',
+  EMAIL_VERIFICATION_SINCE: src.EMAIL_VERIFICATION_SINCE || prev.EMAIL_VERIFICATION_SINCE || '',
 }
 for (const k of ['DATABASE_URL', 'ENCRYPTION_KEY']) if (!env[k]) throw new Error(`${k} ausente no .env local`)
 // Valores entre aspas simples: compatível com env_file do compose e com --env-file (sem expansão de $).

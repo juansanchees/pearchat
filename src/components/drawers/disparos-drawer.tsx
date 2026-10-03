@@ -4,9 +4,9 @@ import { useState } from 'react'
 import { CalendarCheck, CheckCircle, Clock, PaperPlaneTilt, Plus, UploadSimple } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
 import { fmtNum } from '@/components/app/automations'
-import { Tag } from '@/components/pear'
+import { PearSwitch, Tag } from '@/components/pear'
 import { cn } from '@/lib/utils'
-import type { CampaignDTO, TemplateDTO } from '@/lib/types'
+import type { CampaignDTO, DisparosSettingsDTO, TemplateDTO } from '@/lib/types'
 import { api } from './api'
 import { toTemplate, useDrawerData, useDrawerLoad } from './drawer-data'
 import { INTERVALOS, INTERVALO_API } from './mock-data'
@@ -20,7 +20,7 @@ const linkBtn = 'inline-flex items-center gap-1 bg-transparent p-0 text-[12px] t
 
 export function DisparosDrawer() {
   const { wa, connected, automations, setAutomation, toast } = useAppState()
-  const { disp, setDisp, listas, campanhas, setCampanhas, templates, setTemplates, tplSel, setTplSel, failToast } = useDrawerData()
+  const { disp, setDisp, listas, campanhas, setCampanhas, templates, setTemplates, tplSel, setTplSel, silencio, setSilencio, failToast } = useDrawerData()
   const loading = useDrawerLoad('disparos')
   const [sending, setSending] = useState(false)
   const oficial = wa.provider === 'oficial'
@@ -42,6 +42,25 @@ export function DisparosDrawer() {
       toast({ icon: <Clock size={18} weight="fill" />, title: 'Modelo enviado para a Meta', text: `${novo.name} · em análise` })
     } catch (e) {
       failToast('Não foi possível criar o modelo', e)
+    }
+  }
+
+  const HORAS = Array.from({ length: 24 }, (_, h) => h)
+  const hh = (h: number) => `${String(h).padStart(2, '0')}:00`
+  // Salva na hora (otimista); volta ao valor anterior se o servidor recusar.
+  const salvarSilencio = async (patch: Partial<DisparosSettingsDTO>) => {
+    const antes = silencio
+    const novo = { ...silencio, ...patch }
+    if (novo.silencioInicio === novo.silencioFim) {
+      failToast('Horário inválido', new Error('Início e fim do silêncio devem ser horas diferentes.'))
+      return
+    }
+    setSilencio(novo)
+    try {
+      setSilencio(await api<DisparosSettingsDTO>('/api/campaigns/settings', { method: 'PUT', body: novo }))
+    } catch (e) {
+      setSilencio(antes)
+      failToast('Não foi possível salvar o horário de silêncio', e)
     }
   }
 
@@ -74,7 +93,7 @@ export function DisparosDrawer() {
       toast(
         agendar
           ? { icon: <CalendarCheck size={18} weight="fill" />, title: 'Disparo agendado', text: `${nova.lista} · ${formatDt(disp.data)}` }
-          : { icon: <PaperPlaneTilt size={18} weight="fill" />, title: 'Disparo iniciado', text: `${fmtNum(nova.total)} contatos · ${nova.lista}` },
+          : { icon: <PaperPlaneTilt size={18} weight="fill" />, title: 'Disparo iniciado', text: `${fmtNum(nova.total)} ${nova.total === 1 ? 'contato' : 'contatos'} · ${nova.lista}` },
       )
     } catch (e) {
       failToast('Não foi possível criar o disparo', e)
@@ -86,7 +105,7 @@ export function DisparosDrawer() {
   const footer = (
     <>
       <span className="flex-1 text-[12px] text-light-neutral-500">
-        {lista ? `${fmtNum(lista.qtd)} contatos · ${lista.nome}` : ''}
+        {lista ? `${fmtNum(lista.qtd)} ${lista.qtd === 1 ? 'contato' : 'contatos'} · ${lista.nome}` : ''}
       </span>
       <button type="button" className="pc-btn pc-btn-primary disabled:opacity-60" disabled={sending} onClick={() => void iniciar()}>
         <PaperPlaneTilt size={14} />
@@ -137,7 +156,7 @@ export function DisparosDrawer() {
                 key={v}
                 type="button"
                 onClick={() => addVar(v)}
-                className="inline-flex items-center rounded-[6px] border border-[#a8c23a] bg-transparent px-[10px] py-[3px] text-[11px] tracking-[0.02em] text-[#a8c23a]"
+                className="inline-flex items-center rounded-[6px] border border-light-accent-500 bg-transparent px-[10px] py-[3px] text-[11px] tracking-[0.02em] text-light-accent-300"
               >
                 {v}
               </button>
@@ -222,6 +241,38 @@ export function DisparosDrawer() {
             />
           </Field>
         )}
+        <div className="flex flex-wrap items-center gap-2 text-[13px]">
+          <PearSwitch size="sm" checked={silencio.silencioAtivo} label="Horário de silêncio" onChange={(on) => void salvarSilencio({ silencioAtivo: on })} />
+          <span>Não enviar entre</span>
+          <select
+            className="pc-input !w-auto"
+            aria-label="Início do silêncio"
+            disabled={!silencio.silencioAtivo}
+            value={silencio.silencioInicio}
+            onChange={(e) => void salvarSilencio({ silencioInicio: Number(e.target.value) })}
+          >
+            {HORAS.map((h) => (
+              <option key={h} value={h}>
+                {hh(h)}
+              </option>
+            ))}
+          </select>
+          <span>e</span>
+          <select
+            className="pc-input !w-auto"
+            aria-label="Fim do silêncio"
+            disabled={!silencio.silencioAtivo}
+            value={silencio.silencioFim}
+            onChange={(e) => void salvarSilencio({ silencioFim: Number(e.target.value) })}
+          >
+            {HORAS.map((h) => (
+              <option key={h} value={h}>
+                {hh(h)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="text-[11.5px] text-light-neutral-500">Evita mensagens de madrugada, que incomodam o cliente e aumentam o risco de bloqueio do número.</div>
         <div className="text-[11.5px] text-light-neutral-500">
           {oficial
             ? 'Cada mensagem de marketing é cobrada pela Meta conforme a tarifa do Brasil.'
@@ -238,7 +289,7 @@ export function DisparosDrawer() {
                 <div className="text-[11px] text-light-neutral-500">{c.data}</div>
               </div>
               <Tag tone={c.status === 'Concluída' ? 'neutral' : 'accent'} className="!text-[10.5px]">
-                {c.status}
+                {c.retida ? 'Aguardando horário permitido' : c.status}
               </Tag>
             </div>
             <div className="my-[10px]">

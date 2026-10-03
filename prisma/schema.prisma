@@ -70,14 +70,18 @@ enum Plan {
 }
 
 model Workspace {
-  id                 String   @id @default(cuid())
-  nome               String
-  horarioAtendimento String?
-  plano              Plan     @default(PRO)
-  statusAssinatura   String   @default("ativa")
-  disparosAtivos     Boolean  @default(false)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  nome                   String
+  horarioAtendimento     String?
+  plano                  Plan     @default(PRO)
+  statusAssinatura       String   @default("ativa")
+  disparosAtivos         Boolean  @default(false)
+  // Horário de silêncio dos disparos (fuso de São Paulo); a janela pode cruzar a meia-noite.
+  disparosSilencioAtivo  Boolean  @default(true)
+  disparosSilencioInicio Int      @default(21)
+  disparosSilencioFim    Int      @default(8)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   users              User[]
   whatsappSession    WhatsAppSession?
@@ -362,24 +366,24 @@ model FollowUpJob {
 }
 
 model CalendarConnection {
-  id               String   @id @default(cuid())
-  workspaceId      String   @unique
-  provider         String   @default("google")
-  email            String
-  tokens           String? // criptografado
-  calendarios      Json?
-  destinoId        String?
-  iaPodeAgendar    Boolean  @default(false)
-  duracaoPadraoMin Int      @default(60)
-  lembretes        String[]
+  id                String    @id @default(cuid())
+  workspaceId       String    @unique
+  provider          String    @default("google")
+  email             String
+  tokens            String? // criptografado
+  calendarios       Json?
+  destinoId         String?
+  iaPodeAgendar     Boolean   @default(false)
+  duracaoPadraoMin  Int       @default(60)
+  lembretes         String[]
   // Sincronização com o Google: syncToken por agenda ({ [calendarId]: token }), última leitura
   // bem-sucedida (exibida na tela), última tentativa do agendador e sinal de acesso revogado.
   syncTokens        Json?
   ultimaSyncEm      DateTime?
   syncTentadaEm     DateTime?
   precisaReconectar Boolean   @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
@@ -395,25 +399,25 @@ model CalendarOAuthState {
 }
 
 model Event {
-  id            String      @id @default(cuid())
-  workspaceId   String
-  contactId     String?
-  inicio        DateTime
-  duracaoMin    Int
-  titulo        String
-  tipo          String
-  origem        EventOrigin
-  googleEventId String?
+  id               String      @id @default(cuid())
+  workspaceId      String
+  contactId        String?
+  inicio           DateTime
+  duracaoMin       Int
+  titulo           String
+  tipo             String
+  origem           EventOrigin
+  googleEventId    String?
   // Agenda do Google onde o evento foi criado (pode diferir do destino atual).
   googleCalendarId String?
   // Tipo de atendimento escolhido (o texto `tipo` guarda o nome na hora do agendamento).
-  serviceTypeId String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  serviceTypeId    String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
-  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  contact     Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  serviceType ServiceType? @relation(fields: [serviceTypeId], references: [id], onDelete: SetNull)
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact     Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  serviceType ServiceType?    @relation(fields: [serviceTypeId], references: [id], onDelete: SetNull)
   reminders   EventReminder[]
 
   @@index([workspaceId, inicio])

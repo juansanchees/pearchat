@@ -4,12 +4,13 @@ import { generateReply, LlmError } from '@/server/agent/llm'
 import type { ChatMessage } from '@/server/agent/llm'
 import { buildSystemPrompt, HANDOFF_MARKER } from '@/server/agent/prompt'
 import { serviceTypesForPrompt } from '@/server/calendar/service-types'
-import { getBilling } from '@/server/settings/service'
+import { getAiQuota } from '@/server/settings/service'
 import { loadConversationItem, toMessageDTO } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { canSendFreeformTo } from './freeform'
 import { contactRef, OutboundError, sendAndRecord } from './outbound'
-import { agentMayReplyAt, detectHandoffRule, genericHandoffMessage } from './rules'
+import { cancelPendingFollowUps } from './followup'
+import { agentMayReplyAt, detectHandoffRule, formatAgora, genericHandoffMessage, isStopRequest, ungroundedMoney } from './rules'
 import { bumpUsage, engineDisabled, getConnected, log, logError, shortError } from './util'
 
 // Resposta da IA às conversas. Fluxo: ingestInboundMessage -> scheduleAiReply (debounce de 4 s) ->
@@ -19,10 +20,18 @@ export const AI_DEBOUNCE_MS = 4_000
 const SWEEP_SPACING_MS = 1_200
 const MAX_ATTEMPTS = 3
 const RETRY_DELAYS_MS = [15_000, 45_000]
-const HISTORY_LIMIT = 20
-const STALE_RUNNING_MS = 3 * 60_000
+const HISTORY_LIMIT = 30
+const MAX_MESSAGE_CHARS = 1500 // trava o custo se o cliente colar um texto enorme
+const STALE_RUNNING_MS = 2 * 60_000 // o modelo tem timeout de 45 s: 2 min sem terminar = processo caiu
 const SWEEP_LOOKBACK_MS = 24 * 3_600_000 // janela de 24 h do WhatsApp
 const CONCURRENCY = 4
+const RUN_BUDGET_MS = 30_000 // tempo máximo de uma passada do runDueAiJobs
+
+const LIMIT_NOTICE = 'Vou chamar alguém da nossa equipe para continuar seu atendimento.'
+const NOT_FAILED_OUT = { NOT: { direction: 'OUT' as const, status: 'FALHOU' as const } }
+
+// Notas de jobs cancelados que não significam "cliente atendido" (ver enqueuePendingForWorkspace).
+const RETRY_CANCEL_NOTES = ['cancelado: WhatsApp desconectado', 'cancelado: IA desligada']
 
 export const AI_JOB = { pendente: 'pendente', executando: 'executando', feito: 'feito', erro: 'erro' } as const
 
@@ -85,19 +94,39 @@ export async function enqueuePendingForWorkspace(workspaceId: string): Promise<n
     include: { messages: { orderBy: { createdAt: 'desc' }, take: 1 } },
   })
 
-  let created = 0
-  for (const c of convs) {
+  // Candidatas: última mensagem é do cliente, não importada, com mais de 6 s (o ingest cuida das recém-chegadas)
+  // e que chegou numa hora em que a IA podia responder (senão é de atendimento humano).
+  const candidates = convs.filter((c) => {
     const last = c.messages[0]
-    if (!last || last.direction !== 'IN') continue
-    // Histórico importado do WhatsApp: a IA não responde a conversas anteriores à conexão.
-    if (last.imported) continue
-    // Mensagem recém-chegada: o ingest cuida dela (evita corrida com o debounce).
-    if (now.getTime() - last.createdAt.getTime() < 6_000) continue
-    // A mensagem chegou numa hora em que a IA podia responder? (senão é de atendimento humano)
-    if (!agentMayReplyAt(el.agent.horario, el.horarioAtendimento, last.createdAt)) continue
-    // Já tentamos responder depois dessa mensagem (feito/erro)?
-    const handled = await db.aiJob.findFirst({ where: { conversationId: c.id, createdAt: { gte: last.createdAt } }, select: { id: true } })
-    if (handled) continue
+    return (
+      !!last &&
+      last.direction === 'IN' &&
+      !last.imported &&
+      now.getTime() - last.createdAt.getTime() >= 6_000 &&
+      now.getTime() - last.createdAt.getTime() < SWEEP_LOOKBACK_MS &&
+      agentMayReplyAt(el.agent.horario, el.horarioAtendimento, last.createdAt)
+    )
+  })
+  // Já tentamos responder depois dessa mensagem (feito/erro)? Uma consulta só, em vez de uma por conversa.
+  const handledIds = new Set<string>()
+  if (candidates.length > 0) {
+    const oldest = candidates.reduce((min, c) => Math.min(min, c.messages[0]!.createdAt.getTime()), Infinity)
+    const jobs = await db.aiJob.findMany({
+      where: { conversationId: { in: candidates.map((c) => c.id) }, createdAt: { gte: new Date(oldest) } },
+      select: { conversationId: true, createdAt: true, status: true, error: true },
+    })
+    for (const j of jobs) {
+      // Job cancelado só porque o WhatsApp caiu / a IA estava desligada NÃO conta como tentativa: a mensagem
+      // continua sem resposta e a varredura a reconsidera (a mensagem tem menos de 24 h e não é importada).
+      if (j.status === AI_JOB.feito && j.error && RETRY_CANCEL_NOTES.some((n) => j.error!.startsWith(n))) continue
+      const c = candidates.find((x) => x.id === j.conversationId)
+      if (c && j.createdAt.getTime() >= c.messages[0]!.createdAt.getTime()) handledIds.add(c.id)
+    }
+  }
+
+  let created = 0
+  for (const c of candidates) {
+    if (handledIds.has(c.id)) continue
     await db.aiJob.create({
       data: { workspaceId, conversationId: c.id, status: AI_JOB.pendente, runAt: new Date(now.getTime() + AI_DEBOUNCE_MS + created * SWEEP_SPACING_MS) },
     })
@@ -124,7 +153,8 @@ function toHistory(messages: Message[]): ChatMessage[] {
   const out: ChatMessage[] = []
   for (const m of messages) {
     const role: ChatMessage['role'] = m.direction === 'IN' ? 'user' : 'assistant'
-    const content = m.body.trim() || (m.mediaUrl ? '[mídia enviada]' : '')
+    const raw = m.body.trim() || (m.mediaUrl ? '[mídia enviada]' : '')
+    const content = raw.length > MAX_MESSAGE_CHARS ? `${raw.slice(0, MAX_MESSAGE_CHARS)}…` : raw
     if (!content) continue
     const prev = out[out.length - 1]
     if (prev && prev.role === role) prev.content += `\n${content}`
@@ -197,9 +227,12 @@ async function execute(job: AiJob): Promise<JobResult> {
   const session = await getConnected(workspaceId)
   if (!session) return { kind: 'done', note: 'cancelado: WhatsApp desconectado' }
 
-  const recent = await db.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'desc' }, take: HISTORY_LIMIT })
+  // Envios que falharam (OUT/FALHOU) não contam: senão a nova tentativa acharia que a conversa já foi respondida.
+  const recent = await db.message.findMany({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: { createdAt: 'desc' }, take: HISTORY_LIMIT })
   const last = recent[0]
   if (!last || last.direction !== 'IN') return { kind: 'done', note: 'nada a responder (já respondida)' }
+  // Histórico importado do WhatsApp nunca gera resposta.
+  if (last.imported) return { kind: 'done', note: 'nada a responder (mensagem importada)' }
   const history = toHistory([...recent].reverse())
   if (history.length === 0) return { kind: 'done', note: 'nada a responder' }
   // Tudo que o cliente mandou desde a nossa última mensagem.
@@ -210,15 +243,23 @@ async function execute(job: AiJob): Promise<JobResult> {
   }
   const customerText = unanswered.join('\n')
 
+  // "parar"/"sair" e variações: marca opt-out e não responde (o ingest só pega a palavra exata).
+  if (isStopRequest(customerText)) {
+    await db.contact.update({ where: { id: conv.contact.id }, data: { optOut: true } })
+    await cancelPendingFollowUps(conversationId, 'Cliente pediu para parar').catch((e) => logError('ai', 'cancelar follow-ups do opt-out', e))
+    return { kind: 'done', note: 'cliente pediu para parar: opt-out registrado' }
+  }
+
   const to = contactRef(conv.contact)
   const responsavel = await responsavelNome(workspaceId)
   const { agent } = el
 
   // Limite de respostas de IA do plano.
-  const billing = await getBilling(workspaceId)
-  const limite = billing.limites.respostasIa
-  if (limite !== null && billing.uso.respostasIa >= limite) {
-    await handoff({ session, conv, motivo: 'limite do plano', message: null })
+  const quota = await getAiQuota(workspaceId)
+  if (quota.limite !== null && quota.usadas >= quota.limite) {
+    // Avisa o cliente UMA vez (sem falar de plano/limite) antes de passar para a equipe.
+    const jaAvisou = await db.message.findFirst({ where: { conversationId, author: 'IA', body: LIMIT_NOTICE }, select: { id: true } })
+    await handoff({ session, conv, motivo: 'limite do plano', message: jaAvisou ? null : LIMIT_NOTICE })
     return { kind: 'done', note: 'limite de respostas de IA do plano' }
   }
 
@@ -244,12 +285,24 @@ async function execute(job: AiJob): Promise<JobResult> {
     kb: kb.map((k) => ({ pergunta: k.pergunta, resposta: k.resposta })),
     handoffRules: agent.handoffRules,
     servicos,
+    horarioAtendimento: el.horarioAtendimento,
+    agora: formatAgora(new Date()),
   })
 
   let texto: string
   try {
+    // Só o que o dono escreveu + o histórico (as regras fixas do prompt também têm números, ex.: "300 caracteres").
+    const corpus = [agent.prompt, ...kb.map((k) => `${k.pergunta} ${k.resposta}`), ...servicos.map((s) => s.nome), ...history.map((m) => m.content)].join('\n')
     const r = await generateReply({ system, messages: history })
     texto = r.texto
+    // Preço inventado: uma nova tentativa avisando; se insistir, resposta segura (sem valor).
+    if (!texto.includes(HANDOFF_MARKER) && ungroundedMoney(texto, corpus).length > 0) {
+      const r2 = await generateReply({
+        system: `${system}\n\nATENÇÃO: sua resposta anterior citou um valor em reais que NÃO está nas informações acima. Responda de novo sem citar nenhum valor que não esteja escrito literalmente nas instruções ou respostas prontas; diga que vai confirmar com a equipe.`,
+        messages: history,
+      })
+      texto = ungroundedMoney(r2.texto, corpus).length > 0 ? 'Esse valor eu preciso confirmar com a equipe e já te retorno, tá?' : r2.texto
+    }
   } catch (e) {
     return { kind: 'retry', error: e instanceof LlmError ? e.message : shortError(e) }
   }
@@ -258,7 +311,7 @@ async function execute(job: AiJob): Promise<JobResult> {
   const [conv2, el2, newest] = await Promise.all([
     db.conversation.findFirst({ where: { id: conversationId, workspaceId }, select: { mode: true } }),
     loadAgentFor(workspaceId, new Date()),
-    db.message.findFirst({ where: { conversationId }, orderBy: { createdAt: 'desc' }, select: { id: true } }),
+    db.message.findFirst({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: { createdAt: 'desc' }, select: { id: true } }),
   ])
   if (!conv2 || conv2.mode === 'HUMANO') return { kind: 'done', note: 'cancelado: virou modo humano durante a geração' }
   if (!el2.ok) return { kind: 'done', note: `cancelado: ${el2.reason}` }
@@ -275,7 +328,7 @@ async function execute(job: AiJob): Promise<JobResult> {
       conversationId,
       to,
       author: 'IA',
-      content: { kind: 'text', text: texto },
+      content: { kind: 'text', text: stripRepeatedGreeting(texto, history) },
       countAtendimento: true,
       emit: false,
     })
@@ -290,14 +343,27 @@ async function execute(job: AiJob): Promise<JobResult> {
   }
 }
 
+/**
+ * Rede de segurança: se a conversa já tem resposta nossa, o modelo às vezes ainda abre com "Oi!"/"Olá!".
+ * Tira só a saudação solta do começo ("Oi, Maria!" com nome fica).
+ */
+export function stripRepeatedGreeting(texto: string, history: ChatMessage[]): string {
+  if (!history.some((m) => m.role === 'assistant')) return texto
+  const rest = texto.replace(/^\s*(?:oi|ol[aá])\s*[!.]+\s*/i, '')
+  if (rest === texto || rest.trim().length < 3) return texto
+  return rest.charAt(0).toUpperCase() + rest.slice(1)
+}
+
 function tomFromDb(tom: string): 'Amigável' | 'Profissional' | 'Direto' {
   return tom === 'profissional' ? 'Profissional' : tom === 'direto' ? 'Direto' : 'Amigável'
 }
 
 /** Reivindica e executa um job. Devolve false se outra instância o levou. */
 async function runJob(job: AiJob): Promise<boolean> {
+  // Uma execução por conversa: se outro job da mesma conversa está executando (outra instância, ou job
+  // duplicado criado pela varredura), este espera o próximo tick em vez de gerar uma segunda resposta.
   const claim = await db.aiJob.updateMany({
-    where: { id: job.id, status: AI_JOB.pendente },
+    where: { id: job.id, status: AI_JOB.pendente, conversation: { aiJobs: { none: { status: AI_JOB.executando, id: { not: job.id } } } } },
     data: { status: AI_JOB.executando, attempts: { increment: 1 }, runAt: new Date() },
   })
   if (claim.count !== 1) return false
@@ -337,29 +403,64 @@ async function runJob(job: AiJob): Promise<boolean> {
   return true
 }
 
-/** Executa os jobs de IA vencidos (até 4 conversas em paralelo). Devolve quantos rodaram. */
-export async function runDueAiJobs(): Promise<number> {
-  const now = new Date()
-  // Recupera jobs presos em "executando" (processo caiu no meio).
-  await db.aiJob.updateMany({
+/**
+ * Resgata jobs presos em "executando" (o processo caiu no meio): voltam para "pendente" (a tentativa já foi
+ * contada na reivindicação) ou, se já esgotaram as tentativas, viram "erro". Também limpa o "digitando".
+ * `runAt` é o critério correto: o AiJob não tem updatedAt e a reivindicação (runJob) grava runAt = agora, então
+ * um job que acabou de começar nunca parece antigo.
+ */
+async function recoverStaleJobs(now: Date): Promise<void> {
+  const stale = await db.aiJob.findMany({
     where: { status: AI_JOB.executando, runAt: { lt: new Date(now.getTime() - STALE_RUNNING_MS) } },
-    data: { status: AI_JOB.pendente },
+    select: { id: true, attempts: true, workspaceId: true, conversationId: true },
   })
-  const dueAll = await db.aiJob.findMany({
-    where: { status: AI_JOB.pendente, runAt: { lte: now } },
-    orderBy: { runAt: 'asc' },
-    take: 20,
-  })
-  // Uma conversa por vez: duplicatas ficam para o próximo tick (que as vê já respondidas).
-  const seen = new Set<string>()
-  const due = dueAll.filter((j) => !seen.has(j.conversationId) && seen.add(j.conversationId))
+  for (const j of stale) {
+    const exhausted = j.attempts >= MAX_ATTEMPTS
+    const res = await db.aiJob.updateMany({
+      where: { id: j.id, status: AI_JOB.executando },
+      data: exhausted
+        ? { status: AI_JOB.erro, error: 'Interrompido: o servidor reiniciou durante a execução' }
+        : { status: AI_JOB.pendente, runAt: now, error: 'Retomado após interrupção do servidor' },
+    })
+    if (res.count !== 1) continue
+    log('ai', `job ${j.id} estava preso em executando; ${exhausted ? 'marcado como erro' : 'retomado'}`)
+    try {
+      const c = await db.conversation.findFirst({ where: { id: j.conversationId, workspaceId: j.workspaceId }, select: { typing: true } })
+      if (c?.typing) await setTyping(j.workspaceId, j.conversationId, false)
+    } catch (e) {
+      logError('ai', 'falha ao limpar typing de job retomado', e)
+    }
+  }
+}
+
+/**
+ * Executa os jobs de IA vencidos (até 4 conversas em paralelo). Devolve quantos rodaram.
+ * Repete a busca enquanto aparecerem jobs novos (até ~30 s): sem isso, uma mensagem que vence enquanto um
+ * lote lento roda esperaria o próximo tick inteiro.
+ */
+export async function runDueAiJobs(): Promise<number> {
+  const startedAt = Date.now()
+  await recoverStaleJobs(new Date(startedAt))
+  const tried = new Set<string>()
   let ran = 0
-  for (let i = 0; i < due.length; i += CONCURRENCY) {
-    const batch = due.slice(i, i + CONCURRENCY)
-    const res = await Promise.allSettled(batch.map((j) => runJob(j)))
-    for (const r of res) {
-      if (r.status === 'fulfilled' && r.value) ran++
-      else if (r.status === 'rejected') logError('ai', 'job falhou', r.reason)
+  while (Date.now() - startedAt < RUN_BUDGET_MS) {
+    const dueAll = await db.aiJob.findMany({
+      where: { status: AI_JOB.pendente, runAt: { lte: new Date() }, ...(tried.size > 0 ? { id: { notIn: Array.from(tried) } } : {}) },
+      orderBy: { runAt: 'asc' },
+      take: 20,
+    })
+    // Uma conversa por vez: duplicatas ficam para a próxima volta (que as vê já respondidas).
+    const seen = new Set<string>()
+    const due = dueAll.filter((j) => !seen.has(j.conversationId) && seen.add(j.conversationId))
+    if (due.length === 0) break
+    for (const j of due) tried.add(j.id)
+    for (let i = 0; i < due.length; i += CONCURRENCY) {
+      const batch = due.slice(i, i + CONCURRENCY)
+      const res = await Promise.allSettled(batch.map((j) => runJob(j)))
+      for (const r of res) {
+        if (r.status === 'fulfilled' && r.value) ran++
+        else if (r.status === 'rejected') logError('ai', 'job falhou', r.reason)
+      }
     }
   }
   return ran

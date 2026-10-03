@@ -9,7 +9,7 @@ import { todayStamp } from './format'
 import type { ImportResult } from './types'
 import { useContactToasts } from './toasts'
 
-const MAX_BYTES = 2 * 1024 * 1024
+const MAX_BYTES = 8 * 1024 * 1024
 
 /** Importar (CSV -> API) e exportar (API -> download) contatos. */
 export function useContactIo({ total, onImported }: { total: number; onImported: () => void }) {
@@ -26,7 +26,7 @@ export function useContactIo({ total, onImported }: { total: number; onImported:
       e.target.value = ''
       if (!file) return
       if (file.size > MAX_BYTES) {
-        toasts.error('Arquivo grande demais', 'O CSV pode ter até 2 MB e 5.000 linhas')
+        toasts.error('Arquivo grande demais', 'O CSV pode ter até 8 MB e 20.000 linhas')
         return
       }
       setImporting(true)

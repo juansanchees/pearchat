@@ -32,15 +32,15 @@ export function ConversationItem({
         'flex w-full items-center gap-3 border-0 border-t border-solid border-light-divider px-3.5 py-3 text-left text-light-text',
         active ? 'bg-light-accent-900' : 'bg-transparent hover:bg-light-neutral-900',
       )}
-      style={active ? { boxShadow: 'inset 3px 0 0 #a8c23a' } : undefined}
+      style={active ? { boxShadow: 'inset 3px 0 0 #2e9a48' } : undefined}
     >
       <ContactAvatar
         name={item.nome}
         size={42}
         badge={
           item.mode === 'ia' && iaOn ? (
-            <span className="absolute -bottom-0.5 -right-0.5 grid h-[18px] w-[18px] place-items-center rounded-pill border-2 border-solid border-light-surface bg-light-accent-400">
-              <Sparkle size={9} weight="fill" color="#fbfcf3" />
+            <span className="absolute -bottom-0.5 -right-0.5 grid h-[18px] w-[18px] place-items-center rounded-pill border-2 border-solid border-light-surface bg-light-accent-fill">
+              <Sparkle size={9} weight="fill" color="#ffffff" />
             </span>
           ) : null
         }
@@ -59,7 +59,7 @@ export function ConversationItem({
             {item.typing ? `${agentName} está digitando…` : `${prefix}${item.lastMessagePreview ?? ''}`}
           </span>
           {hasUnread ? (
-            <span className="h-[18px] min-w-[18px] rounded-pill bg-light-accent-400 px-[5px] text-center text-[10.5px] font-medium leading-[18px] text-[#fbfcf3]">
+            <span className="h-[18px] min-w-[18px] rounded-pill bg-light-accent-fill px-[5px] text-center text-[10.5px] font-medium leading-[18px] text-white">
               {item.unread}
             </span>
           ) : null}

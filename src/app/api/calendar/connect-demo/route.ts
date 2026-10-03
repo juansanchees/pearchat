@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
 import {
   DEFAULT_LEMBRETES,
   apiError,
@@ -42,7 +42,7 @@ async function connectDemo(req: NextRequest) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
 
-  const json: unknown = await req.json().catch(() => null)
+  const json = await readJson(req)
   const parsed = bodySchema.safeParse(json)
   if (!parsed.success) return badRequest('Dados da conexão inválidos')
   const { email, destinoId } = parsed.data

@@ -2,6 +2,7 @@ import { PrismaAdapter } from '@auth/prisma-adapter'
 import type { Adapter, AdapterAccount, AdapterUser } from 'next-auth/adapters'
 import type { User } from '@prisma/client'
 import { db } from '@/lib/db'
+import { sendWelcome } from '@/server/mail/email-verification'
 
 // Converte a linha do banco no formato do Auth.js (name/image) mantendo workspaceId e nome.
 function toAdapterUser(u: User): AdapterUser {
@@ -32,6 +33,7 @@ export function pearchatAdapter(): Adapter {
           },
         })
       })
+      void sendWelcome({ email: user.email, nome: user.nome }) // cadastro via Google já nasce verificado
       return toAdapterUser(user)
     },
     async getUser(id) {

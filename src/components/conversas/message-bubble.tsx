@@ -1,6 +1,6 @@
 'use client'
 
-import { Sparkle, WarningCircle } from '@phosphor-icons/react'
+import { Check, Checks, Clock, Sparkle, WarningCircle } from '@phosphor-icons/react'
 import type { MessageDTO } from '@/lib/types'
 import { formatHour } from './format'
 
@@ -35,8 +35,25 @@ export function MessageBubble({ message, agentName }: { message: MessageDTO; age
             </span>
           ) : null}
           {formatHour(message.createdAt)}
+          {!received ? <StatusIcon status={message.status} /> : null}
         </div>
       </div>
     </div>
   )
+}
+
+// Estado da mensagem enviada: ícone discreto ao lado da hora (atualiza ao vivo via socket `message.status`).
+function StatusIcon({ status }: { status: MessageDTO['status'] }) {
+  switch (status) {
+    case 'pendente':
+      return <Clock size={12} aria-label="Enviando" />
+    case 'enviada':
+      return <Check size={12} aria-label="Enviada" />
+    case 'entregue':
+      return <Checks size={13} aria-label="Entregue" />
+    case 'lida':
+      return <Checks size={13} className="text-light-accent-300" aria-label="Lida" />
+    default:
+      return null
+  }
 }

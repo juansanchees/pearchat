@@ -30,3 +30,20 @@ export function formatPhone(tel: string | null): string {
   const m = /^\+55(\d{2})(\d{5})(\d{4})$/.exec(tel)
   return m ? `+55 ${m[1]} ${m[2]}-${m[3]}` : tel
 }
+
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+
+/** Chave do dia (fuso do navegador) para agrupar mensagens. */
+export function dayKey(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** "Hoje", "Ontem" ou dd/mm/aaaa para o separador de dias da conversa. */
+export function formatDayLabel(iso: string): string {
+  const d = new Date(iso)
+  const diff = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86_400_000)
+  if (diff <= 0) return 'Hoje'
+  if (diff === 1) return 'Ontem'
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
+}

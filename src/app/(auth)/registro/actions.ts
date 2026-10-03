@@ -7,6 +7,8 @@ import { AuthError } from 'next-auth'
 import { z } from 'zod'
 import { signIn } from '@/auth'
 import { db } from '@/lib/db'
+import { issueEmailCode } from '@/server/mail/email-verification'
+import { mailConfigured } from '@/server/mail/send'
 import { makeSessionCookieNonPersistent, type AuthFormState } from '../_lib/session-cookie'
 
 // O telefone (WhatsApp) do formulário ainda não tem coluna no banco: é validado no cliente e não é salvo.
@@ -64,6 +66,12 @@ export async function registroAction(_prev: AuthFormState, formData: FormData): 
     throw error
   }
   if (!remember) makeSessionCookieNonPersistent()
-  // Conta nova segue para o onboarding; o login normal vai direto ao app.
+  // Com e-mail configurado, a conta nova confirma o e-mail (código de 6 dígitos) antes do onboarding.
+  if (mailConfigured()) {
+    const created = await db.user.findUnique({ where: { email }, select: { id: true, email: true, nome: true } })
+    if (created) await issueEmailCode(created).catch(() => undefined) // falha de envio: a tela permite reenviar
+    redirect('/verificar-email')
+  }
+  // Sem e-mail configurado: conta nova segue para o onboarding; o login normal vai direto ao app.
   redirect('/bem-vindo')
 }

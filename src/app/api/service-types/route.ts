@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
 import { apiError } from '@/server/calendar/service'
 import {
   COR_RE,
@@ -37,7 +37,7 @@ const postSchema = z
 export async function POST(req: Request) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
-  const parsed = postSchema.safeParse(await req.json().catch(() => null))
+  const parsed = postSchema.safeParse(await readJson(req))
   if (!parsed.success) return badRequest('Dados do tipo inválidos (nome de 1 a 40 letras, duração de 5 a 480 min)')
   const b = parsed.data
 

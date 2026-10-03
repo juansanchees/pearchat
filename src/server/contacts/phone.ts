@@ -32,3 +32,32 @@ export function formatPhoneDisplay(e164: string | null): string {
   }
   return `+${d}`
 }
+
+/**
+ * Variantes equivalentes de um número brasileiro: com e sem o 9º dígito (celulares antigos têm 8
+ * dígitos depois do DDD). Fora do Brasil devolve só o próprio número.
+ */
+export function phoneVariants(e164: string): string[] {
+  const d = onlyDigits(e164)
+  const out = new Set<string>([`+${d}`])
+  if (d.startsWith('55')) {
+    const rest = d.slice(2)
+    if (rest.length === 11 && rest[2] === '9') out.add(`+55${rest.slice(0, 2)}${rest.slice(3)}`)
+    else if (rest.length === 10 && /[6-9]/.test(rest[2])) out.add(`+55${rest.slice(0, 2)}9${rest.slice(2)}`)
+  }
+  return Array.from(out)
+}
+
+/**
+ * Todos os formatos sob os quais o mesmo contato pode estar gravado (com/sem +55, com/sem o 9º
+ * dígito, com máscara). Usado para achar um contato existente antes de criar outro.
+ */
+export function phoneCandidates(raw: string): string[] {
+  const set = new Set<string>()
+  const add = (p: string | null) => p && phoneVariants(p).forEach((v) => set.add(v))
+  const digits = onlyDigits(raw).replace(/^0+/, '')
+  add(normalizePhone(raw))
+  if (digits) add(`+${digits}`)
+  if (!digits.startsWith('55') && (digits.length === 10 || digits.length === 11)) add(`+55${digits}`)
+  return Array.from(set)
+}

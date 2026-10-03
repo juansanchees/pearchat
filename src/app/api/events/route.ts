@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
 import { insertEvent } from '@/server/calendar/google'
 import { googleEventsInRange, invalidateGoogleCache } from '@/server/calendar/live'
 import {
@@ -13,14 +13,13 @@ import {
   destinoOf,
   eventDescription,
   eventInclude,
-  findOverlapping,
   getConnection,
   isRealConnection,
   logGoogleFailure,
-  resolveContactId,
   toEventDto,
 } from '@/server/calendar/service'
 import { addMin, parseInstant } from '@/server/calendar/time'
+import { findOverlappingTx, resolveContactTx, withBookingLock } from './_booking'
 import type { EventListResponse, EventWriteResponse, GoogleSyncStatus } from '@/server/calendar/types'
 
 export const dynamic = 'force-dynamic'
@@ -76,9 +75,18 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ eventos, google } satisfies EventListResponse)
 }
 
+// Início no passado (com 5 min de tolerância) ou em ano absurdo não é agendamento: 422/400 com mensagem.
+const PAST_TOLERANCE_MS = 5 * 60_000
+
 const bodySchema = z
   .object({
-    inicio: z.string().datetime({ offset: true }),
+    inicio: z
+      .string()
+      .datetime({ offset: true })
+      .refine((s) => {
+        const y = new Date(s).getUTCFullYear()
+        return y >= 2000 && y <= 2100
+      }, 'Data fora do intervalo permitido'),
     duracaoMin: z.number().int().min(5).max(MAX_DURACAO_MIN).optional(),
     titulo: z.string().trim().min(1).max(120).optional(),
     tipo: z.string().trim().min(1).max(60).optional(),
@@ -96,7 +104,7 @@ export async function POST(req: NextRequest) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
 
-  const json: unknown = await req.json().catch(() => null)
+  const json = await readJson(req)
   const parsed = bodySchema.safeParse(json)
   if (!parsed.success) return badRequest('Dados do agendamento inválidos')
   const b = parsed.data
@@ -115,28 +123,36 @@ export async function POST(req: NextRequest) {
   const duracaoMin = b.duracaoMin ?? st?.duracaoMin ?? conn0?.duracaoPadraoMin ?? 60
 
   const inicio = new Date(b.inicio)
+  if (inicio.getTime() < Date.now() - PAST_TOLERANCE_MS) {
+    return apiError('DATA_PASSADA', 'Esse horário já passou. Escolha um horário a partir de agora.', 422)
+  }
   const fim = addMin(inicio, duracaoMin)
 
-  const conflicts = await findOverlapping(workspaceId, inicio, fim)
-  if (conflicts.length > 0) return conflictResponse(toEventDto(conflicts[0]))
-
-  const contact = await resolveContactId(workspaceId, b)
-  if (!contact.ok) return apiError('CONTATO_INVALIDO', 'Contato não encontrado.', 422)
-
   const titulo = b.titulo ?? tipo
-  const created = await db.event.create({
-    data: {
-      workspaceId,
-      contactId: contact.id,
-      inicio,
-      duracaoMin,
-      serviceTypeId: st?.id ?? null,
-      titulo,
-      tipo,
-      origem: 'MANUAL',
-    },
-    include: eventInclude,
+  // Checagem de conflito + criação numa transação com lock da agenda: dois pedidos simultâneos não duplicam o horário.
+  const outcome = await withBookingLock(workspaceId, async (tx) => {
+    const [first] = await findOverlappingTx(tx, workspaceId, inicio, fim)
+    if (first) return { kind: 'conflict', row: first } as const
+    const contact = await resolveContactTx(tx, workspaceId, b)
+    if (!contact.ok) return { kind: 'badContact' } as const
+    const row = await tx.event.create({
+      data: {
+        workspaceId,
+        contactId: contact.id,
+        inicio,
+        duracaoMin,
+        serviceTypeId: st?.id ?? null,
+        titulo,
+        tipo,
+        origem: 'MANUAL',
+      },
+      include: eventInclude,
+    })
+    return { kind: 'created', row } as const
   })
+  if (outcome.kind === 'conflict') return conflictResponse(toEventDto(outcome.row))
+  if (outcome.kind === 'badContact') return apiError('CONTATO_INVALIDO', 'Contato não encontrado.', 422)
+  const created = outcome.row
 
   let googleSync: GoogleSyncStatus = 'desconectado'
   let row = created

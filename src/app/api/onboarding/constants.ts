@@ -3,6 +3,8 @@ export const SEGMENTOS = {
   confeitaria: 'confeitaria e doces',
   restaurante: 'restaurante e delivery',
   beleza: 'beleza e estética',
+  barbearia: 'barbearia',
+  petshop: 'pet shop',
   saude: 'saúde e clínicas',
   loja: 'loja e varejo',
   servicos: 'serviços',

@@ -15,12 +15,42 @@ export class LlmError extends Error {
   }
 }
 
-const TIMEOUT_MS = 45_000
+const DEFAULT_TIMEOUT_MS = 45_000
 const MAX_TOKENS = 600
 const OPENAI_MAX_COMPLETION_TOKENS = 1500
 
+// Valores lidos a cada chamada (permitem apontar para um servidor falso em testes e ajustar sem redeploy).
+const timeoutMs = () => {
+  const n = Number(process.env.LLM_TIMEOUT_MS)
+  return Number.isFinite(n) && n >= 200 ? n : DEFAULT_TIMEOUT_MS
+}
+const openAiBase = () => (process.env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '')
+const anthropicBase = () => (process.env.ANTHROPIC_BASE_URL?.trim() || 'https://api.anthropic.com/v1').replace(/\/+$/, '')
+
 function textOf(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null
+}
+
+/**
+ * Resposta cortada pelo limite de tokens: aproveita só as frases completas. Sem nenhuma frase completa
+ * devolve null (quem chama trata como erro e tenta de novo, em vez de mandar meia frase ao cliente).
+ */
+export function trimToLastSentence(text: string): string | null {
+  let end = -1
+  for (let k = 0; k < text.length; k++) if ('.!?…'.includes(text.charAt(k))) end = k
+  const out = end >= 0 ? text.slice(0, end + 1).trim() : null
+  return out && out.length >= 20 ? out : null
+}
+
+/** Rede de segurança de formato para WhatsApp: tira markdown que o modelo ainda deixar passar. */
+export function cleanReply(text: string): string {
+  return text
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/__([^_\n]+)__/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/`+/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<unknown> {
@@ -28,41 +58,51 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs()),
   }).catch((e: unknown) => {
     // fetch falhou (rede/timeout): mensagem curta, sem URL nem cabeçalhos.
     throw new LlmError(e instanceof Error && e.name === 'TimeoutError' ? 'Provedor de IA demorou demais' : 'Provedor de IA indisponível')
   })
   // Nunca logar chaves nem o conteúdo da conversa: só o status.
   if (!res.ok) throw new LlmError(`Provedor de IA respondeu ${res.status}`, res.status)
-  return res.json()
+  // O corpo também está sujeito ao tempo limite (AbortSignal.timeout cobre a leitura); JSON inválido vira erro curto.
+  return res.json().catch((e: unknown) => {
+    throw new LlmError(e instanceof Error && e.name === 'TimeoutError' ? 'Provedor de IA demorou demais' : 'Resposta inválida do provedor de IA')
+  })
 }
 
 async function callAnthropic(key: string, system: string, messages: ChatMessage[]): Promise<string> {
   const json = (await postJson(
-    'https://api.anthropic.com/v1/messages',
+    `${anthropicBase()}/messages`,
     { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     { model: process.env.AI_MODEL || 'claude-haiku-4-5-20251001', max_tokens: MAX_TOKENS, system, messages },
-  )) as { content?: { type?: string; text?: unknown }[] }
+  )) as { content?: { type?: string; text?: unknown }[]; stop_reason?: string }
   const bloco = json.content?.find((c) => c.type === 'text')
-  const texto = textOf(bloco?.text)
+  let texto = textOf(bloco?.text)
+  if (texto && json.stop_reason === 'max_tokens') texto = trimToLastSentence(texto)
   if (!texto) throw new LlmError('Resposta vazia do provedor de IA')
   return texto
 }
 
 async function callOpenAi(key: string, system: string, messages: ChatMessage[]): Promise<string> {
+  const effort = process.env.AI_REASONING_EFFORT?.trim()
   const json = (await postJson(
-    'https://api.openai.com/v1/chat/completions',
+    `${openAiBase()}/chat/completions`,
     { authorization: `Bearer ${key}` },
     {
       model: process.env.AI_MODEL || 'gpt-4o-mini',
       // Modelos novos da OpenAI rejeitam max_tokens e temperature: só max_completion_tokens.
       // Modelos de raciocínio gastam parte do limite pensando: folga extra para sobrar texto visível.
       max_completion_tokens: OPENAI_MAX_COMPLETION_TOKENS,
+      // Opcional (ex.: "low" ou "none" em modelos de raciocínio): só enviado quando configurado, pois modelos antigos o rejeitam.
+      ...(effort ? { reasoning_effort: effort } : {}),
       messages: [{ role: 'system', content: system }, ...messages],
     },
-  )) as { choices?: { message?: { content?: unknown } }[] }
-  const texto = textOf(json.choices?.[0]?.message?.content)
+  )) as { choices?: { message?: { content?: unknown }; finish_reason?: string }[] }
+  const choice = json.choices?.[0]
+  let texto = textOf(choice?.message?.content)
+  // Cortada por limite de tokens: não manda meia frase ao cliente.
+  if (texto && choice?.finish_reason === 'length') texto = trimToLastSentence(texto)
   if (!texto) throw new LlmError('Resposta vazia do provedor de IA')
   return texto
 }
@@ -74,7 +114,7 @@ export function hasLlmKey(): boolean {
 /**
  * Gera uma resposta do agente. Usa a Anthropic quando ANTHROPIC_API_KEY existe, senão a OpenAI
  * (OPENAI_API_KEY). Sem nenhuma chave devolve a resposta simulada (`simulate`, ou um texto genérico)
- * com `simulado: true`. Lança LlmError se o provedor falhar.
+ * com `simulado: true`. Lança LlmError se o provedor falhar ou devolver resposta vazia/cortada.
  */
 export async function generateReply({
   system,
@@ -86,9 +126,9 @@ export async function generateReply({
   simulate?: () => string
 }): Promise<GenerateReplyResult> {
   const anthropic = process.env.ANTHROPIC_API_KEY
-  if (anthropic) return { texto: await callAnthropic(anthropic, system, messages), simulado: false }
+  if (anthropic) return { texto: cleanReply(await callAnthropic(anthropic, system, messages)), simulado: false }
   const openai = process.env.OPENAI_API_KEY
-  if (openai) return { texto: await callOpenAi(openai, system, messages), simulado: false }
+  if (openai) return { texto: cleanReply(await callOpenAi(openai, system, messages)), simulado: false }
   return { texto: simulate ? simulate() : 'Posso ajudar com informações sobre nossos produtos e serviços, preços, horários e agendamentos. Sobre o que você quer saber?', simulado: true }
 }
 

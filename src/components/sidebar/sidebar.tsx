@@ -13,9 +13,9 @@ import {
   CrownSimple,
   GearSix,
   GoogleLogo,
-  Leaf,
   LockSimple,
   PaperPlaneTilt,
+  Power,
   SignOut,
   X,
   Sparkle,
@@ -28,6 +28,8 @@ import { useAppState } from '@/components/app/app-state'
 import { AUTOMATION_KEYS, AUTOMATION_TITLES, DRAWER_DESCRIPTIONS, fmtNum } from '@/components/app/automations'
 import { useShell } from '@/components/app/shell-context'
 import { useDisconnect } from '@/components/app/use-disconnect'
+import { Logo } from '@/components/brand/logo'
+import { useLogout } from '@/components/app/use-logout'
 import { usePhotoPicker } from '@/components/app/use-photo-picker'
 import { useDrawerData } from '@/components/drawers/drawer-data'
 import { PearSwitch, Tag, initials } from '@/components/pear'
@@ -44,6 +46,7 @@ export function Sidebar() {
   const { menuOpen, setMenuOpen } = useShell()
   const { contatos, agenda } = useSidebarData()
   const disconnect = useDisconnect()
+  const { logout, leaving } = useLogout()
   const photo = usePhotoPicker()
 
   // Navegar ou abrir uma gaveta fecha o menu (modo gaveta).
@@ -100,19 +103,14 @@ export function Sidebar() {
     <aside
       aria-label="Menu lateral"
       className={cn(
-        'flex w-[288px] flex-none flex-col overflow-y-auto overflow-x-hidden border-r border-dark-divider bg-[linear-gradient(180deg,#1f2512_0%,#14170f_40%)] text-[13.5px] text-dark-text',
+        'flex w-[288px] flex-none flex-col overflow-y-auto overflow-x-hidden border-r border-dark-divider bg-[linear-gradient(180deg,#12251a_0%,#14170f_40%)] text-[13.5px] text-dark-text',
         'max-[899px]:fixed max-[899px]:inset-y-0 max-[899px]:left-0 max-[899px]:z-40 max-[899px]:w-[min(288px,88vw)] max-[899px]:shadow-[0_0_40px_rgba(0,0,0,0.6)] max-[899px]:transition-transform max-[899px]:duration-200',
         menuOpen ? 'max-[899px]:translate-x-0' : 'max-[899px]:-translate-x-full max-[899px]:invisible',
       )}
     >
       {/* 1. Marca */}
       <div className="flex h-[60px] flex-none items-center gap-[10px] px-[18px]">
-        <span className="grid h-7 w-7 place-items-center rounded-[8px] border border-dark-accent-600 bg-dark-accent-900 shadow-[0_0_16px_#1f2512]">
-          <Leaf size={15} weight="fill" className="text-dark-accent-300" />
-        </span>
-        <span className="text-[18px] font-medium leading-none tracking-[-0.01em]">
-          Pear<span className="text-dark-accent-400">Chat</span>
-        </span>
+        <Logo theme="dark" height={42} className="-ml-1" priority />
         <div className="flex-1" />
         <button
           type="button"
@@ -167,7 +165,7 @@ export function Sidebar() {
               key={key}
               className={cn(
                 'flex items-center gap-[10px] rounded-lg border px-3 py-[11px] transition-[background-color,border-color] duration-200',
-                on ? 'border-dark-accent-700 bg-[color-mix(in_srgb,#a8c23a_12%,#1d2117)]' : 'border-dark-divider bg-dark-surface',
+                on ? 'border-dark-accent-700 bg-[color-mix(in_srgb,#5ccb6e_12%,#1d2117)]' : 'border-dark-divider bg-dark-surface',
               )}
             >
               <button
@@ -228,15 +226,15 @@ export function Sidebar() {
           aria-current={onAgenda ? 'page' : undefined}
           onClick={goTo}
           className={cn(
-            'group relative flex w-full items-center gap-[13px] overflow-hidden rounded-lg border bg-[linear-gradient(135deg,color-mix(in_srgb,#a8c23a_26%,#1d2117)_0%,#1d2117_70%)] px-[13px] py-3 text-left text-dark-text transition-[border-color,box-shadow] duration-200',
+            'group relative flex w-full items-center gap-[13px] overflow-hidden rounded-lg border bg-[linear-gradient(135deg,color-mix(in_srgb,#5ccb6e_26%,#1d2117)_0%,#1d2117_70%)] px-[13px] py-3 text-left text-dark-text transition-[border-color,box-shadow] duration-200',
             onAgenda
-              ? 'border-dark-accent-500 shadow-[0_0_0_1px_#6a8226,0_8px_26px_color-mix(in_srgb,#a8c23a_26%,transparent)]'
-              : 'border-dark-accent-700 hover:border-dark-accent-500 hover:shadow-[0_0_0_1px_#41511e,0_8px_24px_color-mix(in_srgb,#a8c23a_22%,transparent)]',
+              ? 'border-dark-accent-500 shadow-[0_0_0_1px_#25703c,0_8px_26px_color-mix(in_srgb,#5ccb6e_26%,transparent)]'
+              : 'border-dark-accent-700 hover:border-dark-accent-500 hover:shadow-[0_0_0_1px_#1e4a2e,0_8px_24px_color-mix(in_srgb,#5ccb6e_22%,transparent)]',
           )}
         >
           <span
             aria-hidden
-            className="absolute -right-[18px] -top-[18px] h-[74px] w-[74px] rounded-pill bg-[radial-gradient(circle,color-mix(in_srgb,#a8c23a_35%,transparent),transparent_70%)]"
+            className="absolute -right-[18px] -top-[18px] h-[74px] w-[74px] rounded-pill bg-[radial-gradient(circle,color-mix(in_srgb,#5ccb6e_35%,transparent),transparent_70%)]"
           />
           <span className="relative flex h-[50px] w-[46px] flex-none flex-col overflow-hidden rounded-[10px] border border-dark-accent-600 bg-dark-bg">
             <span className="h-[15px] bg-dark-accent-500 text-center text-[9px] font-semibold leading-[15px] tracking-[0.14em] text-dark-accent-900">{today.mes}</span>
@@ -263,7 +261,7 @@ export function Sidebar() {
           onClick={goTo}
           className={cn(
             'flex w-full items-center gap-[13px] rounded-lg border px-[13px] py-3 text-left text-dark-text transition-[border-color,background-color] duration-200 hover:border-dark-accent-600',
-            onContatos ? 'border-dark-accent-500 bg-[color-mix(in_srgb,#a8c23a_14%,#1d2117)]' : 'border-dark-divider bg-dark-surface',
+            onContatos ? 'border-dark-accent-500 bg-[color-mix(in_srgb,#5ccb6e_14%,#1d2117)]' : 'border-dark-divider bg-dark-surface',
           )}
         >
           <span className="relative grid h-[46px] w-[46px] flex-none place-items-center rounded-[12px] border border-dark-accent-700 bg-dark-bg">
@@ -274,7 +272,7 @@ export function Sidebar() {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[14px] font-medium leading-[1.2]">Contatos</span>
-            <span className="mt-1 block truncate text-[11.5px] text-dark-neutral-400">{fmtNum(contatos)} salvos na nuvem</span>
+            <span className="mt-1 block truncate text-[11.5px] text-dark-neutral-400">{fmtNum(contatos)} {contatos === 1 ? 'salvo' : 'salvos'} na nuvem</span>
           </span>
           <CaretRight size={13} className="flex-none text-dark-neutral-500" />
         </Link>
@@ -332,13 +330,23 @@ export function Sidebar() {
             {user.empresa} · Plano {plano}
           </div>
         </div>
+        <button
+          type="button"
+          title="Sair da conta"
+          aria-label="Sair da conta"
+          disabled={leaving}
+          onClick={() => void logout()}
+          className="grid h-8 w-8 flex-none place-items-center rounded-md p-0 text-dark-neutral-400 hover:bg-[color-mix(in_srgb,#5ccb6e_10%,transparent)] disabled:opacity-60"
+        >
+          <Power size={15} />
+        </button>
         {connected && (
           <button
             type="button"
             title="Desconectar WhatsApp"
             aria-label="Desconectar WhatsApp"
             onClick={() => void disconnect()}
-            className="grid h-8 w-8 flex-none place-items-center rounded-md p-0 text-dark-accent-500 hover:bg-[color-mix(in_srgb,#a8c23a_10%,transparent)]"
+            className="grid h-8 w-8 flex-none place-items-center rounded-md p-0 text-dark-accent-500 hover:bg-[color-mix(in_srgb,#5ccb6e_10%,transparent)]"
           >
             <SignOut size={15} />
           </button>

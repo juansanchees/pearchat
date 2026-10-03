@@ -88,7 +88,7 @@ export function ConnectFlow({
   }
 
   return (
-    <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto bg-light-bg bg-[radial-gradient(900px_480px_at_30%_0%,#f3f7e2,transparent_70%)] p-8">
+    <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto bg-light-bg bg-[radial-gradient(900px_480px_at_30%_0%,#f0faea,transparent_70%)] p-8">
       {step === null && <Intro onGoogle={iniciar} />}
 
       {step === 'conta' && (
@@ -262,7 +262,7 @@ function AgendasStep({
     realMode ? cal.calendarios.filter((c) => c.selecionado).map((c) => c.id) : [...DEMO_SELECIONADAS],
   )
   const [saving, setSaving] = useState(false)
-  const destinoNome = opts.find((o) => o.id === destinoId)?.nome ?? 'Doce Ateliê · Pedidos'
+  const destinoNome = opts.find((o) => o.id === destinoId)?.nome ?? 'Minha empresa · Agendamentos'
 
   const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
 
@@ -316,10 +316,10 @@ function AgendasStep({
               <span
                 className={cn(
                   'grid h-[18px] w-[18px] flex-none place-items-center rounded-[5px] border border-solid',
-                  on ? 'border-light-accent-400 bg-light-accent-400' : 'border-light-neutral-700 bg-transparent',
+                  on ? 'border-light-accent-fill bg-light-accent-fill' : 'border-light-neutral-700 bg-transparent',
                 )}
               >
-                {on && <Check size={11} weight="bold" className="text-[#fbfcf3]" />}
+                {on && <Check size={11} weight="bold" className="text-white" />}
               </span>
               <span className="h-[9px] w-[9px] flex-none rounded-pill" style={{ background: c.cor }} />
               <span className="min-w-0 flex-1">

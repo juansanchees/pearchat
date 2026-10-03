@@ -125,7 +125,7 @@ export function WeekGrid({
               <span
                 className={cn(
                   'grid h-7 w-7 place-items-center rounded-pill text-[14px] font-medium leading-none',
-                  d.isToday ? 'bg-light-accent-500 text-[#fbfcf3]' : sel ? 'bg-light-accent-800 text-light-accent-200' : 'text-light-text',
+                  d.isToday ? 'bg-light-accent-fill text-white' : sel ? 'bg-light-accent-800 text-light-accent-200' : 'text-light-text',
                 )}
               >
                 {dayNumber(d.date)}
@@ -185,7 +185,7 @@ export function WeekGrid({
             return (
               <div
                 key={d.date}
-                className={cn('relative border-0 border-l border-solid border-light-divider', sel && 'bg-[rgba(168,194,58,0.05)]')}
+                className={cn('relative border-0 border-l border-solid border-light-divider', sel && 'bg-[rgba(46,154,72,0.05)]')}
               >
                 {GRID_HOURS.map((h) => (
                   <button
@@ -220,7 +220,7 @@ export function WeekGrid({
                           'absolute overflow-hidden rounded-[7px] border border-l-[3px] border-solid px-[7px] py-[5px]',
                           editavel ? 'cursor-pointer' : 'pointer-events-none',
                           ia ? 'border-light-accent-700 bg-light-accent-900' : 'border-light-divider bg-light-surface',
-                          ativo && 'outline outline-2 outline-offset-0 outline-[#a8c23a]',
+                          ativo && 'outline outline-2 outline-offset-0 outline-light-accent-500',
                         )}
                         style={{
                           top: pos.top,

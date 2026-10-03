@@ -93,6 +93,14 @@ export function AppStateProvider({
       }
       setWaState((cur) => ({ ...cur, status, qr: undefined }))
       setAutomations({ ia: false, followup: false, disparos: false })
+      // Persiste o desligamento: sem isso, ao reconectar as automações voltariam ligadas sozinhas.
+      for (const key of ['ia', 'followup', 'disparos'] as const) {
+        void fetch('/api/automations', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, on: false }),
+        }).catch(() => {})
+      }
       toast({ icon: <Plugs size={18} weight="fill" />, title: 'WhatsApp desconectado', text: 'As automações foram desligadas' })
     },
     [toast],

@@ -5,8 +5,8 @@ import { normalizePhone } from './phone'
 import { normalizeTags } from './tags'
 import type { ImportError } from './types'
 
-export const MAX_IMPORT_ROWS = 5000
-export const MAX_IMPORT_BYTES = 2 * 1024 * 1024
+export const MAX_IMPORT_ROWS = 20000
+export const MAX_IMPORT_BYTES = 8 * 1024 * 1024
 
 export type ImportRow = { line: number; name: string; phone: string; email: string | null; tags: string[] }
 
@@ -45,7 +45,11 @@ export function mapHeader(cells: string[]): Partial<Record<Field, number>> {
   return map
 }
 
-const cellAt = (rec: CsvRecord, idx: number | undefined) => (idx === undefined ? '' : (rec.cells[idx] ?? '').trim())
+/** A exportação prefixa ' em células que o Excel leria como fórmula (=, +, -, @); aqui o prefixo sai (round-trip). */
+const unneutralize = (v: string) => (/^'[=+\-@]/.test(v) ? v.slice(1) : v)
+
+const cellAt = (rec: CsvRecord, idx: number | undefined) =>
+  idx === undefined ? '' : unneutralize((rec.cells[idx] ?? '').trim())
 
 type RowResult = { row: ImportRow } | { erro: ImportError }
 
@@ -59,7 +63,7 @@ function buildRow(rec: CsvRecord, cols: Partial<Record<Field, number>>): RowResu
   if (!phone) return fail('Telefone inválido')
   const rawEmail = cellAt(rec, cols.email)
   if (rawEmail && !emailSchema.safeParse(rawEmail).success) return fail('E-mail inválido')
-  const tags = normalizeTags(cellAt(rec, cols.tags).split(/[,;|/]/))
+  const tags = normalizeTags(cellAt(rec, cols.tags).split(/[,;|]/))
   return { row: { line: rec.line, name, phone, email: rawEmail || null, tags } }
 }
 

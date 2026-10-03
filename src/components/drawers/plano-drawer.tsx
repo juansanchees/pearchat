@@ -79,7 +79,7 @@ export function PlanoDrawer() {
                 <span className="text-light-neutral-500">{u.txt}</span>
               </div>
               <div className="h-[6px] rounded-pill bg-light-surface">
-                <div className="h-full rounded-pill bg-[linear-gradient(90deg,#b3ca52,#86a028)]" style={{ width: `${u.pct}%` }} />
+                <div className="h-full rounded-pill bg-[linear-gradient(90deg,#7acc4a,#2e9a48)]" style={{ width: `${u.pct}%` }} />
               </div>
             </div>
           ))}

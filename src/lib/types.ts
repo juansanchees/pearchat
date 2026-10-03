@@ -127,6 +127,15 @@ export interface CampaignDTO {
   scheduledAt: string | null
   /** ISO 8601 */
   createdAt: string
+  /** Em andamento, mas retida pelo horário de silêncio. */
+  aguardandoHorario?: boolean
+}
+
+export interface DisparosSettingsDTO {
+  silencioAtivo: boolean
+  /** Hora cheia (0-23, São Paulo). A janela pode cruzar a meia-noite. */
+  silencioInicio: number
+  silencioFim: number
 }
 
 export interface SettingsDTO {

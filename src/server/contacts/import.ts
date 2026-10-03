@@ -1,6 +1,7 @@
 import type { Contact, Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import type { ImportRow } from './import-parse'
+import { phoneCandidates } from './phone'
 import { normalizeTags } from './tags'
 import type { ImportResult } from './types'
 
@@ -23,38 +24,68 @@ async function applyUpdates(updates: { id: string; data: Prisma.ContactUpdateInp
   }
 }
 
-/** Upsert por telefone dentro do workspace. `ignorados` chega com as linhas repetidas do arquivo. */
+const BATCH = 500
+
+/** Upsert por telefone dentro do workspace, em lotes de 500 linhas (transações curtas). `ignorados` chega com as linhas repetidas do arquivo. */
 export async function importRows(
   workspaceId: string,
   rows: ImportRow[],
   base: Pick<ImportResult, 'erros' | 'ignorados'>,
 ): Promise<ImportResult> {
-  const existing = await db.contact.findMany({
-    where: { workspaceId, telefone: { in: rows.map((r) => r.phone) } },
-  })
-  const byPhone = new Map(existing.map((c) => [c.telefone, c]))
-
-  const toCreate: Prisma.ContactCreateManyInput[] = []
-  const updates: { id: string; data: Prisma.ContactUpdateInput }[] = []
+  let criados = 0
+  let atualizados = 0
   let ignorados = base.ignorados
+  const touched = new Set<string>()
+  const newPhones = new Set<string>()
 
-  for (const row of rows) {
-    const found = byPhone.get(row.phone)
-    if (!found) {
-      toCreate.push({ workspaceId, nome: row.name, telefone: row.phone, email: row.email, tags: row.tags })
-      continue
+  for (let start = 0; start < rows.length; start += BATCH) {
+    const batch = rows.slice(start, start + BATCH)
+    const candidates = batch.map((r) => phoneCandidates(r.phone))
+    const existing = await db.contact.findMany({
+      where: { workspaceId, telefone: { in: Array.from(new Set(candidates.flat())) } },
+    })
+    const byPhone = new Map(existing.map((c) => [c.telefone, c]))
+    // Acha o contato pelo número exato ou por uma variante (9º dígito); evita duplicar no reimport.
+    const findExisting = (i: number) => {
+      const exact = byPhone.get(batch[i].phone)
+      if (exact) return exact
+      for (const v of candidates[i]) {
+        const hit = byPhone.get(v)
+        if (hit) return hit
+      }
+      return undefined
     }
-    const data = diffRow(found, row)
-    if (data) updates.push({ id: found.id, data })
-    else ignorados++
-  }
 
-  const created = toCreate.length ? await db.contact.createMany({ data: toCreate, skipDuplicates: true }) : { count: 0 }
-  await applyUpdates(updates)
-  return {
-    criados: created.count,
-    atualizados: updates.length,
-    ignorados: ignorados + (toCreate.length - created.count),
-    erros: base.erros,
+    const toCreate: Prisma.ContactCreateManyInput[] = []
+    const updates: { id: string; data: Prisma.ContactUpdateInput }[] = []
+
+    for (let i = 0; i < batch.length; i++) {
+      const row = batch[i]
+      if (candidates[i].some((v) => newPhones.has(v))) {
+        ignorados++ // mesmo número (em qualquer formato) já foi criado nesta importação
+        continue
+      }
+      const found = findExisting(i)
+      if (found && touched.has(found.id)) {
+        ignorados++ // duas linhas do arquivo apontam para o mesmo contato (ex.: com e sem o 9º dígito)
+        continue
+      }
+      if (found) touched.add(found.id)
+      if (!found) {
+        candidates[i].forEach((v) => newPhones.add(v))
+        toCreate.push({ workspaceId, nome: row.name, telefone: row.phone, email: row.email, tags: row.tags })
+        continue
+      }
+      const data = diffRow(found, row)
+      if (data) updates.push({ id: found.id, data })
+      else ignorados++
+    }
+
+    const created = toCreate.length ? await db.contact.createMany({ data: toCreate, skipDuplicates: true }) : { count: 0 }
+    await applyUpdates(updates)
+    criados += created.count
+    atualizados += updates.length
+    ignorados += toCreate.length - created.count
   }
+  return { criados, atualizados, ignorados, erros: base.erros }
 }

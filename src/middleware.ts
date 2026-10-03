@@ -6,7 +6,8 @@ const { auth } = NextAuth(authConfig)
 
 // Páginas legais: públicas para todos (logado ou não), sem redirecionamento.
 const OPEN_PAGES = ['/privacidade', '/termos']
-const PUBLIC_PAGES = ['/login', '/registro', '/recuperar-senha', '/redefinir-senha', '/verificar-email']
+// /verificar-email exige sessão (o código vai para a conta logada).
+const PUBLIC_PAGES = ['/login', '/registro', '/recuperar-senha', '/redefinir-senha']
 
 export default auth((req) => {
   const { pathname } = req.nextUrl
@@ -19,7 +20,10 @@ export default auth((req) => {
     return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   }
   if (!loggedIn && !isPublic) {
-    return NextResponse.redirect(new URL('/login', req.nextUrl))
+    const url = new URL('/login', req.nextUrl)
+    const back = pathname + req.nextUrl.search
+    if (back !== '/') url.searchParams.set('callbackUrl', back)
+    return NextResponse.redirect(url)
   }
   if (loggedIn && isPublic) {
     return NextResponse.redirect(new URL('/', req.nextUrl))

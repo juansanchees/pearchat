@@ -98,7 +98,7 @@ export function PasswordInput({
   )
 }
 
-const STRENGTH_COLORS = ['#e2e6d5', '#d08a6a', '#d9b25b', '#b3ca52', '#86a028']
+const STRENGTH_COLORS = ['#e2e6d5', '#d08a6a', '#d9b25b', '#7acc4a', '#2e9a48']
 const STRENGTH_LABELS = ['', 'Fraca', 'Média', 'Boa', 'Forte']
 
 export function passwordStrength(p: string): number {
@@ -145,7 +145,7 @@ export function CheckboxRow({
   children: ReactNode
   align?: 'center' | 'start'
 }) {
-  const border = checked ? '#86a028' : invalid ? '#c9806b' : '#c9cfb8'
+  const border = checked ? '#2e9a48' : invalid ? '#c9806b' : '#c9cfb8'
   const labelId = useId()
   // O texto fica fora do <button> para poder conter links (Termos/Privacidade) sem aninhar controles.
   return (
@@ -159,9 +159,9 @@ export function CheckboxRow({
         aria-labelledby={labelId}
         onClick={() => onChange(!checked)}
         className={`grid h-[17px] w-[17px] flex-none place-items-center rounded-[5px] border ${align === 'start' ? 'mt-px' : ''}`}
-        style={{ borderColor: border, background: checked ? '#86a028' : 'transparent' }}
+        style={{ borderColor: border, background: checked ? '#2e9a48' : 'transparent' }}
       >
-        {checked && <Check size={11} weight="bold" color="#f6f7ef" aria-hidden="true" />}
+        {checked && <Check size={11} weight="bold" color="#ffffff" aria-hidden="true" />}
       </button>
       <span
         id={labelId}
@@ -192,10 +192,11 @@ function GoogleSubmit({ label }: { label: string }) {
 }
 
 // "Continuar com Google": ativo quando o servidor tem credenciais do Google; senão fica desabilitado com "Em breve".
-export function GoogleButton({ label, enabled = false }: { label: string; enabled?: boolean }) {
+export function GoogleButton({ label, enabled = false, callbackUrl }: { label: string; enabled?: boolean; callbackUrl?: string }) {
   if (enabled) {
     return (
       <form action={googleAction} className="flex flex-col gap-2">
+        {callbackUrl ? <input type="hidden" name="callbackUrl" value={callbackUrl} /> : null}
         <GoogleSubmit label={label} />
         <p className="text-center text-[11.5px] leading-[1.45] text-light-neutral-500">
           Ao continuar, você concorda com os{' '}

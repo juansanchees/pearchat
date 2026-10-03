@@ -39,6 +39,8 @@ export type Campanha = {
   respostas: number
   status: CampanhaStatus
   data: string
+  /** Retida pelo horário de silêncio dos disparos. */
+  retida?: boolean
 }
 
 export type Template = { id: string; nome: string; cat: 'Marketing' | 'Utilidade'; status: 'Aprovado' | 'Em análise' | 'Rejeitado'; corpo: string }

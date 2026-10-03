@@ -17,7 +17,15 @@ function Submit() {
   )
 }
 
-export function LoginForm({ googleEnabled = false, oauthError }: { googleEnabled?: boolean; oauthError?: string }) {
+export function LoginForm({
+  googleEnabled = false,
+  oauthError,
+  callbackUrl = '/',
+}: {
+  googleEnabled?: boolean
+  oauthError?: string
+  callbackUrl?: string
+}) {
   const [state, action] = useFormState(loginAction, undefined)
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
@@ -48,7 +56,7 @@ export function LoginForm({ googleEnabled = false, oauthError }: { googleEnabled
           {oauthError}
         </p>
       )}
-      <GoogleButton label="Continuar com Google" enabled={googleEnabled} />
+      <GoogleButton label="Continuar com Google" enabled={googleEnabled} callbackUrl={callbackUrl} />
       <OrDivider />
       <form action={action} onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
       <div className="flex flex-col gap-3.5">
@@ -95,6 +103,7 @@ export function LoginForm({ googleEnabled = false, oauthError }: { googleEnabled
             describedBy={errs.senha ? 'senha-erro' : undefined}
           />
         </Field>
+        <input type="hidden" name="callbackUrl" value={callbackUrl} />
         <input type="hidden" name="lembrar" value={lembrar ? 'true' : 'false'} />
         <CheckboxRow checked={lembrar} onChange={setLembrar}>
           Manter conectado neste computador

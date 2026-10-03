@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { providerToKind } from '@/lib/mappers'
 import { getApiSession } from '@/server/whatsapp/auth'
 import { getProvider } from '@/server/whatsapp'
-import { getSession, setStatus, toStatusDTO } from '@/server/whatsapp/session'
+import { disableAutomations, getSession, setStatus, toStatusDTO } from '@/server/whatsapp/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,9 +32,6 @@ export async function POST() {
     sessionData: null,
     resetHistory: true,
   })
-  await Promise.all([
-    db.aiAgent.updateMany({ where: { workspaceId }, data: { enabled: false } }),
-    db.followUpRule.updateMany({ where: { workspaceId }, data: { enabled: false } }),
-  ])
+  await disableAutomations(workspaceId)
   return NextResponse.json(toStatusDTO(row))
 }

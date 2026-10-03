@@ -12,7 +12,8 @@ export const FU_PARAR_PADRAO = ['Cliente respondeu', 'Pedido fechado']
 export const followUpSchema = z.object({
   esperaHoras: z.union([z.literal(2), z.literal(6), z.literal(24)]),
   tentativas: z.number().int().min(1).max(3),
-  mensagens: z.array(z.string().max(1000)).min(1).max(3),
+  // Postgres não aceita o caractere NUL em texto (daria erro 500): recusa na validação.
+  mensagens: z.array(z.string().max(1000).refine((s) => !s.includes('\u0000'), 'Texto inválido')).min(1).max(3),
   stopConditions: z.array(z.enum(['Cliente respondeu', 'Pedido fechado', 'Cliente pediu para parar'])).max(3),
 })
 export type FollowUpUpdate = z.infer<typeof followUpSchema>

@@ -12,7 +12,8 @@ const MAX_TAG_LENGTH = 30
 
 /** "vip" -> "VIP"; "festa infantil" -> "Festa infantil". Vazio devolve null. */
 export function normalizeTag(raw: string): string | null {
-  const t = raw.trim().replace(/\s+/g, ' ').slice(0, MAX_TAG_LENGTH)
+  // Vírgula, ponto e vírgula e barra vertical separam etiquetas no CSV: dentro de uma etiqueta viram espaço.
+  const t = raw.replace(/[,;|]/g, ' ').trim().replace(/\s+/g, ' ').slice(0, MAX_TAG_LENGTH)
   if (!t) return null
   return KNOWN[t.toLowerCase()] ?? t.charAt(0).toUpperCase() + t.slice(1)
 }

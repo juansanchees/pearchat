@@ -1,18 +1,19 @@
 import type { ReactNode } from 'react'
-import { ArrowLeft, Leaf } from '@phosphor-icons/react'
+import { ArrowLeft } from '@phosphor-icons/react'
+import { Logo } from '@/components/brand/logo'
 import { cn } from '@/lib/utils'
 import { buildQrMatrix, QR_SIZE } from '@/server/whatsapp/qr-matrix'
 
 // Classes do protótipo (.btn, .input, .tag, .card) traduzidas para Tailwind no tema claro do <main>.
 export const btn =
   'inline-flex items-center justify-center gap-1.5 rounded-md border px-[10px] py-[5.6px] text-[14px] font-medium leading-[1.2] transition-colors disabled:cursor-not-allowed disabled:opacity-45'
-export const btnPrimary = cn(btn, 'border-light-accent-500 bg-transparent text-light-accent-500 hover:bg-light-accent-500/10 active:bg-light-accent-500/20')
+export const btnPrimary = cn(btn, 'border-light-accent-500 bg-transparent text-light-accent-300 hover:bg-light-accent-500/10 active:bg-light-accent-500/20')
 export const btnSecondary = cn(btn, 'border-light-divider bg-transparent text-light-text hover:bg-light-text/[.07] active:bg-light-text/[.14]')
 export const inputCls =
   'min-h-9 w-full rounded-md border border-light-divider bg-light-surface px-2.5 py-1.5 text-[14px] text-light-text caret-light-accent-500 hover:border-light-text/45 focus-visible:border-light-accent-500 focus-visible:outline-none'
 export const kicker = 'text-[10.5px] font-medium uppercase leading-none tracking-[.16em] text-light-accent-300'
 export const pageShell =
-  'grid flex-1 place-items-center overflow-y-auto bg-light-bg bg-[radial-gradient(900px_480px_at_30%_0%,#f3f7e2,transparent_70%)] p-8'
+  'grid flex-1 place-items-center overflow-y-auto bg-light-bg bg-[radial-gradient(900px_480px_at_30%_0%,#f0faea,transparent_70%)] p-8'
 
 export function Tag({ tone, size = 11, children }: { tone: 'accent' | 'neutral'; size?: number; children: ReactNode }) {
   return (
@@ -85,7 +86,7 @@ export function QrBox({ src, overlay }: { src?: string; overlay?: string | null 
       )}
       {showLogo && (
         <div className="absolute left-1/2 top-1/2 -ml-[22px] -mt-[22px] grid h-11 w-11 place-items-center rounded-[10px] border border-light-divider bg-light-surface">
-          <Leaf size={20} weight="fill" className="text-light-accent-400" />
+          <Logo variant="symbol" size={24} />
         </div>
       )}
       {overlay && (

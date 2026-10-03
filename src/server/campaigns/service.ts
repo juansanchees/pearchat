@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import type { Campaign, Template } from '@prisma/client'
 import { db } from '@/lib/db'
-import type { CampaignDTO, CampaignInterval, CampaignListId, CampaignStatusKind, TemplateDTO } from '@/lib/types'
+import type { CampaignDTO, CampaignInterval, DisparosSettingsDTO, CampaignListId, CampaignStatusKind, TemplateDTO } from '@/lib/types'
+import { silenceEnd } from '@/server/engine/util'
 import { listName, resolveRecipientIds } from './recipients'
 
 export class CampaignError extends Error {
@@ -28,7 +29,7 @@ export const templateSchema = z.object({
     .regex(/^[a-z][a-z0-9_]{2,59}$/, 'Use snake_case: letras minúsculas, números e _ (mínimo 3 caracteres)')
     .optional(),
   category: z.enum(['MARKETING', 'UTILIDADE']).default('MARKETING'),
-  body: z.string().trim().min(1, 'Escreva o texto do modelo').max(1024), // {{1}} é permitido
+  body: z.string().trim().min(1, 'Escreva o texto do modelo').max(1024).refine((s) => !s.includes('\u0000'), 'Texto inválido'), // {{1}} é permitido
 })
 
 const toTemplateDTO = (t: Template): TemplateDTO => ({ id: t.id, name: t.name, category: t.category, status: t.status, body: t.body })
@@ -61,6 +62,9 @@ export async function createTemplate(workspaceId: string, input: z.infer<typeof 
 
 // ---- Campanhas ----
 
+/** Ids (cuid) só têm letras, números, _ e -: qualquer outra coisa nem vai ao banco (NUL daria erro 500). */
+const ID_OK = /^[A-Za-z0-9_-]{1,64}$/
+
 const toCampaignDTO = (c: Campaign): CampaignDTO => ({
   id: c.id,
   lista: c.lista,
@@ -77,15 +81,61 @@ const toCampaignDTO = (c: Campaign): CampaignDTO => ({
 })
 
 export async function listCampaigns(workspaceId: string): Promise<CampaignDTO[]> {
-  const rows = await db.campaign.findMany({ where: { workspaceId }, orderBy: { createdAt: 'desc' }, take: 50 })
-  return rows.map(toCampaignDTO)
+  const [rows, ws] = await Promise.all([
+    db.campaign.findMany({ where: { workspaceId }, orderBy: { createdAt: 'desc' }, take: 50 }),
+    db.workspace.findUnique({ where: { id: workspaceId }, select: { disparosSilencioAtivo: true, disparosSilencioInicio: true, disparosSilencioFim: true } }),
+  ])
+  const now = new Date()
+  // Em andamento (ou agendada que já chegou na hora) e dentro do horário de silêncio: "Aguardando horário permitido".
+  const retida = !!ws && !!silenceEnd(now, ws)
+  return rows.map((c) => {
+    const dto = toCampaignDTO(c)
+    const ativa = c.status === 'na_fila' || c.status === 'enviando' || (c.status === 'agendada' && !!c.scheduledAt && c.scheduledAt <= now)
+    return retida && ativa ? { ...dto, aguardandoHorario: true } : dto
+  })
+}
+
+// ---- Horário de silêncio dos disparos ----
+
+export const disparosSettingsSchema = z
+  .object({
+    silencioAtivo: z.boolean(),
+    silencioInicio: z.number().int().min(0).max(23),
+    silencioFim: z.number().int().min(0).max(23),
+  })
+  .strict()
+  .refine((v) => v.silencioInicio !== v.silencioFim, { message: 'Início e fim do silêncio devem ser horas diferentes' })
+
+export async function getDisparosSettings(workspaceId: string): Promise<DisparosSettingsDTO> {
+  const ws = await db.workspace.findUniqueOrThrow({
+    where: { id: workspaceId },
+    select: { disparosSilencioAtivo: true, disparosSilencioInicio: true, disparosSilencioFim: true },
+  })
+  return { silencioAtivo: ws.disparosSilencioAtivo, silencioInicio: ws.disparosSilencioInicio, silencioFim: ws.disparosSilencioFim }
+}
+
+export async function updateDisparosSettings(workspaceId: string, input: z.infer<typeof disparosSettingsSchema>): Promise<DisparosSettingsDTO> {
+  await db.workspace.update({
+    where: { id: workspaceId },
+    data: { disparosSilencioAtivo: input.silencioAtivo, disparosSilencioInicio: input.silencioInicio, disparosSilencioFim: input.silencioFim },
+  })
+  // Campanhas retidas pelo silêncio antigo (próximo envio exatamente numa hora cheia, no futuro) são liberadas
+  // para o motor reavaliar com a nova janela já no próximo ciclo. Esperas de intervalo (aleatórias) não são tocadas.
+  const now = Date.now()
+  const held = await db.campaign.findMany({
+    where: { workspaceId, status: { in: ['na_fila', 'enviando', 'agendada'] }, nextSendAt: { gt: new Date(now) } },
+    select: { id: true, nextSendAt: true },
+  })
+  const ids = held.filter((c) => c.nextSendAt && c.nextSendAt.getTime() % 3_600_000 === 0).map((c) => c.id)
+  if (ids.length > 0) await db.campaign.updateMany({ where: { id: { in: ids } }, data: { nextSendAt: null } })
+  return getDisparosSettings(workspaceId)
 }
 
 export const campaignSchema = z
   .object({
     lista: z.enum(['todos', 'clientes', 'aniv', 'frios']),
-    mensagem: z.string().max(1024).optional(),
-    templateId: z.string().min(1).max(60).optional(),
+    mensagem: z.string().max(1024).refine((s) => !s.includes('\u0000'), 'Texto inválido').optional(),
+    templateId: z.string().min(1).max(60).regex(/^[A-Za-z0-9_-]+$/, 'Modelo inválido').optional(),
     quando: z.enum(['agora', 'agendar']),
     data: z.string().max(40).optional(), // ISO 8601 (com fuso)
     intervalo: z.enum(['5-10', '15-30', '30-60']),
@@ -115,6 +165,9 @@ export async function createCampaign(workspaceId: string, input: CampaignInput):
     const tpl = await db.template.findFirst({ where: { id: input.templateId, workspaceId } })
     if (!tpl) throw new CampaignError('Modelo não encontrado', 404)
     if (tpl.status !== 'APROVADO') throw new CampaignError('Aguarde a aprovação da Meta para usar este modelo', 409)
+    // O disparo só preenche {{1}} (primeiro nome): modelo com mais variáveis seria recusado pela Meta em cada envio.
+    const maxVar = Math.max(0, ...Array.from(tpl.body.matchAll(/\{\{(\d+)\}\}/g)).map((m) => Number(m[1])))
+    if (maxVar > 1) throw new CampaignError('Este modelo usa variáveis além de {{1}}; disparos só preenchem o primeiro nome', 422)
     mensagem = tpl.body
     templateId = tpl.id
   } else {
@@ -156,6 +209,7 @@ export async function createCampaign(workspaceId: string, input: CampaignInput):
 
 /** Pausa uma campanha. Devolve null se não for do workspace. */
 export async function pauseCampaign(workspaceId: string, id: string): Promise<CampaignDTO | null> {
+  if (!ID_OK.test(id)) return null
   const c = await db.campaign.findFirst({ where: { id, workspaceId } })
   if (!c) return null
   if (!NAO_FINAIS.includes(c.status as CampaignStatusKind)) {
@@ -167,6 +221,7 @@ export async function pauseCampaign(workspaceId: string, id: string): Promise<Ca
 
 /** Retoma uma campanha pausada. Devolve null se não for do workspace. */
 export async function resumeCampaign(workspaceId: string, id: string): Promise<CampaignDTO | null> {
+  if (!ID_OK.test(id)) return null
   const c = await db.campaign.findFirst({ where: { id, workspaceId } })
   if (!c) return null
   if (c.status !== 'pausada') {

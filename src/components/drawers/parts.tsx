@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, CrownSimple, GearSix, LockSimple, PaperPlaneTilt, Sparkle, ClockClockwise, Warning, X } from '@phosphor-icons/react'
@@ -27,6 +27,39 @@ export function DrawerShell({ id, footer, children, loading }: { id: DrawerKey; 
   const isAuto = id === 'ia' || id === 'disparos' || id === 'followup'
   const locked = isAuto && !connected
   const showToggle = isAuto && connected
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  // Modal de verdade: o foco entra no drawer, o Tab fica preso nele e, ao fechar, volta para quem abriu.
+  useEffect(() => {
+    const el = dialogRef.current
+    const opener = document.activeElement as HTMLElement | null
+    el?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !el) return
+      const focusable = Array.from(
+        el.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+      )
+      if (focusable.length === 0) {
+        e.preventDefault()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      if (!el.contains(active) || (e.shiftKey && (active === first || active === el))) {
+        e.preventDefault()
+        ;(e.shiftKey ? last : first).focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      opener?.focus?.()
+    }
+  }, [])
 
   return (
     <>
@@ -37,10 +70,12 @@ export function DrawerShell({ id, footer, children, loading }: { id: DrawerKey; 
         style={{ animation: 'zfFade .2s ease both' }}
       />
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={DRAWER_TITLES[id]}
-        className="fixed bottom-0 right-0 top-0 z-[41] flex w-[min(540px,94vw)] animate-zfDrawer flex-col border-l border-light-divider bg-light-surface text-[13.5px] text-light-text shadow-drawer"
+        className="fixed bottom-0 right-0 top-0 z-[41] outline-none flex w-[min(540px,94vw)] animate-zfDrawer flex-col border-l border-light-divider bg-light-surface text-[13.5px] text-light-text shadow-drawer"
       >
         <header className="flex items-center gap-[13px] border-b border-light-divider px-[22px] py-[18px]">
           <span className="grid h-10 w-10 flex-none place-items-center rounded-[11px] border border-light-accent-700 bg-light-accent-900">
@@ -225,7 +260,7 @@ export function ProgressBar({ pct, onAccent }: { pct: number; onAccent?: boolean
   return (
     <div className={cn('h-[6px] rounded-pill', onAccent ? 'bg-light-surface' : 'bg-light-neutral-900')}>
       <div
-        className="h-full rounded-pill bg-[linear-gradient(90deg,#b3ca52,#86a028)] transition-[width] [transition-duration:400ms] ease-out"
+        className="h-full rounded-pill bg-[linear-gradient(90deg,#7acc4a,#2e9a48)] transition-[width] [transition-duration:400ms] ease-out"
         style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
       />
     </div>

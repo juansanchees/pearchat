@@ -82,6 +82,7 @@ export default function Conversas(): JSX.Element {
         <ConversationList
           items={c.visible}
           total={c.items.length}
+          truncated={c.truncated}
           loading={c.loadingList}
           error={c.listError}
           onRetry={c.reloadList}
@@ -106,6 +107,7 @@ export default function Conversas(): JSX.Element {
               <ChatHeader
                 conversation={c.active}
                 iaOn={automations.ia}
+                followupOn={automations.followup}
                 agentName={agentName}
                 onMode={(m) => void c.setMode(m)}
                 onBack={() => setShowChat(false)}
@@ -127,7 +129,7 @@ export default function Conversas(): JSX.Element {
           ) : (
             <div
               className="flex flex-1 flex-col items-center justify-center gap-2 text-center"
-              style={{ background: 'radial-gradient(700px 360px at 60% 0%, #f3f7e2, transparent 70%), #f6f7ef' }}
+              style={{ background: 'radial-gradient(700px 360px at 60% 0%, #f0faea, transparent 70%), #f6f7ef' }}
             >
               <ChatCircle size={36} className="text-light-neutral-600" />
               <p className="text-[14.5px] font-medium">

@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, isValidId, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
 import { deleteEvent, updateEvent } from '@/server/calendar/google'
 import { invalidateGoogleCache } from '@/server/calendar/live'
 import {
@@ -21,6 +21,7 @@ import {
   toEventDto,
 } from '@/server/calendar/service'
 import { addMin } from '@/server/calendar/time'
+import { findOverlappingTx, withBookingLock } from '../_booking'
 import type { EventDeleteResponse, EventWriteResponse, GoogleSyncStatus } from '@/server/calendar/types'
 
 export const dynamic = 'force-dynamic'
@@ -33,7 +34,14 @@ const notFound = () => apiError('NAO_ENCONTRADO', 'Agendamento não encontrado.'
 
 const patchSchema = z
   .object({
-    inicio: z.string().datetime({ offset: true }).optional(),
+    inicio: z
+      .string()
+      .datetime({ offset: true })
+      .refine((s) => {
+        const y = new Date(s).getUTCFullYear()
+        return y >= 2000 && y <= 2100
+      }, 'Data fora do intervalo permitido')
+      .optional(),
     duracaoMin: z.number().int().min(5).max(MAX_DURACAO_MIN).optional(),
     titulo: z.string().trim().min(1).max(120).optional(),
     tipo: z.string().trim().min(1).max(60).optional(),
@@ -50,8 +58,9 @@ const patchSchema = z
 export async function PATCH(req: NextRequest, { params }: Ctx) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
+  if (!isValidId(params.id)) return notFound()
 
-  const json: unknown = await req.json().catch(() => null)
+  const json = await readJson(req)
   const parsed = patchSchema.safeParse(json)
   if (!parsed.success) return badRequest('Dados do agendamento inválidos')
   const b = parsed.data
@@ -60,6 +69,10 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   if (!current) return notFound()
 
   const inicio = b.inicio ? new Date(b.inicio) : current.inicio
+  // Remarcar para o passado não faz sentido; editar título/cliente de um evento que já passou continua valendo.
+  if (b.inicio && inicio.getTime() !== current.inicio.getTime() && inicio.getTime() < Date.now() - 5 * 60_000) {
+    return apiError('DATA_PASSADA', 'Esse horário já passou. Escolha um horário a partir de agora.', 422)
+  }
   const duracaoMin = b.duracaoMin ?? current.duracaoMin
   const fim = addMin(inicio, duracaoMin)
 
@@ -87,7 +100,20 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     data.contactId = contact.id
   }
 
-  const updated = await db.event.update({ where: { id: current.id }, data, include: eventInclude })
+  // Remarcação: confere o conflito de novo DENTRO do lock da agenda e grava na mesma transação.
+  const mustCheck = b.inicio !== undefined || b.duracaoMin !== undefined
+  const outcome = await withBookingLock(workspaceId, async (tx) => {
+    if (mustCheck) {
+      const [first] = await findOverlappingTx(tx, workspaceId, inicio, fim, current.id)
+      if (first) return { kind: 'conflict', row: first } as const
+    }
+    const row = await tx.event.updateMany({ where: { id: current.id, workspaceId }, data })
+    if (row.count === 0) return { kind: 'gone' } as const
+    return { kind: 'updated', row: await tx.event.findUniqueOrThrow({ where: { id: current.id }, include: eventInclude }) } as const
+  })
+  if (outcome.kind === 'conflict') return conflictResponse(toEventDto(outcome.row))
+  if (outcome.kind === 'gone') return notFound()
+  const updated = outcome.row
 
   // Horário mudou: os lembretes já registrados não valem mais; recomeçam para o novo horário.
   if (inicio.getTime() !== current.inicio.getTime()) {
@@ -126,6 +152,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
+  if (!isValidId(params.id)) return notFound()
 
   const current = await db.event.findFirst({ where: { id: params.id, workspaceId } })
   if (!current) return notFound()

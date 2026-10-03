@@ -47,7 +47,11 @@ async function task<T>(name: string, fallback: T, fn: () => Promise<T>, skipped:
 export async function runTick(): Promise<TickSummary> {
   const ignoradas: string[] = []
   const [ia, disparos, followup, lembretes, agenda, historico] = await Promise.all([
-    task('ia', { varridas: 0, executadas: 0 }, async () => ({ varridas: await sweepPending(), executadas: await runDueAiJobs() }), ignoradas),
+    task('ia', { varridas: 0, executadas: 0 }, async () => {
+        // Primeiro responde o que já venceu; a varredura (mais lenta) não atrasa a resposta.
+        const executadas = await runDueAiJobs()
+        return { varridas: await sweepPending(), executadas }
+      }, ignoradas),
     task('disparos', { enviadas: 0 }, async () => ({ enviadas: await runDueCampaigns() }), ignoradas),
     task(
       'followup',

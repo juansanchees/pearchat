@@ -52,7 +52,7 @@ export function toCampanha(c: CampaignDTO): Campanha {
   } else {
     data = `${sameDay(criada, new Date()) ? 'Hoje' : ddmm(criada)}, ${hhmm(criada)}${intervalo}`
   }
-  return { id: c.id, lista: c.listaNome, total: c.total, enviadas: c.enviadas, respostas: c.respostas, status: STATUS[c.status] ?? 'Na fila', data }
+  return { id: c.id, lista: c.listaNome, total: c.total, enviadas: c.enviadas, respostas: c.respostas, status: STATUS[c.status] ?? 'Na fila', data, ...(c.aguardandoHorario ? { retida: true } : {}) }
 }
 
 /** Amanhã às 10:00 no formato datetime-local (valor inicial do campo "Data e hora"). */

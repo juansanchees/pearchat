@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { normalizePhone } from '@/server/contacts/phone'
 import { ingestInboundMessage } from '@/server/messages/ingest'
 
 export const dynamic = 'force-dynamic'
@@ -22,12 +23,13 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return badRequest('Corpo inválido')
 
-  const digits = parsed.data.telefone.replace(/\D/g, '')
-  if (digits.length < 8) return badRequest('Telefone inválido')
+  // Mesmo formato E.164 que a produção usa (DDI 55 assumido quando ausente).
+  const telefone = normalizePhone(parsed.data.telefone)
+  if (!telefone) return badRequest('Telefone inválido')
 
   await ingestInboundMessage({
     workspaceId,
-    from: { telefone: `+${digits}` },
+    from: { telefone },
     nome: parsed.data.nome,
     body: parsed.data.body,
     providerMessageId: `mock-${randomUUID()}`,

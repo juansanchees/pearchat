@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { ZodType } from 'zod'
 import { auth } from '@/auth'
+import { readJson } from '@/server/messages/api'
 
 export type ApiSession = { userId: string; workspaceId: string }
 
@@ -18,7 +19,7 @@ export const fail = (message: string, status = 400) => NextResponse.json({ error
 
 /** Lê e valida o corpo JSON. Devolve os dados ou uma resposta 400 pronta. */
 export async function parseBody<T>(req: Request, schema: ZodType<T>): Promise<{ data: T } | { error: NextResponse }> {
-  const raw: unknown = await req.json().catch(() => null)
+  const raw = await readJson(req) // JSON quebrado ou com NUL/surrogate solto vira 400, nunca 500
   const parsed = schema.safeParse(raw)
   if (!parsed.success) return { error: fail(parsed.error.issues[0]?.message ?? 'Corpo inválido') }
   return { data: parsed.data }

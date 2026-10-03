@@ -24,7 +24,7 @@ export function ContactsHeader({
       </span>
       <div className="min-w-0">
         <h1 className="m-0 text-[14.5px] font-medium leading-tight">Contatos</h1>
-        <div className="whitespace-nowrap text-[11px] text-light-neutral-500">{formatCount(total)} contatos</div>
+        <div className="whitespace-nowrap text-[11px] text-light-neutral-500">{formatCount(total)} {total === 1 ? 'contato' : 'contatos'}</div>
       </div>
       <span className="flex items-center gap-1.5 whitespace-nowrap rounded-pill border border-solid border-light-accent-700 bg-light-accent-900 px-2.5 py-1 text-[11.5px] text-light-accent-200">
         <CloudCheck size={13} weight="fill" aria-hidden="true" />

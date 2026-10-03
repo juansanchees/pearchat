@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 import { Sidebar } from '@/components/sidebar'
+import { useRawSocketEvent } from '@/lib/socket-client'
 import { cn } from '@/lib/utils'
 import { ShellCtx } from './shell-context'
 
@@ -11,6 +12,21 @@ import { ShellCtx } from './shell-context'
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [offline, setOffline] = useState(false)
+  const offlineTimer = useRef<number | undefined>(undefined)
+
+  // Socket caído por mais de 5 s (servidor fora ou sem internet) mostra a faixa; ao reconectar ela some.
+  const markDown = () => {
+    if (offlineTimer.current === undefined) offlineTimer.current = window.setTimeout(() => setOffline(true), 5000)
+  }
+  useRawSocketEvent('disconnect', markDown)
+  useRawSocketEvent('connect_error', markDown)
+  useRawSocketEvent('connect', () => {
+    window.clearTimeout(offlineTimer.current)
+    offlineTimer.current = undefined
+    setOffline(false)
+  })
+  useEffect(() => () => window.clearTimeout(offlineTimer.current), [])
 
   useEffect(() => setMenuOpen(false), [pathname])
 
@@ -38,6 +54,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         />
         <Sidebar />
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-light-bg text-light-text [color-scheme:light]">
+          {offline ? (
+            <div
+              role="status"
+              className="shrink-0 border-0 border-b border-solid border-amber-border bg-amber-bg px-4 py-1.5 text-center text-[12px] leading-tight text-amber-text"
+            >
+              Sem conexão. Tentando reconectar…
+            </div>
+          ) : null}
           {children}
         </main>
       </div>

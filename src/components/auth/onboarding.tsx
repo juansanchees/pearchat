@@ -16,10 +16,11 @@ import {
   DotsThreeOutline,
   FirstAidKit,
   ForkKnife,
+  HairDryer,
   Info,
-  Leaf,
   LockSimple,
   PaperPlaneTilt,
+  PawPrint,
   Scissors,
   ShieldCheck,
   SignOut,
@@ -32,21 +33,23 @@ import {
   type Icon,
 } from '@phosphor-icons/react'
 import { sairAction } from '@/app/(auth)/bem-vindo/actions'
-import { LogoMark, Wordmark } from './auth-shell'
+import { Logo } from '@/components/brand/logo'
 
 // Interface do onboarding (4 passos) e da tela "Tudo pronto".
 // Salva em POST /api/onboarding: nome da empresa, nome e tom do agente e (se o prompt estiver vazio) segmento e objetivos.
 // Tamanho da equipe não tem coluna e não é salvo. A conexão do WhatsApp é feita de verdade em /whatsapp.
 
-type SegId = 'confeitaria' | 'restaurante' | 'beleza' | 'saude' | 'loja' | 'servicos' | 'outro'
+type SegId = 'beleza' | 'barbearia' | 'petshop' | 'saude' | 'restaurante' | 'confeitaria' | 'loja' | 'servicos' | 'outro'
 type Tom = 'Amigável' | 'Profissional' | 'Direto'
 type ObjId = 'ia' | 'disparos' | 'followup' | 'agenda'
 
 const SEGS: { id: SegId; label: string; Icon: Icon; q: string; a: string; d: string }[] = [
-  { id: 'confeitaria', label: 'Confeitaria e doces', Icon: Cake, q: 'Oi! Vocês fazem bolo para festa?', a: 'Fazemos sim! Para quantas pessoas e qual a data da festa?', d: 'Para quantas pessoas e qual a data da festa?' },
-  { id: 'restaurante', label: 'Restaurante e delivery', Icon: ForkKnife, q: 'Boa noite, ainda dá para pedir delivery?', a: 'Dá sim, atendemos até as 23h. Quer que eu envie o cardápio?', d: 'Atendemos até as 23h. Quer o cardápio?' },
-  { id: 'beleza', label: 'Beleza e estética', Icon: Scissors, q: 'Tem horário para escova amanhã?', a: 'Tenho às 10h e às 15h30. Qual horário fica melhor para você?', d: 'Tenho às 10h e às 15h30. Qual prefere?' },
+  { id: 'beleza', label: 'Beleza e estética', Icon: HairDryer, q: 'Tem horário para escova amanhã?', a: 'Tenho às 10h e às 15h30. Qual horário fica melhor para você?', d: 'Tenho às 10h e às 15h30. Qual prefere?' },
+  { id: 'barbearia', label: 'Barbearia', Icon: Scissors, q: 'Oi! Tem horário para corte hoje?', a: 'Tenho às 16h e às 18h30. Quer corte, barba ou os dois?', d: 'Tenho às 16h e às 18h30. Corte, barba ou os dois?' },
+  { id: 'petshop', label: 'Pet shop', Icon: PawPrint, q: 'Oi! Quanto custa o banho para um cachorro pequeno?', a: 'O banho para porte pequeno sai por um valor fixo. Qual é a raça e quando você quer agendar?', d: 'Depende do porte. Qual a raça e quando quer agendar?' },
   { id: 'saude', label: 'Saúde e clínicas', Icon: FirstAidKit, q: 'Queria marcar uma consulta.', a: 'Claro! Qual dia e período ficam melhores para você?', d: 'Qual dia e período você prefere?' },
+  { id: 'restaurante', label: 'Restaurante e delivery', Icon: ForkKnife, q: 'Boa noite, ainda dá para pedir delivery?', a: 'Dá sim, atendemos até as 23h. Quer que eu envie o cardápio?', d: 'Atendemos até as 23h. Quer o cardápio?' },
+  { id: 'confeitaria', label: 'Confeitaria e doces', Icon: Cake, q: 'Oi! Vocês fazem bolo para festa?', a: 'Fazemos sim! Para quantas pessoas e qual a data da festa?', d: 'Para quantas pessoas e qual a data da festa?' },
   { id: 'loja', label: 'Loja e varejo', Icon: Storefront, q: 'Esse tênis tem no 38?', a: 'Tem sim! Quer que eu separe para retirada ou prefere entrega?', d: 'Tem. Retirada ou entrega?' },
   { id: 'servicos', label: 'Serviços', Icon: Wrench, q: 'Vocês fazem orçamento?', a: 'Fazemos, sem custo. Pode me contar o que você precisa?', d: 'Fazemos, sem custo. O que você precisa?' },
   { id: 'outro', label: 'Outro', Icon: DotsThreeOutline, q: 'Oi, queria uma informação.', a: 'Claro, me conta como posso ajudar.', d: 'Como posso ajudar?' },
@@ -85,8 +88,7 @@ function Heading({ children, sub }: { children: string; sub: string }) {
 function Header({ children }: { children?: ReactNode }) {
   return (
     <div className="flex items-center gap-[9px]">
-      <LogoMark />
-      <Wordmark />
+      <Logo theme="light" height={40} className="-ml-1" priority />
       {children}
     </div>
   )
@@ -175,14 +177,14 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
     const pct = Math.round((feitos / itens.length) * 100)
 
     return (
-      <div className="flex min-h-screen flex-col items-center px-6 pb-12 pt-7 text-[13.5px] text-light-text" style={{ background: 'radial-gradient(900px 480px at 50% -10%, #e6efc3, transparent 70%), #f6f7ef' }}>
+      <div className="flex min-h-screen flex-col items-center px-6 pb-12 pt-7 text-[13.5px] text-light-text" style={{ background: 'radial-gradient(900px 480px at 50% -10%, #dcf3d0, transparent 70%), #f6f7ef' }}>
         <div className="self-stretch">
           <Header />
         </div>
         <div className="mt-10 flex w-full max-w-[620px] animate-pcInPronto flex-col gap-6">
           <div className="flex flex-col items-start gap-3.5">
-            <span className="grid h-14 w-14 place-items-center rounded-2xl border border-light-accent-600 bg-light-accent-900 shadow-[0_0_0_6px_color-mix(in_srgb,#a8c23a_14%,transparent)]">
-              <Leaf size={26} weight="fill" className="text-light-accent-300" aria-hidden="true" />
+            <span className="grid h-14 w-14 place-items-center rounded-2xl border border-light-accent-600 bg-light-accent-900 shadow-[0_0_0_6px_color-mix(in_srgb,#2e9a48_14%,transparent)]">
+              <Logo variant="symbol" size={32} />
             </span>
             <div>
               <h1 className="text-[32px] font-medium leading-[1.12] tracking-[-0.025em]">Tudo pronto, {primeiro}.</h1>
@@ -195,7 +197,7 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-medium leading-[1.2]">Primeiros passos</h2>
                 <div className="mt-[9px] h-1.5 overflow-hidden rounded-full bg-light-neutral-900" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Progresso dos primeiros passos">
-                  <div className="h-full rounded-full transition-[width] duration-[400ms]" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #b3ca52, #86a028)' }} />
+                  <div className="h-full rounded-full transition-[width] duration-[400ms]" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #7acc4a, #2e9a48)' }} />
                 </div>
               </div>
               <div className="whitespace-nowrap text-[13px] font-medium leading-none text-light-accent-200">{feitos} de {itens.length}</div>
@@ -203,8 +205,8 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
             <ul className="m-0 list-none p-0">
               {itens.map((c) => (
                 <li key={c.id} className="flex items-center gap-[13px] border-b border-light-divider px-[18px] py-[13px]">
-                  <span className="grid h-6 w-6 flex-none place-items-center rounded-full border" style={{ borderColor: c.feito ? '#86a028' : '#c9cfb8', background: c.feito ? '#86a028' : 'transparent' }}>
-                    {c.feito ? <Check size={12} weight="bold" color="#f6f7ef" aria-hidden="true" /> : <c.Icon size={12} className="text-light-neutral-500" aria-hidden="true" />}
+                  <span className="grid h-6 w-6 flex-none place-items-center rounded-full border" style={{ borderColor: c.feito ? '#2e9a48' : '#c9cfb8', background: c.feito ? '#2e9a48' : 'transparent' }}>
+                    {c.feito ? <Check size={12} weight="bold" color="#ffffff" aria-hidden="true" /> : <c.Icon size={12} className="text-light-neutral-500" aria-hidden="true" />}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className={`text-[13px] font-medium leading-tight ${c.feito ? 'text-light-neutral-500 line-through' : 'text-light-text'}`}>{c.titulo}</div>
@@ -240,14 +242,14 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col text-[13.5px] text-light-text" style={{ background: 'radial-gradient(900px 420px at 20% -10%, #e6efc3, transparent 70%), #f6f7ef' }}>
+    <div className="flex min-h-screen flex-col text-[13.5px] text-light-text" style={{ background: 'radial-gradient(900px 420px at 20% -10%, #dcf3d0, transparent 70%), #f6f7ef' }}>
       <header className="flex flex-none flex-wrap items-center gap-5 px-7 py-[18px]">
         <Header />
         <div className="flex min-w-[260px] flex-1 justify-center">
           <div className="flex w-full max-w-[420px] flex-col gap-[7px]">
             <div className="grid grid-cols-4 gap-1.5" aria-hidden="true">
               {[1, 2, 3, 4].map((i) => (
-                <span key={i} className="h-1 rounded-full transition-[background] duration-300" style={{ background: i <= step ? 'linear-gradient(90deg, #b3ca52, #86a028)' : '#e2e6d5' }} />
+                <span key={i} className="h-1 rounded-full transition-[background] duration-300" style={{ background: i <= step ? 'linear-gradient(90deg, #7acc4a, #2e9a48)' : '#e2e6d5' }} />
               ))}
             </div>
             <div className="flex justify-between text-[11.5px] text-light-neutral-500">
@@ -275,7 +277,7 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
               </div>
               <div className="max-w-[420px]">
                 <label htmlFor="emp-nome" className="pc-label">Nome da empresa</label>
-                <input id="emp-nome" className="pc-input" value={emp.nome} onChange={(e) => setEmp({ ...emp, nome: e.target.value })} placeholder="Ex.: Doce Ateliê" autoComplete="organization" />
+                <input id="emp-nome" className="pc-input" value={emp.nome} onChange={(e) => setEmp({ ...emp, nome: e.target.value })} placeholder="Ex.: Barbearia do João" autoComplete="organization" />
               </div>
               <div role="group" aria-labelledby="seg-label">
                 <div id="seg-label" className="pc-label">Segmento</div>
@@ -285,7 +287,7 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
                     return (
                       <button key={s.id} type="button" aria-pressed={on} onClick={() => setEmp({ ...emp, seg: s.id })}
                         className="flex items-center gap-2.5 rounded-md border p-3 text-left text-[13px] text-light-text transition-[border-color,background] duration-150 hover:border-light-accent-600"
-                        style={{ borderColor: on ? '#a8c23a' : '#e3e7d6', background: on ? '#f3f7e2' : '#ffffff' }}>
+                        style={{ borderColor: on ? '#2e9a48' : '#e3e7d6', background: on ? '#f0faea' : '#ffffff' }}>
                         <s.Icon size={18} aria-hidden="true" className={on ? 'text-light-accent-300' : 'text-light-neutral-500'} />
                         {s.label}
                       </button>
@@ -315,8 +317,8 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
                     <button key={o.id} type="button" role="checkbox" aria-checked={on}
                       onClick={() => setObj(on ? obj.filter((x) => x !== o.id) : [...obj, o.id])}
                       className="flex items-start gap-3.5 rounded-lg border p-[18px] text-left text-light-text transition-[border-color,background,box-shadow] duration-150 hover:border-light-accent-600"
-                      style={{ borderColor: on ? '#a8c23a' : '#e3e7d6', background: on ? 'color-mix(in srgb, #a8c23a 8%, #ffffff)' : '#ffffff', boxShadow: on ? '0 6px 20px rgba(134,160,40,.12)' : 'none' }}>
-                      <span className="grid h-[42px] w-[42px] flex-none place-items-center rounded-[11px] border border-light-accent-700" style={{ background: on ? '#e6efc3' : '#f3f7e2' }}>
+                      style={{ borderColor: on ? '#2e9a48' : '#e3e7d6', background: on ? 'color-mix(in srgb, #2e9a48 8%, #ffffff)' : '#ffffff', boxShadow: on ? '0 6px 20px rgba(46,154,72,.12)' : 'none' }}>
+                      <span className="grid h-[42px] w-[42px] flex-none place-items-center rounded-[11px] border border-light-accent-700" style={{ background: on ? '#dcf3d0' : '#f0faea' }}>
                         <o.Icon size={20} className="text-light-accent-300" aria-hidden="true" />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -324,8 +326,8 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
                         <span className="mt-[5px] block text-[12.5px] leading-[1.45] text-light-neutral-500 [text-wrap:pretty]">{o.desc}</span>
                         <span className="mt-[9px] block text-[11px] text-light-accent-300">{o.recurso}</span>
                       </span>
-                      <span aria-hidden="true" className="grid h-5 w-5 flex-none place-items-center rounded-md border" style={{ borderColor: on ? '#86a028' : '#c9cfb8', background: on ? '#86a028' : 'transparent' }}>
-                        {on && <Check size={12} weight="bold" color="#f6f7ef" />}
+                      <span aria-hidden="true" className="grid h-5 w-5 flex-none place-items-center rounded-md border" style={{ borderColor: on ? '#2e9a48' : '#c9cfb8', background: on ? '#2e9a48' : 'transparent' }}>
+                        {on && <Check size={12} weight="bold" color="#ffffff" />}
                       </span>
                     </button>
                   )

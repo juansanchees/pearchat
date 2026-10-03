@@ -27,7 +27,7 @@ import type { FreeSlotsResponse } from '@/server/calendar/types'
 export const dynamic = 'force-dynamic'
 
 const querySchema = z.object({
-  date: z.string().refine(isValidDateStr),
+  date: z.string().refine((s) => isValidDateStr(s) && s >= '2000-01-01' && s <= '2100-12-31'),
   duracaoMin: z.coerce.number().int().min(5).max(MAX_DURACAO_MIN).optional(),
   serviceTypeId: z.string().min(1).optional(),
   ignoreEventId: z.string().min(1).optional(),
@@ -102,7 +102,8 @@ export async function GET(req: NextRequest) {
   for (let m = DAY_START_HOUR * 60; m <= lastStart; m += SLOT_STEP_MIN) {
     const ini = spToDate(date, `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`)
     const fim = addMin(ini, duracaoMin)
-    if (!busy.some((b) => overlaps(ini, fim, b.start, b.end))) horarios.push(toSpHM(ini))
+    // Horário que já começou não é oferecido (agendar no passado é recusado em POST/PATCH /api/events).
+    if (ini.getTime() > Date.now() && !busy.some((b) => overlaps(ini, fim, b.start, b.end))) horarios.push(toSpHM(ini))
   }
 
   return NextResponse.json({ date, duracaoMin, horarios, googleConsultado } satisfies FreeSlotsResponse)

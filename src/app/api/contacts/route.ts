@@ -6,10 +6,12 @@ import {
   conflict,
   DUPLICATE_PHONE_MESSAGE,
   isUniqueViolation,
+  readJson,
   sessionWorkspaceId,
   unauthorized,
   zodMessage,
 } from '@/server/contacts/api'
+import { phoneCandidates } from '@/server/contacts/phone'
 import { listContacts } from '@/server/contacts/queries'
 import { createSchema, listQuerySchema } from '@/server/contacts/schemas'
 import { contactInclude, toContactDTO } from '@/server/contacts/serialize'
@@ -41,10 +43,17 @@ export async function POST(req: Request) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
 
-  const body: unknown = await req.json().catch(() => null)
+  const body = await readJson(req)
   const parsed = createSchema.safeParse(body)
   if (!parsed.success) return badRequest(zodMessage(parsed.error))
   const { name, phone, email, tags, address, birthday, notes } = parsed.data
+
+  // Mesmo número em outro formato (com/sem +55, com/sem o 9º dígito) também é duplicado.
+  const same = await db.contact.findFirst({
+    where: { workspaceId, telefone: { in: phoneCandidates(phone) } },
+    select: { id: true },
+  })
+  if (same) return conflict(DUPLICATE_PHONE_MESSAGE)
 
   try {
     const created = await db.contact.create({

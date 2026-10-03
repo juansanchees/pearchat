@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { contactNotFound, isUniqueViolation, sessionWorkspaceId, unauthorized } from '@/server/contacts/api'
+import { contactNotFound, isUniqueViolation, isValidId, sessionWorkspaceId, unauthorized } from '@/server/contacts/api'
 import { loadConversationItem } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
 
@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
+  if (!isValidId(params.id)) return contactNotFound()
 
   const contact = await db.contact.findFirst({
     where: { id: params.id, workspaceId },

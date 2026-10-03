@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import { contactRef, ensureConversation, OutboundError, sendAndRecord } from './outbound'
 import type { OutboundContent } from './outbound'
-import { bumpUsage, firstName, getConnected, log, logError, shortError, spStartOfDay, spStartOfNextDay } from './util'
+import { bumpUsage, getConnected, log, logError, personalize, shortError, silenceEnd, spNextHour, spStartOfDay, spStartOfNextDay, templateFirstName } from './util'
 
 // Envio de disparos: no máximo UM destinatário por campanha por vez, com intervalo aleatório entre
 // intervaloMin e intervaloMax segundos (Campaign.nextSendAt). Cada passo é reivindicado com UPDATE condicional.
@@ -9,6 +9,7 @@ import { bumpUsage, firstName, getConnected, log, logError, shortError, spStartO
 const LOCK_MS = 60_000 // reserva do "slot" enquanto um envio está em andamento
 const STALE_RECIPIENT_MS = 3 * 60_000
 const REPLY_WINDOW_MS = 72 * 3_600_000
+const RESUME_HOUR = 8 // o limite diário retoma no dia seguinte às 8h (São Paulo), nunca de madrugada
 
 export const dailyLimit = (): number => {
   const n = Number(process.env.CAMPAIGN_DAILY_LIMIT)
@@ -21,9 +22,8 @@ const randomIntervalMs = (min: number, max: number): number => {
   return (lo + Math.random() * (hi - lo)) * 1000
 }
 
-export function renderCampaignText(template: string, nome: string): string {
-  const primeiro = firstName(nome)
-  return template.replace(/\{primeiro_nome\}/gi, primeiro).replace(/\{nome\}/gi, nome.trim())
+export function renderCampaignText(template: string, nome: string, ids: { telefone?: string | null; waUserId?: string | null } = {}): string {
+  return personalize(template, nome, ids)
 }
 
 type CampaignRow = Awaited<ReturnType<typeof dueCampaigns>>[number]
@@ -39,11 +39,22 @@ function dueCampaigns(now: Date) {
     },
     orderBy: { createdAt: 'asc' },
     take: 50,
+    include: { workspace: { select: { disparosSilencioAtivo: true, disparosSilencioInicio: true, disparosSilencioFim: true } } },
   })
 }
 
 async function processCampaign(c: CampaignRow, now: Date): Promise<boolean> {
   const { workspaceId } = c
+  // Horário de silêncio: não envia; o próximo envio fica para o fim da janela (campanha agendada para dentro
+  // dela também começa só no fim).
+  const fimSilencio = silenceEnd(now, c.workspace)
+  if (fimSilencio) {
+    await db.campaign.updateMany({
+      where: { id: c.id, OR: [{ nextSendAt: null }, { nextSendAt: { lte: now } }] },
+      data: { nextSendAt: fimSilencio },
+    })
+    return false
+  }
   // Reivindica o slot: só uma instância/tick passa daqui.
   const claim = await db.campaign.updateMany({
     where: {
@@ -67,7 +78,7 @@ async function processCampaign(c: CampaignRow, now: Date): Promise<boolean> {
       where: { status: 'enviado', sentAt: { gte: spStartOfDay(now) }, campaign: { workspaceId } },
     })
     if (sentToday >= dailyLimit()) {
-      await db.campaign.update({ where: { id: c.id }, data: { nextSendAt: spStartOfNextDay(now) } })
+      await db.campaign.update({ where: { id: c.id }, data: { nextSendAt: spNextHour(spStartOfNextDay(now), RESUME_HOUR) } })
       log('campaigns', `campanha ${c.id}: limite diário atingido; retoma amanhã`)
       return false
     }
@@ -100,15 +111,24 @@ async function processCampaign(c: CampaignRow, now: Date): Promise<boolean> {
 
   const contact = next.contact
   let erro: string | null = null
-  if (contact.optOut) erro = 'Contato pediu para parar'
-  else if (!contact.telefone && !contact.waUserId) erro = 'Contato sem telefone'
+  // Quem saiu da lista (opt-out) ou não tem como receber é "pulado": sai do total, para o progresso fechar.
+  let pulado: string | null = null
+  if (contact.optOut) pulado = 'Contato pediu para parar'
+  else if (!contact.telefone && !contact.waUserId) pulado = 'Contato sem telefone'
 
-  if (!erro) {
+  if (!pulado) {
     try {
       const conv = await ensureConversation(workspaceId, contact.id)
-      const content: OutboundContent = template
-        ? { kind: 'template', name: template.name, vars: [firstName(contact.nome)], body: template.body.replace(/\{\{1\}\}/g, firstName(contact.nome)) }
-        : { kind: 'text', text: renderCampaignText(c.mensagem, contact.nome) }
+      const ids = { telefone: contact.telefone, waUserId: contact.waUserId }
+      let content: OutboundContent
+      if (template) {
+        const primeiro = templateFirstName(contact.nome, ids)
+        content = { kind: 'template', name: template.name, vars: [primeiro], body: template.body.replace(/\{\{1\}\}/g, () => primeiro) }
+      } else {
+        const text = renderCampaignText(c.mensagem, contact.nome, ids)
+        if (!text.trim()) throw new OutboundError('Mensagem vazia')
+        content = { kind: 'text', text }
+      }
       await sendAndRecord({ session, conversationId: conv.id, to: contactRef(contact), author: 'USER', content })
     } catch (e) {
       erro = e instanceof OutboundError ? e.message : shortError(e)
@@ -116,7 +136,10 @@ async function processCampaign(c: CampaignRow, now: Date): Promise<boolean> {
     }
   }
 
-  if (erro) {
+  if (pulado) {
+    await db.campaignRecipient.update({ where: { id: next.id }, data: { status: 'pulado', error: pulado, sentAt: null } })
+    await db.campaign.update({ where: { id: c.id }, data: { total: { decrement: 1 } } })
+  } else if (erro) {
     await db.campaignRecipient.update({ where: { id: next.id }, data: { status: 'erro', error: erro.slice(0, 200), sentAt: null } })
   } else {
     await db.campaignRecipient.update({ where: { id: next.id }, data: { status: 'enviado', sentAt: new Date(), error: null } })
@@ -128,10 +151,11 @@ async function processCampaign(c: CampaignRow, now: Date): Promise<boolean> {
   if (!done) {
     await db.campaign.updateMany({
       where: { id: c.id, status: 'enviando' },
-      data: { nextSendAt: new Date(Date.now() + randomIntervalMs(c.intervaloMin, c.intervaloMax)) },
+      // Pulado (opt-out/sem telefone) não enviou nada: não precisa esperar o intervalo.
+      data: { nextSendAt: pulado ? null : new Date(Date.now() + randomIntervalMs(c.intervaloMin, c.intervaloMax)) },
     })
   }
-  return true
+  return !pulado && !erro
 }
 
 /** Conclui a campanha quando não resta destinatário pendente. Devolve true se concluiu. */
@@ -146,14 +170,37 @@ async function finishIfDone(campaignId: string): Promise<boolean> {
   return true
 }
 
+/**
+ * Destinatários presos em "enviando" (processo caiu no meio do envio). Se a mensagem já foi gravada depois
+ * da reivindicação, o envio aconteceu: vira "enviado" (nunca reenvia); senão volta para a fila.
+ */
+async function rescueStaleRecipients(now: Date): Promise<void> {
+  const stale = await db.campaignRecipient.findMany({
+    where: { status: 'enviando', sentAt: { lt: new Date(now.getTime() - STALE_RECIPIENT_MS) } },
+    select: { id: true, campaignId: true, contactId: true, sentAt: true, campaign: { select: { workspaceId: true } } },
+    take: 100,
+  })
+  for (const r of stale) {
+    const claimedAt = r.sentAt ?? new Date(0)
+    const went = await db.message.findFirst({
+      where: { direction: 'OUT', createdAt: { gte: claimedAt }, conversation: { contactId: r.contactId } },
+      select: { id: true },
+    })
+    const upd = await db.campaignRecipient.updateMany({
+      where: { id: r.id, status: 'enviando' },
+      data: went ? { status: 'enviado', error: null } : { status: 'pendente', sentAt: null },
+    })
+    if (went && upd.count === 1) {
+      await db.campaign.update({ where: { id: r.campaignId }, data: { enviadas: { increment: 1 } } })
+      await bumpUsage(r.campaign.workspaceId, { disparos: 1 })
+    }
+  }
+}
+
 /** Roda um passo de todas as campanhas devidas. Devolve quantas mensagens saíram. */
 export async function runDueCampaigns(): Promise<number> {
   const now = new Date()
-  // Destinatários presos em "enviando" (processo caiu no meio do envio) voltam para a fila.
-  await db.campaignRecipient.updateMany({
-    where: { status: 'enviando', sentAt: { lt: new Date(now.getTime() - STALE_RECIPIENT_MS) } },
-    data: { status: 'pendente', sentAt: null },
-  })
+  await rescueStaleRecipients(now)
   const due = await dueCampaigns(now)
   let sent = 0
   for (const c of due) {
@@ -176,7 +223,8 @@ export async function registerCampaignReplies(workspaceId: string, contactId: st
       contactId,
       status: 'enviado',
       repliedAt: null,
-      sentAt: { gte: new Date(at.getTime() - REPLY_WINDOW_MS) },
+      // Resposta = mensagem DEPOIS do envio e até 72 h dele (com folga de 5 min para relógios diferentes).
+      sentAt: { gte: new Date(at.getTime() - REPLY_WINDOW_MS), lte: new Date(at.getTime() + 5 * 60_000) },
       campaign: { workspaceId },
     },
     select: { id: true, campaignId: true },

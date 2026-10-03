@@ -6,11 +6,13 @@ import { useAppState } from '@/components/app/app-state'
 import { HANDOFF_WINDOW_EVENT } from '@/components/app/handoff'
 import type { HandoffRequestedPayload } from '@/components/app/handoff'
 import { redirectIfUnauthorized } from '@/lib/auth-redirect'
-import { useSocketEvent } from '@/lib/socket-client'
+import { useRawSocketEvent, useSocketEvent } from '@/lib/socket-client'
 import type { ConversationModeKind, MessageDTO } from '@/lib/types'
 import type { ConversationFilter, ConversationItem } from './types'
 
 const PAGE_SIZE = 50
+// Mesmo limite de GET /api/conversations: ao chegar nele, há conversas que só a busca alcança.
+const LIST_LIMIT = 200
 
 class ApiError extends Error {
   constructor(
@@ -54,6 +56,7 @@ export function useConversations(preferredId: string | null = null) {
   const [items, setItems] = useState<ConversationItem[]>([])
   const [loadingList, setLoadingList] = useState(true)
   const [listError, setListError] = useState(false)
+  const [truncated, setTruncated] = useState(false)
   const [listKey, setListKey] = useState(0)
   const [messagesError, setMessagesError] = useState(false)
   const [filter, setFilter] = useState<ConversationFilter>('todas')
@@ -72,15 +75,58 @@ export function useConversations(preferredId: string | null = null) {
 
   const active = useMemo(() => items.find((c) => c.id === activeId) ?? null, [items, activeId])
 
+  // Busca no servidor (debounce): acha conversas que ficaram fora das 200 mais recentes da lista.
+  const [remote, setRemote] = useState<{ key: string; items: ConversationItem[] } | null>(null)
+  const searchText = query.trim()
+  useEffect(() => {
+    if (!searchText) {
+      setRemote(null)
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({ q: searchText, filter })
+      api<ConversationItem[]>(`/api/conversations?${params.toString()}`)
+        .then((list) => {
+          if (cancelled) return
+          setRemote({ key: `${filter}|${searchText}`, items: list })
+          // Conversas achadas além das 200 da lista entram na memória, para poder abri-las.
+          setItems((l) => {
+            const known = new Set(l.map((c) => c.id))
+            const extra = list.filter((c) => !known.has(c.id))
+            return extra.length ? [...l, ...extra].sort(byRecent) : l
+          })
+        })
+        .catch(() => {})
+    }, 250)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [searchText, filter])
+
   const visible = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return items.filter((c) => {
+    const q = searchText.toLowerCase()
+    const qDigits = q.replace(/\D/g, '')
+    const matches = (c: ConversationItem) => {
       if (filter === 'nao_lidas' && c.unread <= 0) return false
       if (filter === 'com_ia' && c.mode !== 'ia') return false
-      if (q && !c.nome.toLowerCase().includes(q)) return false
-      return true
-    })
-  }, [items, filter, query])
+      if (!q) return true
+      if (c.nome.toLowerCase().includes(q)) return true
+      return qDigits.length >= 3 && /^[\d\s()+-]+$/.test(q) && (c.telefone ?? '').replace(/\D/g, '').includes(qDigits)
+    }
+    const local = items.filter(matches)
+    if (!q || !remote || remote.key !== `${filter}|${searchText}`) return local
+    // Resultado do servidor + o que já está na memória (mais novo, vindo do tempo real).
+    const byId = new Map(items.map((c) => [c.id, c]))
+    const merged = new Map<string, ConversationItem>()
+    for (const r of remote.items) {
+      const fresh = byId.get(r.id) ?? r
+      if (matches(fresh)) merged.set(r.id, fresh)
+    }
+    for (const c of local) merged.set(c.id, c)
+    return Array.from(merged.values()).sort(byRecent)
+  }, [items, filter, searchText, remote])
 
   const markRead = useCallback((id: string) => {
     setItems((l) => l.map((c) => (c.id === id && c.unread > 0 ? { ...c, unread: 0 } : c)))
@@ -145,11 +191,22 @@ export function useConversations(preferredId: string | null = null) {
     setLoadingList(true)
     setListError(false)
     api<ConversationItem[]>('/api/conversations')
-      .then((list) => {
+      .then(async (loaded) => {
+        let list = loaded
+        const preferred = preferredRef.current
+        let wanted = preferred ? list.find((c) => c.id === preferred) : undefined
+        if (preferred && !wanted) {
+          // Conversa pedida por ?c= que ficou fora das 200 da lista (ex.: recém-criada, ainda sem mensagens).
+          const one = await api<ConversationItem[]>(`/api/conversations?id=${encodeURIComponent(preferred)}`).catch(() => [])
+          if (one[0]) {
+            wanted = one[0]
+            list = [...list, one[0]].sort(byRecent)
+          }
+        }
         if (cancelled) return
         setItems(list)
+        setTruncated(loaded.length >= LIST_LIMIT)
         if (!activeIdRef.current) {
-          const wanted = preferredRef.current ? list.find((c) => c.id === preferredRef.current) : undefined
           const first = wanted ?? list[0]
           if (first) select(first.id)
         }
@@ -182,6 +239,33 @@ export function useConversations(preferredId: string | null = null) {
     return () => window.removeEventListener(HANDOFF_WINDOW_EVENT, onHandoff)
   }, [])
 
+  // Reconexão do socket (servidor reiniciou, rede caiu): eventos podem ter se perdido, então ressincroniza.
+  const socketWasDown = useRef(false)
+  useRawSocketEvent('disconnect', () => {
+    socketWasDown.current = true
+  })
+  useRawSocketEvent('connect', () => {
+    if (!socketWasDown.current) return
+    socketWasDown.current = false
+    api<ConversationItem[]>('/api/conversations')
+      .then((list) => setItems(list))
+      .catch(() => {})
+    const id = activeIdRef.current
+    if (!id) return
+    api<MessageDTO[]>(`/api/conversations/${id}/messages`)
+      .then((page) => {
+        if (activeIdRef.current !== id) return
+        setMessages((cur) => {
+          const byId = new Map(cur.map((m) => [m.id, m]))
+          for (const m of page) byId.set(m.id, m)
+          return Array.from(byId.values()).sort((a, b) =>
+            a.createdAt === b.createdAt ? 0 : a.createdAt < b.createdAt ? -1 : 1,
+          )
+        })
+      })
+      .catch(() => {})
+  })
+
   // Tempo real
   useSocketEvent('conversation.updated', ({ conversation }) => {
     const item = conversation as ConversationItem
@@ -211,6 +295,11 @@ export function useConversations(preferredId: string | null = null) {
 
       const tookOver = iaOn && conv.mode === 'ia'
       const tmpId = `tmp-${++tmpSeq.current}`
+      // Chave de idempotência deste envio: o servidor devolve a mesma mensagem se a requisição se repetir.
+      const clientId =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
       const nowIso = new Date().toISOString()
       const optimistic: MessageDTO = {
         id: tmpId,
@@ -238,7 +327,7 @@ export function useConversations(preferredId: string | null = null) {
       try {
         const saved = await api<MessageDTO>(`/api/conversations/${conv.id}/messages`, {
           method: 'POST',
-          body: JSON.stringify({ body }),
+          body: JSON.stringify({ body, clientId }),
         })
         setMessages((cur) => {
           const withoutTmp = cur.filter((m) => m.id !== tmpId)
@@ -320,6 +409,7 @@ export function useConversations(preferredId: string | null = null) {
   return {
     items,
     visible,
+    truncated,
     loadingList,
     listError,
     reloadList,

@@ -10,6 +10,14 @@ export const DAY_END_HOUR = 18
 export const SLOT_STEP_MIN = 30
 export const MIN_MS = 60_000
 
+/**
+ * Chave do mês "YYYY-MM" no fuso de São Paulo. ÚNICA fonte para ler e gravar UsageCounter.mes:
+ * o servidor roda em UTC e o mês virava 3 h antes da meia-noite de Brasília.
+ */
+export function spMonthKey(d: Date = new Date()): string {
+  return new Date(d.getTime() - OFFSET_MS).toISOString().slice(0, 7)
+}
+
 /** "YYYY-MM-DD" válido (calendário real) ou false. */
 export function isValidDateStr(s: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false

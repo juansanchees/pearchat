@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { canSendFreeformTo } from './freeform'
 import { contactRef, ensureConversation, OutboundError, sendAndRecord } from './outbound'
 import type { OutboundContent } from './outbound'
-import { firstName, getConnected, log, logError, shortError, spParts } from './util'
+import { getConnected, log, logError, shortError, spParts, templateFirstName } from './util'
 
 // Lembretes da agenda: um por evento e tipo (EventReminder @@unique[eventId, kind]).
 // Para cada evento só sai o lembrete MAIS PRÓXIMO do horário entre os que já venceram; os anteriores
@@ -47,17 +47,29 @@ export async function runDueReminders(): Promise<number> {
   })
   let sent = 0
   for (const conn of conns) {
+    try {
+      sent += await remindWorkspace(conn, now)
+    } catch (e) {
+      logError('reminders', `workspace ${conn.workspaceId} falhou`, e)
+    }
+  }
+  if (sent > 0) log('reminders', `${sent} lembrete(s) enviado(s)`)
+  return sent
+}
+
+async function remindWorkspace(conn: { workspaceId: string; lembretes: string[] }, now: Date): Promise<number> {
+  let sent = 0
+  {
     const kinds = conn.lembretes.filter((k) => k in OFFSETS_MIN).sort((a, b) => (OFFSETS_MIN[a] ?? 0) - (OFFSETS_MIN[b] ?? 0))
-    if (kinds.length === 0) continue
+    if (kinds.length === 0) return 0
     const maxOffset = Math.max(...kinds.map((k) => OFFSETS_MIN[k] ?? 0))
     const events = await db.event.findMany({
       where: {
         workspaceId: conn.workspaceId,
         inicio: { gt: now, lte: new Date(now.getTime() + maxOffset * 60_000) },
         contactId: { not: null },
-        contact: { telefone: { not: null }, optOut: false },
       },
-      include: { contact: true, reminders: { select: { kind: true } } },
+      include: { contact: true, reminders: { select: { kind: true } }, serviceType: { select: { nome: true } } },
       orderBy: { inicio: 'asc' },
       take: 200,
     })
@@ -75,9 +87,13 @@ export async function runDueReminders(): Promise<number> {
         for (const k of due.slice(1)) {
           if (!done.has(k)) await claim(ev.id, k, 'pulado: janela já passou')
         }
-        if (!(await claim(ev.id, target, null))) continue
+        // Quem não pode receber é registrado com o motivo, não ignorado em silêncio.
+        const skip = !contact.telefone && !contact.waUserId ? 'pulado: contato sem telefone' : contact.optOut ? 'pulado: contato pediu para parar' : null
+        if (!(await claim(ev.id, target, skip))) continue
+        if (skip) continue
 
-        const result = await sendReminder(conn.workspaceId, ev, contact, now)
+        // Nome do tipo de atendimento atual (o texto "tipo" do evento guarda o nome da época do agendamento).
+        const result = await sendReminder(conn.workspaceId, { id: ev.id, inicio: ev.inicio, tipo: ev.serviceType?.nome ?? ev.tipo }, contact, now)
         await db.eventReminder.updateMany({ where: { eventId: ev.id, kind: target }, data: { result } })
         if (result === 'enviado') sent++
       } catch (e) {
@@ -85,7 +101,6 @@ export async function runDueReminders(): Promise<number> {
       }
     }
   }
-  if (sent > 0) log('reminders', `${sent} lembrete(s) enviado(s)`)
   return sent
 }
 
@@ -106,7 +121,7 @@ async function sendReminder(
   if (session.official) {
     const t = await db.template.findFirst({ where: { workspaceId, name: REMINDER_TEMPLATE } })
     if (t && t.status === 'APROVADO') {
-      const vars = [firstName(contact.nome), ev.tipo, dia, hora]
+      const vars = [templateFirstName(contact.nome, contact), ev.tipo, dia, hora]
       const n = Math.max(0, ...Array.from(t.body.matchAll(/\{\{(\d+)\}\}/g)).map((m) => Number(m[1])))
       const used = vars.slice(0, n)
       const body = t.body.replace(/\{\{(\d+)\}\}/g, (_m, i: string) => used[Number(i) - 1] ?? '')

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { LogoMark, Wordmark } from '@/components/auth/auth-shell'
+import { Logo } from '@/components/brand/logo'
 
 export const EMPRESA = {
   razao: 'INFODREAMZ NEGOCIOS DIGITAIS LTDA',
@@ -42,9 +42,8 @@ export function LegalLayout({ titulo, intro, secoes, outra }: { titulo: string; 
       </a>
       <header className="border-b border-light-divider bg-light-surface print:hidden">
         <div className="mx-auto flex max-w-[960px] items-center justify-between px-6 py-4">
-          <Link href="/login" className="flex items-center gap-[9px] rounded-md" aria-label="PearChat">
-            <LogoMark />
-            <Wordmark />
+          <Link href="/login" className="-ml-1 flex items-center rounded-md" aria-label="PearChat">
+            <Logo theme="light" height={40} priority />
           </Link>
           <nav aria-label="Documentos" className="flex items-center gap-5 text-[13px]">
             <Link href={outra.href} className="text-light-neutral-500 hover:text-light-neutral-300">{outra.label}</Link>

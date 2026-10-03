@@ -5,6 +5,8 @@ import {
   badRequest,
   conflict,
   contactNotFound,
+  isValidId,
+  readJson,
   sessionWorkspaceId,
   unauthorized,
   zodMessage,
@@ -32,6 +34,7 @@ function toUpdate(p: PatchInput): Prisma.ContactUpdateInput {
 export async function GET(_req: Request, { params }: Ctx) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
+  if (!isValidId(params.id)) return contactNotFound()
 
   const row = await db.contact.findFirst({ where: { id: params.id, workspaceId }, include: contactInclude })
   return row ? NextResponse.json(toContactDTO(row)) : contactNotFound()
@@ -40,8 +43,9 @@ export async function GET(_req: Request, { params }: Ctx) {
 export async function PATCH(req: Request, { params }: Ctx) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
+  if (!isValidId(params.id)) return contactNotFound()
 
-  const parsed = patchSchema.safeParse(await req.json().catch(() => null))
+  const parsed = patchSchema.safeParse(await readJson(req))
   if (!parsed.success) return badRequest(zodMessage(parsed.error))
 
   const { count } = await db.contact.updateMany({
@@ -57,6 +61,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 export async function DELETE(_req: Request, { params }: Ctx) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
+  if (!isValidId(params.id)) return contactNotFound()
 
   const row = await db.contact.findFirst({
     where: { id: params.id, workspaceId },

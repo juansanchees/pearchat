@@ -6,7 +6,10 @@ import type { ContactRef } from '@/server/whatsapp/provider'
 import { scheduleAiReply } from '@/server/engine/ai-reply'
 import { registerCampaignReplies } from '@/server/engine/campaigns'
 import { cancelPendingFollowUps } from '@/server/engine/followup'
+import { isStopRequest } from '@/server/engine/rules'
 import { logError } from '@/server/engine/util'
+import { phoneCandidates } from '@/server/contacts/phone'
+import { cleanText } from './api'
 import { loadConversationItem, toMessageDTO } from './dto'
 
 const STATUS_RANK = { PENDENTE: 0, ENVIADA: 1, ENTREGUE: 2, LIDA: 3 } as const
@@ -19,7 +22,11 @@ export async function findOrCreateContact(
   const { waUserId, telefone } = from
   let contact: Contact | null = null
   if (waUserId) contact = await db.contact.findUnique({ where: { workspaceId_waUserId: { workspaceId, waUserId } } })
-  if (!contact && telefone) contact = await db.contact.findUnique({ where: { workspaceId_telefone: { workspaceId, telefone } } })
+  if (!contact && telefone) {
+    // Mesmo número em outro formato (sem +55, com/sem o 9º dígito): não cria contato duplicado.
+    const found = await db.contact.findMany({ where: { workspaceId, telefone: { in: phoneCandidates(telefone) } } })
+    contact = found.find((c) => c.telefone === telefone) ?? found[0] ?? null
+  }
 
   if (contact) {
     const patch: Prisma.ContactUpdateInput = {}
@@ -61,8 +68,11 @@ export async function ingestInboundMessage(input: {
   providerMessageId: string
   timestamp: Date
 }): Promise<void> {
-  const { workspaceId, from, nome, body, mediaUrl, providerMessageId, timestamp } = input
+  const { workspaceId, from, mediaUrl, providerMessageId, timestamp } = input
   if (!from.waUserId && !from.telefone) return
+  // NUL e surrogates soltos (vindos do celular do cliente) fariam o Postgres recusar a mensagem: saem do texto.
+  const body = cleanText(input.body)
+  const nome = input.nome === undefined ? undefined : cleanText(input.nome)
 
   const dup = await db.message.findFirst({
     where: { providerMessageId, conversation: { workspaceId } },
@@ -72,9 +82,10 @@ export async function ingestInboundMessage(input: {
 
   const contact = await findOrCreateContact(workspaceId, from, nome)
 
-  const normalized = body.trim().toLowerCase()
+  // Pedido de saída ("parar", "pare", "não quero mais receber", "me tira da lista"...): vale com a IA ligada ou
+  // desligada. A detecção normaliza acento/pontuação e evita falso positivo ("vou parar aí na loja").
   let optOut = contact.optOut
-  if ((normalized === 'parar' || normalized === 'sair') && !contact.optOut) {
+  if (!contact.optOut && isStopRequest(body)) {
     await db.contact.update({ where: { id: contact.id }, data: { optOut: true } })
     optOut = true
   }

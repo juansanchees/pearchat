@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { AuthError } from 'next-auth'
 import { signIn } from '@/auth'
+import { safeRedirectPath } from '@/lib/safe-redirect'
 import { makeSessionCookieNonPersistent, type AuthFormState } from '../_lib/session-cookie'
 
 export async function loginAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
@@ -19,5 +20,5 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
     throw error
   }
   if (!remember) makeSessionCookieNonPersistent()
-  redirect('/')
+  redirect(safeRedirectPath(formData.get('callbackUrl')))
 }

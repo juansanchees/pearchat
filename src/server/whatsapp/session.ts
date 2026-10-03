@@ -3,6 +3,7 @@ import type { ConnectionStatus, WhatsAppSession } from '@prisma/client'
 import { db } from '@/lib/db'
 import { kindToProvider, kindToStatus, providerToKind, statusToKind } from '@/lib/mappers'
 import type { ConnectionStatusKind, ProviderKind, WhatsAppStatusDTO } from '@/lib/types'
+import { setDisparosAtivos } from '@/server/campaigns/service'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { decrypt, encrypt } from './crypto'
 import { scheduleInitialImport } from './history-import'
@@ -116,6 +117,15 @@ export async function setStatus(
     ...(dto.qr ? { qr: dto.qr } : {}),
   })
   return row
+}
+
+/** Desligar no servidor IA, follow-up e disparos (pausando campanhas) quando o WhatsApp cai; não depende do cliente. */
+export async function disableAutomations(workspaceId: string): Promise<void> {
+  await Promise.all([
+    db.aiAgent.updateMany({ where: { workspaceId }, data: { enabled: false } }),
+    db.followUpRule.updateMany({ where: { workspaceId }, data: { enabled: false } }),
+    setDisparosAtivos(workspaceId, false),
+  ])
 }
 
 // --- sessionData (JSON criptografado: token do workspace, preferências) ---

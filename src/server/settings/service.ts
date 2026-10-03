@@ -1,5 +1,7 @@
+import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
+import { spMonthKey } from '@/server/calendar/time'
 import type { BillingDTO, SettingsDTO } from '@/lib/types'
 
 export const NOTIF_OPCOES = ['Conversa sem resposta há 10 min', 'IA passou uma conversa para mim', 'Disparo concluído', 'Novo agendamento'] as const
@@ -20,7 +22,10 @@ export const settingsSchema = z.object({
   email: z.string().trim().toLowerCase().email('E-mail inválido').max(200),
   empresa: z.string().trim().min(1, 'Informe o nome da empresa').max(120),
   horarioAtendimento: z.string().trim().max(200),
-  notifs: z.array(z.enum(NOTIF_OPCOES)).max(NOTIF_OPCOES.length),
+  notifs: z
+    .array(z.enum(NOTIF_OPCOES))
+    .max(NOTIF_OPCOES.length)
+    .transform((a) => Array.from(new Set(a))),
 })
 export type SettingsInput = z.infer<typeof settingsSchema>
 
@@ -47,10 +52,18 @@ export async function getSettings(userId: string, workspaceId: string): Promise<
 export async function updateSettings(userId: string, workspaceId: string, input: SettingsInput): Promise<SettingsDTO> {
   const dup = await db.user.findFirst({ where: { email: input.email, NOT: { id: userId } }, select: { id: true } })
   if (dup) throw new SettingsError('Este e-mail já está em uso', 409)
-  await db.$transaction([
-    db.user.update({ where: { id: userId }, data: { nome: input.nome, email: input.email, notifs: input.notifs } }),
-    db.workspace.update({ where: { id: workspaceId }, data: { nome: input.empresa, horarioAtendimento: input.horarioAtendimento || null } }),
-  ])
+  try {
+    await db.$transaction([
+      db.user.update({ where: { id: userId }, data: { nome: input.nome, email: input.email, notifs: input.notifs } }),
+      db.workspace.update({ where: { id: workspaceId }, data: { nome: input.empresa, horarioAtendimento: input.horarioAtendimento || null } }),
+    ])
+  } catch (e) {
+    // Dois salvamentos com o mesmo e-mail ao mesmo tempo: a checagem acima não pega, o índice único sim.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      throw new SettingsError('Este e-mail já está em uso', 409)
+    }
+    throw e
+  }
   return { nome: input.nome, email: input.email, empresa: input.empresa, horarioAtendimento: input.horarioAtendimento, notifs: input.notifs }
 }
 
@@ -65,8 +78,15 @@ const LIMITES: Record<keyof typeof PLANO_NOME, BillingDTO['limites']> = {
 }
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 
-export function currentMonthKey(now: Date = new Date()): string {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+export const currentMonthKey = spMonthKey
+
+/** Leitura leve para o motor: plano, limite de respostas de IA e uso do mês (2 consultas simples). */
+export async function getAiQuota(workspaceId: string): Promise<{ limite: number | null; usadas: number }> {
+  const [ws, usage] = await Promise.all([
+    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { plano: true } }),
+    db.usageCounter.findUnique({ where: { workspaceId_mes: { workspaceId, mes: spMonthKey() } }, select: { respostasIa: true } }),
+  ])
+  return { limite: LIMITES[ws.plano].respostasIa, usadas: usage?.respostasIa ?? 0 }
 }
 
 export async function getBilling(workspaceId: string): Promise<BillingDTO> {

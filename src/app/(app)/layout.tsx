@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { AppShell } from '@/components/app/app-shell'
 import { AppStateProvider } from '@/components/app/app-state'
+import { SessionInvalid } from '@/components/app/session-invalid'
 import { ToastHost } from '@/components/app/toast-host'
 import { DrawerDataProvider } from '@/components/drawers/drawer-data'
 import { DrawerHost } from '@/components/drawers/drawer-host'
@@ -10,18 +11,49 @@ import { listCampaigns } from '@/server/campaigns/service'
 import { countFollowUpQueue } from '@/server/followup/service'
 import { providerToKind, statusToKind } from '@/lib/mappers'
 import { requireSession } from '@/lib/session'
+import { needsEmailVerification } from '@/server/mail/email-verification'
+import { redirect } from 'next/navigation'
+import { Prisma } from '@prisma/client'
 import type { Plan } from '@prisma/client'
+
+/** upsert que sobrevive a duas abas abrindo a conta nova ao mesmo tempo (violação de unicidade -> lê a linha criada pela outra). */
+async function ensureRow<T>(create: () => Promise<T>, read: () => Promise<T | null>): Promise<T> {
+  try {
+    return await create()
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      const row = await read()
+      if (row) return row
+    }
+    throw e
+  }
+}
 
 const PLANOS: Record<Plan, PlanoNome> = { ESSENCIAL: 'Essencial', PRO: 'Pro', NEGOCIOS: 'Negócios' }
 
 // Shell do app (AppShell): sidebar escura de 288px (gaveta abaixo de 900px) + área principal clara; drawers e toasts ficam por cima.
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const { userId, workspaceId } = await requireSession()
+  // Contas novas sem e-mail confirmado (com e-mail configurado) vão para a confirmação; contas antigas não são afetadas.
+  if (await needsEmailVerification(userId)) redirect('/verificar-email')
+
+  // Cookie de sessão de uma conta que não existe mais: tela de "entrar de novo" em vez de erro de banco.
+  const account = await db.user.findUnique({ where: { id: userId }, select: { workspaceId: true } })
+  if (!account || account.workspaceId !== workspaceId) return <SessionInvalid />
 
   const [wa, agent, followUp, user, workspace, contatosCount, campanhas, fuQueueCount] = await Promise.all([
-    db.whatsAppSession.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} }),
-    db.aiAgent.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} }),
-    db.followUpRule.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} }),
+    ensureRow(
+      () => db.whatsAppSession.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} }),
+      () => db.whatsAppSession.findUnique({ where: { workspaceId } }),
+    ),
+    ensureRow(
+      () => db.aiAgent.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} }),
+      () => db.aiAgent.findUnique({ where: { workspaceId } }),
+    ),
+    ensureRow(
+      () => db.followUpRule.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} }),
+      () => db.followUpRule.findUnique({ where: { workspaceId } }),
+    ),
     db.user.findUniqueOrThrow({ where: { id: userId }, select: { nome: true, email: true, fotoUrl: true, image: true } }),
     db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true, plano: true, horarioAtendimento: true, disparosAtivos: true } }),
     db.contact.count({ where: { workspaceId } }),

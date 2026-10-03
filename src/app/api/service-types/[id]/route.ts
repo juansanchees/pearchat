@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, isValidId, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
 import { apiError } from '@/server/calendar/service'
 import { COR_RE, MSG_NOME_REPETIDO, duracaoSchema, toServiceTypeDto } from '@/server/calendar/service-types'
 import { MSG_ULTIMO_TIPO } from '@/server/calendar/types'
@@ -28,7 +28,8 @@ const patchSchema = z
 export async function PATCH(req: Request, { params }: Ctx) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
-  const parsed = patchSchema.safeParse(await req.json().catch(() => null))
+  if (!isValidId(params.id)) return notFound()
+  const parsed = patchSchema.safeParse(await readJson(req))
   if (!parsed.success) return badRequest('Dados do tipo inválidos (nome de 1 a 40 letras, duração de 5 a 480 min)')
   const b = parsed.data
 
@@ -70,6 +71,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 export async function DELETE(_req: Request, { params }: Ctx) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
+  if (!isValidId(params.id)) return notFound()
   const current = await db.serviceType.findFirst({ where: { id: params.id, workspaceId } })
   if (!current) return notFound()
   if (current.ativo) {
