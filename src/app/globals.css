@@ -149,3 +149,30 @@
   [class*="animate-pc"] { animation: none !important; }
   .pc-reduce-motion, .pc-reduce-motion * { transition: none !important; }
 }
+
+/* ===== Página inicial (landing). Tudo prefixado com .lp-: não afeta o app. ===== */
+html:has(.lp-root) { scroll-behavior: smooth; scroll-padding-top: 84px; }
+.lp-root section[id] { scroll-margin-top: 84px; }
+
+/* Palco do herói: cena fixa de 1180 × 620 px que escala por breakpoint. */
+.lp-stage { --lp-s: 1; height: calc(640px * var(--lp-s)); }
+.lp-scale { position: absolute; left: 50%; top: 0; width: 1180px; height: 640px; transform: translateX(-50%) scale(var(--lp-s)); transform-origin: 50% 0; perspective: 2400px; perspective-origin: 50% 10%; }
+.lp-scene { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(9deg); transform-origin: 50% 0; }
+.lp-layer { position: absolute; transform-style: preserve-3d; }
+@media (max-width: 1239px) { .lp-stage { --lp-s: 0.84; } }
+@media (max-width: 1023px) { .lp-stage { --lp-s: 0.62; } }
+
+/* Indicador "digitando" (três pontos). */
+.lp-typing i { display: block; animation: lpDot 1.2s ease-in-out infinite; }
+.lp-typing i:nth-child(2) { animation-delay: .15s; }
+.lp-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes lpDot { 0%, 60%, 100% { opacity: .35; transform: none; } 30% { opacity: 1; transform: translateY(-2px); } }
+
+/* Acordeão das dúvidas: sem marcador nativo. */
+.lp-faq summary { list-style: none; }
+.lp-faq summary::-webkit-details-marker { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.lp-root) { scroll-behavior: auto; }
+  .lp-root *, .lp-root *::before, .lp-root *::after { animation: none !important; transition: none !important; }
+}

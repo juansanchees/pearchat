@@ -2,9 +2,9 @@ import type { Metadata } from 'next'
 import { Landing } from '@/components/site/landing'
 
 // Página inicial pública (estática). Quem está logado nunca chega aqui: o middleware envia para /whatsapp.
-const TITLE = 'PearChat · Seu WhatsApp atendendo, agendando e vendendo por você'
+const TITLE = 'PearChat · Seu WhatsApp trabalhando por você'
 const DESCRIPTION =
-  'Conecte o WhatsApp do seu negócio, ensine o agente de IA e acompanhe conversas, agenda, follow-up e disparos em uma tela só.'
+  'Uma central inteligente para atender, agendar e vender pelo WhatsApp. A IA do PearChat responde seus clientes, marca horários, faz follow-up e mantém as conversas organizadas.'
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
