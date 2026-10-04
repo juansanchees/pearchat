@@ -14,6 +14,9 @@ export type AuditAction =
   | '2fa.enabled'
   | '2fa.disabled'
   | 'plan.changed'
+  | 'subscription.created'
+  | 'subscription.canceled'
+  | 'subscription.reactivated'
 
 export const AUDIT_LABEL: Record<AuditAction, string> = {
   'invite.created': 'convidou',
@@ -30,4 +33,7 @@ export const AUDIT_LABEL: Record<AuditAction, string> = {
   '2fa.enabled': 'ativou a verificação em duas etapas',
   '2fa.disabled': 'desativou a verificação em duas etapas',
   'plan.changed': 'alterou o plano',
+  'subscription.created': 'contratou uma assinatura',
+  'subscription.canceled': 'cancelou a assinatura',
+  'subscription.reactivated': 'reativou a assinatura',
 }

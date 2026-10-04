@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import type { Plan } from '@prisma/client'
 import { db } from '@/lib/db'
 import { audit, maskEmail } from '@/server/audit/log'
+import { entitlements } from '@/server/billing/entitlements'
 import { canManageTarget, normalizePapel, PAPEL_LABEL } from '@/server/auth/permissions'
 import type { Papel } from '@/server/auth/permissions'
 import { mailConfigured, sendMail } from '@/server/mail/send'
@@ -134,6 +135,7 @@ export type InviteResult = { convite: InviteDTO; link: string; emailEnviado: boo
 
 export async function createInvite(actor: Actor, input: { email: string; papel: 'admin' | 'agent'; workspaceIds: string[] }): Promise<InviteResult> {
   const email = input.email.trim().toLowerCase()
+  if (!(await entitlements(actor.organizationId)).podeConvidar) throw new TeamError('Sua assinatura está inativa. Regularize em Plano e pagamento para convidar pessoas.', 403, 'ASSINATURA_INATIVA')
   const workspaceIds = input.papel === 'agent' ? await validSpaceIds(actor.organizationId, input.workspaceIds) : []
   if (input.papel === 'agent' && workspaceIds.length === 0) throw new TeamError('Escolha pelo menos um WhatsApp para o atendente', 400, 'SEM_ESPACO')
 

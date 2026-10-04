@@ -7,6 +7,7 @@ import { AuthError } from 'next-auth'
 import { z } from 'zod'
 import { signIn } from '@/auth'
 import { db } from '@/lib/db'
+import { newOrganizationBilling } from '@/server/billing/config'
 import { issueEmailCode } from '@/server/mail/email-verification'
 import { mailConfigured } from '@/server/mail/send'
 import { makeSessionCookieNonPersistent, type AuthFormState } from '../_lib/session-cookie'
@@ -47,7 +48,7 @@ export async function registroAction(_prev: AuthFormState, formData: FormData): 
   try {
     await db.$transaction(async (tx) => {
       // Conta = Organization (plano/assinatura) + primeiro espaço (WhatsApp) + usuário dono.
-      const org = await tx.organization.create({ data: { nome: nomeEmpresa } })
+      const org = await tx.organization.create({ data: { nome: nomeEmpresa, ...newOrganizationBilling() } })
       const workspace = await tx.workspace.create({ data: { nome: nomeEmpresa, organizationId: org.id, plano: org.plano } })
       await tx.user.create({
         data: { workspaceId: workspace.id, organizationId: org.id, nome, email, passwordHash, papel: 'owner' },

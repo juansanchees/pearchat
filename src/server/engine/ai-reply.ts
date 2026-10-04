@@ -14,7 +14,8 @@ import { notifySpaceAttention } from '@/server/spaces/attention'
 import { loadConversationItem, toMessageDTO } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { canSendFreeformTo } from './freeform'
-import { HANDOFF_LIMIT_NOTE, HANDOFF_MODEL_NOTE, handoffRuleNote } from './handoff-reasons'
+import { automationAllowed } from '@/server/billing/entitlements'
+import { HANDOFF_BILLING_NOTE, HANDOFF_LIMIT_NOTE, HANDOFF_MODEL_NOTE, handoffRuleNote } from './handoff-reasons'
 import { contactRef, OutboundError, sendAndRecord } from './outbound'
 import { cancelPendingFollowUps } from './followup'
 import { agentMayReplyAt, detectHandoffRule, formatAgora, genericHandoffMessage, isStopRequest, ungroundedMoney } from './rules'
@@ -317,6 +318,13 @@ async function execute(job: AiJob): Promise<JobResult> {
   const to = contactRef(conv.contact)
   const responsavel = await responsavelNome(workspaceId)
   const { agent } = el
+
+  // Modo restrito (teste vencido / pagamento atrasado além da carência / assinatura cancelada e vencida): a IA não
+  // responde; a conversa vai para uma pessoa em silêncio (nada é dito ao cliente) e o dono é avisado como em qualquer passagem.
+  if (!(await automationAllowed(workspaceId))) {
+    await handoff({ session, conv, motivo: 'assinatura inativa', message: null })
+    return { kind: 'done', note: HANDOFF_BILLING_NOTE }
+  }
 
   // Limite de respostas de IA do plano.
   const quota = await getAiQuota(workspaceId)

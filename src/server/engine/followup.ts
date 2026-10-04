@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { automationAllowed } from '@/server/billing/entitlements'
 import { FU_MENSAGENS_PADRAO } from '@/server/followup/service'
 import { canSendFreeformTo } from './freeform'
 import { contactRef, OutboundError, sendAndRecord } from './outbound'
@@ -110,6 +111,7 @@ export async function planFollowUps(): Promise<number> {
   for (const rule of rules) {
     // Um workspace com problema não impede o planejamento dos outros.
     try {
+      if (!(await automationAllowed(rule.workspaceId))) continue // modo restrito: não planeja follow-up
       created += await planRule(rule, now)
     } catch (e) {
       logError('followup', `planejamento do workspace ${rule.workspaceId} falhou`, e)
@@ -304,6 +306,11 @@ export async function runDueFollowUps(): Promise<number> {
   for (const job of due) {
     const wsId = job.conversation.workspaceId
     if ((perWorkspace.get(wsId) ?? 0) >= MAX_SENDS_PER_WORKSPACE_PER_TICK) continue
+    if (!(await automationAllowed(wsId))) {
+      // Modo restrito: o job não sai (e é cancelado para não travar a fila); nenhum dado é apagado.
+      await db.followUpJob.updateMany({ where: { id: job.id, status: STATUS.pendente }, data: { status: STATUS.cancelado, error: 'Assinatura inativa' } })
+      continue
+    }
     try {
       const claim = await db.followUpJob.updateMany({ where: { id: job.id, status: STATUS.pendente }, data: { status: STATUS.executando } })
       if (claim.count !== 1) continue
