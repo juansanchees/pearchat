@@ -12,6 +12,7 @@ import type { CalendarStateDto } from '@/server/calendar/types'
 import { api } from './api'
 import { useDrawerData, useDrawerLoad } from './drawer-data'
 import { NOTIF_OPCOES } from './mock-data'
+import { SegurancaSection } from './seguranca-section'
 import { DrawerShell, Field, SaveFooter, Section } from './parts'
 
 const connRow = 'flex items-center gap-3 rounded-md border border-light-divider px-[14px] py-3'
@@ -134,6 +135,8 @@ export function ConfigDrawer() {
           </button>
         </div>
       </Section>
+
+      <SegurancaSection />
     </DrawerShell>
   )
 }

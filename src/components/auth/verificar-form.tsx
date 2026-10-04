@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { EnvelopeSimpleOpen } from '@phosphor-icons/react'
 import { usarOutroEmailAction } from '@/app/(auth)/verificar-email/actions'
 import { AuthTitle, IconBadge } from './auth-shell'
+import { CodeBoxes, EMPTY_CODE, type CodeBoxesHandle } from './code-boxes'
 import { primaryBtn, Spinner } from './fields'
 
 type Props = {
@@ -19,18 +20,16 @@ type Props = {
 
 type ApiBody = { error?: string; code?: string; retryAfter?: number; ok?: boolean }
 
-const EMPTY = ['', '', '', '', '', '']
-
 // Confirmação de e-mail por código de 6 dígitos (POST /api/auth/email/send-code e /verify).
 export function VerificarForm({ email, configured, hasCode, initialCooldown }: Props) {
-  const [code, setCode] = useState<string[]>(EMPTY)
+  const [code, setCode] = useState<string[]>(EMPTY_CODE)
   const [erro, setErro] = useState<string>()
   const [info, setInfo] = useState<string>()
   const [segundos, setSegundos] = useState(initialCooldown)
   const [enviando, setEnviando] = useState(false)
   const [reenviando, setReenviando] = useState(false)
   const [travado, setTravado] = useState(false) // código invalidado: precisa pedir outro
-  const refs = useRef<Array<HTMLInputElement | null>>([])
+  const boxes = useRef<CodeBoxesHandle>(null)
   const autoSent = useRef(false)
 
   useEffect(() => {
@@ -61,9 +60,9 @@ export function VerificarForm({ email, configured, hasCode, initialCooldown }: P
       if (typeof data.retryAfter === 'number') setSegundos(data.retryAfter)
       if (status === 200) {
         setTravado(false)
-        setCode(EMPTY)
+        setCode(EMPTY_CODE)
         setInfo(auto ? undefined : 'Enviamos um código novo. Confira sua caixa de entrada.')
-        refs.current[0]?.focus()
+        boxes.current?.focus()
       } else if (!(auto && status === 429)) {
         setInfo(undefined)
         setErro(data.error ?? 'Não foi possível enviar o código agora.')
@@ -105,40 +104,14 @@ export function VerificarForm({ email, configured, hasCode, initialCooldown }: P
       }
       setErro(data.error ?? 'Não foi possível confirmar agora.')
       if (data.code === 'incorrect') {
-        setCode(EMPTY)
-        refs.current[0]?.focus()
+        setCode(EMPTY_CODE)
+        boxes.current?.focus()
       }
     } catch {
       setErro('Não foi possível confirmar agora. Tente de novo.')
     } finally {
       setEnviando(false)
     }
-  }
-
-  function setDigit(i: number, v: string) {
-    const d = v.replace(/\D/g, '')
-    const next = code.slice()
-    next[i] = d.slice(-1)
-    setCode(next)
-    setErro(undefined)
-    if (d && i < 5) refs.current[i + 1]?.focus()
-    if (d && next.every(Boolean)) void confirmar(next)
-  }
-
-  function onKey(i: number, e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Backspace' && !code[i] && i > 0) refs.current[i - 1]?.focus()
-    if (e.key === 'Enter') void confirmar()
-  }
-
-  function onPaste(e: ClipboardEvent<HTMLInputElement>) {
-    const t = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 6)
-    if (!t) return
-    e.preventDefault()
-    const next = EMPTY.map((_, j) => t[j] ?? '')
-    setCode(next)
-    setErro(undefined)
-    refs.current[Math.min(t.length, 6) - 1]?.focus()
-    if (t.length === 6) void confirmar(next)
   }
 
   return (
@@ -155,32 +128,19 @@ export function VerificarForm({ email, configured, hasCode, initialCooldown }: P
       >
         Confirme seu e-mail
       </AuthTitle>
-      <div role="group" aria-label="Código de 6 dígitos" className="grid grid-cols-6 gap-2">
-        {code.map((c, i) => (
-          <input
-            key={i}
-            ref={(el) => {
-              refs.current[i] = el
-            }}
-            value={c}
-            onChange={(e) => setDigit(i, e.target.value)}
-            onKeyDown={(e) => onKey(i, e)}
-            onPaste={onPaste}
-            disabled={!configured || enviando}
-            inputMode="numeric"
-            autoComplete={i === 0 ? 'one-time-code' : 'off'}
-            maxLength={1}
-            aria-label={`Dígito ${i + 1} de 6`}
-            aria-invalid={erro ? true : undefined}
-            aria-describedby={erro ? 'codigo-erro' : undefined}
-            className="pc-code-box h-[54px] w-full min-w-0 rounded-md border bg-light-surface text-center text-[22px] font-medium text-light-text transition-[border-color] duration-150"
-            style={{
-              borderColor: erro ? '#c9806b' : c ? '#7acc4a' : '#e3e7d6',
-              background: c ? '#f0faea' : '#ffffff',
-            }}
-          />
-        ))}
-      </div>
+      <CodeBoxes
+        ref={boxes}
+        code={code}
+        onChange={(n) => {
+          setCode(n)
+          setErro(undefined)
+        }}
+        onComplete={(n) => void confirmar(n)}
+        onEnter={() => void confirmar()}
+        disabled={!configured || enviando}
+        invalid={!!erro}
+        describedBy="codigo-erro"
+      />
       {erro && (
         <p id="codigo-erro" role="alert" className="-mt-2.5 text-[11.5px] text-[#a0452f]">
           {erro}

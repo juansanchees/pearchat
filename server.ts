@@ -22,7 +22,7 @@ const COOKIE_NAMES = ['__Secure-authjs.session-token', 'authjs.session-token'] a
 type SocketData = { workspaceId: string; organizationId: string }
 
 // Carregada UMA vez no main() (depois do loadEnvConfig): evita compilar/importar no primeiro socket.
-let resolveActive: (userId: string) => Promise<{ workspaceId: string; organizationId: string } | null> = async () => null
+let resolveActive: (userId: string) => Promise<{ workspaceId: string; organizationId: string; sessionVersion: number } | null> = async () => null
 
 async function spaceFromCookie(cookieHeader: string | undefined): Promise<{ workspaceId: string; organizationId: string } | null> {
   const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET
@@ -43,6 +43,8 @@ async function spaceFromCookie(cookieHeader: string | undefined): Promise<{ work
   // um workspace da organização do usuário. O import é tardio porque o db só pode carregar depois do loadEnvConfig.
   try {
     const active = await resolveActive(userId)
+    // Sessão revogada ("sair de todos os dispositivos"): a versão do token não bate com a do banco.
+    if (active && (token?.sessionVersion ?? 0) !== active.sessionVersion) return null
     return active ? { workspaceId: active.workspaceId, organizationId: active.organizationId } : null
   } catch {
     // Banco fora do ar / migração ainda não aplicada: usa o que o token traz.
