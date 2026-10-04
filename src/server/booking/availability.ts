@@ -61,17 +61,28 @@ export function slotsForDay(
 }
 
 /** Ocupação (eventos locais + Google) entre [from, to). `google` diz se a agenda do Google foi consultada. */
-export async function loadBusy(workspaceId: string, from: Date, to: Date): Promise<{ busy: Busy[]; google: boolean }> {
+export async function loadBusy(
+  workspaceId: string,
+  from: Date,
+  to: Date,
+  /** Remarcação: o próprio compromisso não ocupa o horário (nem a cópia dele no Google). */
+  ignoreEventId?: string,
+): Promise<{ busy: Busy[]; google: boolean }> {
+  // Cancelados liberam o horário.
   const local = await db.event.findMany({
-    where: { workspaceId, inicio: { gte: new Date(from.getTime() - MAX_EVENT_MS), lt: to } },
-    select: { inicio: true, duracaoMin: true },
+    where: { workspaceId, status: 'ativo', inicio: { gte: new Date(from.getTime() - MAX_EVENT_MS), lt: to } },
+    select: { id: true, inicio: true, duracaoMin: true, googleEventId: true },
   })
-  const busy: Busy[] = local.map((e) => ({ start: e.inicio, end: addMin(e.inicio, e.duracaoMin) }))
+  const ignored = ignoreEventId ? local.find((e) => e.id === ignoreEventId) : undefined
+  const busy: Busy[] = local.filter((e) => e.id !== ignoreEventId).map((e) => ({ start: e.inicio, end: addMin(e.inicio, e.duracaoMin) }))
   let google = false
   const conn = await getConnection(workspaceId)
   if (conn && isRealConnection(conn)) {
     try {
-      busy.push(...(await freeBusy(workspaceId, selectedIds(conn), from, to)))
+      const gb = await freeBusy(workspaceId, selectedIds(conn), from, to)
+      const oIni = ignored?.googleEventId ? ignored.inicio.getTime() : null
+      const oFim = ignored ? addMin(ignored.inicio, ignored.duracaoMin).getTime() : null
+      busy.push(...gb.filter((b) => !(oIni !== null && b.start.getTime() === oIni && b.end.getTime() === oFim)))
       google = true
     } catch (err) {
       logGoogleFailure('freeBusy (link público)', err)

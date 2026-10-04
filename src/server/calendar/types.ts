@@ -27,6 +27,10 @@ export interface EventDto {
   cliente: string | null
   /** true se o evento existe no Google Agenda (googleEventId preenchido). */
   noGoogle: boolean
+  /** Confirmação de presença pelo lembrete (pendente | confirmado | recusado = pediu para remarcar). */
+  confirmacao?: 'pendente' | 'confirmado' | 'recusado'
+  /** true = o lembrete que pede confirmação já foi enviado (só então "Aguardando confirmação" aparece). */
+  lembreteEnviado?: boolean
   /** true = evento lido ao vivo do Google (origem 'GOOGLE'): a tela não permite excluir. */
   somenteLeitura?: boolean
   /** true = evento de dia inteiro (inicio/fim à meia-noite de São Paulo; fim exclusivo). */
@@ -96,6 +100,8 @@ export interface CalendarStateDto {
   /** Agenda onde novos agendamentos são criados. */
   destinoId: string | null
   iaPodeAgendar: boolean
+  /** O lembrete pede "1 para confirmar, 2 para remarcar" (padrão: ligado). */
+  pedirConfirmacao: boolean
   duracaoPadraoMin: 30 | 60 | 120
   lembretes: Lembrete[]
   /** true = conexão simulada (provider 'google-demo', sem tokens). */

@@ -6,7 +6,7 @@ import { db } from '@/lib/db'
 import { badRequest, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
 import { invalidateGoogleCache } from '@/server/calendar/live'
 import { readTokens, revokeToken } from '@/server/calendar/google'
-import { apiError, getConnection, isRealConnection, parseCalendarios, toCalendarState } from '@/server/calendar/service'
+import { apiError, getCalendarState, getConnection, isRealConnection, parseCalendarios } from '@/server/calendar/service'
 import { LEMBRETES } from '@/server/calendar/types'
 
 export const dynamic = 'force-dynamic'
@@ -15,12 +15,13 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
-  return NextResponse.json(toCalendarState(await getConnection(workspaceId)))
+  return NextResponse.json(await getCalendarState(workspaceId))
 }
 
 const patchSchema = z
   .object({
     iaPodeAgendar: z.boolean().optional(),
+    pedirConfirmacao: z.boolean().optional(),
     duracaoPadraoMin: z.union([z.literal(30), z.literal(60), z.literal(120)]).optional(),
     lembretes: z
       .array(z.enum(LEMBRETES))
@@ -47,11 +48,22 @@ export async function PATCH(req: NextRequest) {
   if (!parsed.success) return badRequest('Preferências inválidas')
   const b = parsed.data
 
+  // "IA pode agendar" vale com ou sem Google: a fonte única é o agente (AiAgent.canSchedule); a coluna antiga acompanha.
+  if (b.iaPodeAgendar !== undefined) {
+    await db.aiAgent.upsert({ where: { workspaceId }, create: { workspaceId, canSchedule: b.iaPodeAgendar }, update: { canSchedule: b.iaPodeAgendar } })
+    await db.calendarConnection.updateMany({ where: { workspaceId }, data: { iaPodeAgendar: b.iaPodeAgendar } })
+  }
+
   const conn = await getConnection(workspaceId)
-  if (!conn) return apiError('NAO_CONECTADO', 'Google Agenda não conectado.', 404)
+  if (!conn) {
+    // Sem Google conectado só a opção da IA pode mudar; o resto grava na conexão.
+    const soIa = Object.keys(b).every((k) => k === 'iaPodeAgendar')
+    if (soIa) return NextResponse.json(await getCalendarState(workspaceId))
+    return apiError('NAO_CONECTADO', 'Google Agenda não conectado.', 404)
+  }
 
   const data: Prisma.CalendarConnectionUpdateInput = {}
-  if (b.iaPodeAgendar !== undefined) data.iaPodeAgendar = b.iaPodeAgendar
+  if (b.pedirConfirmacao !== undefined) data.pedirConfirmacao = b.pedirConfirmacao
   if (b.duracaoPadraoMin !== undefined) data.duracaoPadraoMin = b.duracaoPadraoMin
   if (b.lembretes !== undefined) data.lembretes = b.lembretes
 
@@ -69,9 +81,9 @@ export async function PATCH(req: NextRequest) {
     data.destinoId = destinoId
   }
 
-  const updated = await db.calendarConnection.update({ where: { workspaceId }, data })
+  if (Object.keys(data).length > 0) await db.calendarConnection.update({ where: { workspaceId }, data })
   if (b.calendarios !== undefined || b.destinoId !== undefined) invalidateGoogleCache(workspaceId)
-  return NextResponse.json(toCalendarState(updated))
+  return NextResponse.json(await getCalendarState(workspaceId))
 }
 
 /**
@@ -92,5 +104,5 @@ export async function DELETE() {
     db.event.updateMany({ where: { workspaceId }, data: { googleEventId: null, googleCalendarId: null } }),
   ])
   invalidateGoogleCache(workspaceId)
-  return NextResponse.json(toCalendarState(null))
+  return NextResponse.json(await getCalendarState(workspaceId))
 }

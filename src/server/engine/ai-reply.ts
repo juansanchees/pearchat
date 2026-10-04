@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { generateReply, LlmError } from '@/server/agent/llm'
 import type { ChatMessage } from '@/server/agent/llm'
 import { buildSystemPrompt, HANDOFF_MARKER } from '@/server/agent/prompt'
+import { createToolRunner, miniCalendar } from '@/server/agent/tools'
+import { remarcarContext } from '@/server/calendar/confirmation'
 import { serviceTypesForPrompt } from '@/server/calendar/service-types'
 import { transcriptionAvailable, visionAvailable } from '@/server/media/ai-caps'
 import { isMediaKind, MEDIA_LABEL, isMediaLabel } from '@/server/media/mime'
@@ -16,7 +18,7 @@ import { HANDOFF_LIMIT_NOTE, HANDOFF_MODEL_NOTE, handoffRuleNote } from './hando
 import { contactRef, OutboundError, sendAndRecord } from './outbound'
 import { cancelPendingFollowUps } from './followup'
 import { agentMayReplyAt, detectHandoffRule, formatAgora, genericHandoffMessage, isStopRequest, ungroundedMoney } from './rules'
-import { bumpUsage, engineDisabled, getConnected, log, logError, shortError } from './util'
+import { bumpUsage, displayName, engineDisabled, getConnected, log, logError, shortError } from './util'
 
 // Resposta da IA às conversas. Fluxo: ingestInboundMessage -> scheduleAiReply (debounce de 4 s) ->
 // o agendador executa runDueAiJobs. Cada conjunto de mensagens seguidas do cliente gera UMA resposta.
@@ -190,6 +192,20 @@ function toHistory(messages: Message[]): ChatMessage[] {
   return out
 }
 
+/** O job anterior desta conversa gravou algo na agenda mas a resposta foi descartada (chegou mensagem nova)? */
+async function discardedWriteNotice(conversationId: string, since: Date): Promise<string[]> {
+  const prev = await db.aiJob.findFirst({
+    where: { conversationId, status: AI_JOB.feito, error: { startsWith: 'superado' }, createdAt: { gte: since } },
+    orderBy: { createdAt: 'desc' },
+    select: { ferramentas: true },
+  })
+  const list = Array.isArray(prev?.ferramentas) ? (prev?.ferramentas as { nome?: unknown; ok?: unknown }[]) : []
+  const wrote = list.some((f) => f.ok === true && ['criar_agendamento', 'remarcar_agendamento', 'cancelar_agendamento'].includes(String(f.nome)))
+  return wrote
+    ? ['Numa resposta anterior sua, uma ferramenta de escrita (criar, remarcar ou cancelar) já foi executada, mas a mensagem ao cliente não foi enviada. Chame consultar_agendamentos para ver o estado atual e informe o cliente do que foi feito.']
+    : []
+}
+
 async function setTyping(workspaceId: string, conversationId: string, typing: boolean): Promise<void> {
   await db.conversation.update({ where: { id: conversationId }, data: { typing } })
   const item = await loadConversationItem(workspaceId, conversationId)
@@ -241,6 +257,16 @@ async function handoff(opts: {
   emitToWorkspace(workspaceId, 'handoff.requested', { workspaceId, conversationId: conv.id, contactName: conv.contact.nome, motivo })
   await notifySpaceAttention(workspaceId, { contato: conv.contact.nome, motivo })
   log('ai', `passagem para humano (conversa ${conv.id}): ${motivo}`)
+}
+
+/** Grava no job as chamadas de ferramenta (nome, ok, código do erro; sem dados pessoais). */
+async function saveToolLog(job: AiJob, runner: ReturnType<typeof createToolRunner> | null): Promise<void> {
+  if (!runner || runner.log.length === 0) return
+  try {
+    await db.aiJob.update({ where: { id: job.id }, data: { ferramentas: runner.log } })
+  } catch (e) {
+    logError('ai', 'falha ao gravar o registro de ferramentas', e)
+  }
 }
 
 async function execute(job: AiJob): Promise<JobResult> {
@@ -317,6 +343,17 @@ async function execute(job: AiJob): Promise<JobResult> {
     db.knowledgeItem.findMany({ where: { agentId: agent.id }, orderBy: { createdAt: 'asc' } }),
     serviceTypesForPrompt(workspaceId),
   ])
+  // Agendamento pela IA: só com a opção ligada no agente (fonte única: AiAgent.canSchedule) e ao menos um serviço cadastrado.
+  const schedulingOn = agent.canSchedule && servicos.length > 0
+  const nowDate = new Date()
+  const runner = schedulingOn ? createToolRunner({ workspaceId, conversationId, contactId: conv.contactId }) : null
+  const agendaCtx = schedulingOn
+    ? {
+        calendario: miniCalendar(nowDate),
+        clienteNome: displayName(conv.contact.nome, conv.contact) || null,
+        contexto: [...(await remarcarContext(workspaceId, conv.contactId, nowDate)), ...(await discardedWriteNotice(conversationId, new Date(nowDate.getTime() - 15 * 60_000)))],
+      }
+    : undefined
   const system = buildSystemPrompt({
     empresa: ws.nome,
     agente: { nome: agent.nome, tom: tomFromDb(agent.tom), prompt: agent.prompt },
@@ -326,6 +363,7 @@ async function execute(job: AiJob): Promise<JobResult> {
     horarioAtendimento: el.horarioAtendimento,
     agora: formatAgora(new Date()),
     midia: { audio: transcriptionAvailable(), imagem: visionOn },
+    agenda: agendaCtx,
   })
 
   // Visão: a imagem da ÚLTIMA mensagem do cliente (até 4 MB, formato aceito pelos modelos) segue junto da legenda.
@@ -339,19 +377,22 @@ async function execute(job: AiJob): Promise<JobResult> {
   try {
     // Só o que o dono escreveu + o histórico (as regras fixas do prompt também têm números, ex.: "300 caracteres").
     const corpus = [agent.prompt, ...kb.map((k) => `${k.pergunta} ${k.resposta}`), ...servicos.map((s) => s.nome), ...history.map((m) => m.content)].join('\n')
-    const r = await generateReply({ system, messages: history })
+    const r = await generateReply({ system, messages: history, tools: runner ?? undefined })
     texto = r.texto
     // Preço inventado: uma nova tentativa avisando; se insistir, resposta segura (sem valor).
     if (!texto.includes(HANDOFF_MARKER) && ungroundedMoney(texto, corpus).length > 0) {
       const r2 = await generateReply({
         system: `${system}\n\nATENÇÃO: sua resposta anterior citou um valor em reais que NÃO está nas informações acima. Responda de novo sem citar nenhum valor que não esteja escrito literalmente nas instruções ou respostas prontas; diga que vai confirmar com a equipe.`,
         messages: history,
+        tools: runner ?? undefined,
       })
       texto = ungroundedMoney(r2.texto, corpus).length > 0 ? 'Esse valor eu preciso confirmar com a equipe e já te retorno, tá?' : r2.texto
     }
   } catch (e) {
+    await saveToolLog(job, runner)
     return { kind: 'retry', error: e instanceof LlmError ? e.message : shortError(e) }
   }
+  await saveToolLog(job, runner)
 
   // Revalida: a conversa pode ter virado HUMANO, a IA ter sido desligada, ou chegado mais mensagens.
   const [conv2, el2, newest] = await Promise.all([

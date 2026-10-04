@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
   const rows = await db.event.findMany({
     where: {
       workspaceId,
+      status: 'ativo',
       inicio: { gte: new Date(from.getTime() - MAX_EVENT_MS), lt: to },
     },
     include: eventInclude,

@@ -265,6 +265,14 @@ export function ResultadosDrawer() {
               { label: 'Pelo link', value: fmtNum(d.agenda.porOrigem.link) },
             ]}
           />
+          <Stats
+            cols="grid-cols-3"
+            items={[
+              { label: 'Confirmados', value: fmtNum(d.agenda.confirmados) },
+              { label: 'Pediram para remarcar', value: fmtNum(d.agenda.pediramRemarcar) },
+              { label: 'Cancelados pelo cliente', value: fmtNum(d.agenda.canceladosPeloCliente) },
+            ]}
+          />
           {d.agenda.porTipo.length === 0 ? (
             semDados
           ) : (

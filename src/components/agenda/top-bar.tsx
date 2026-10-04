@@ -5,7 +5,7 @@ import { CalendarDots, Sparkle, WhatsappLogo } from '@phosphor-icons/react'
 import { MenuButton } from '@/components/app/menu-button'
 import { cn } from '@/lib/utils'
 
-/** Barra de 56px da Agenda: ícone, título, status, switch "IA pode agendar" (só conectado) e "Voltar às conversas". */
+/** Barra de 56px da Agenda: ícone, título, status, switch "IA pode agendar" (sempre, com ou sem Google) e "Voltar às conversas". */
 export function AgendaTopBar({
   subtitle,
   showIa,

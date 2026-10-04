@@ -32,6 +32,7 @@ export async function findOverlappingTx(
   const rows = await tx.event.findMany({
     where: {
       workspaceId,
+      status: { not: 'cancelado' },
       inicio: { gte: new Date(inicio.getTime() - MAX_EVENT_MS), lt: fim },
       ...(ignoreId ? { id: { not: ignoreId } } : {}),
     },

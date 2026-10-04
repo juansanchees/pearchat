@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Flask, Plus, ShieldCheck, Sparkle, Trash } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
-import { Pill } from '@/components/pear'
+import { PearSwitch, Pill } from '@/components/pear'
 import type { AgentDTO, AgentTestResultDTO, KnowledgeItemDTO } from '@/lib/types'
 import { api } from './api'
 import { toKbItem, useDrawerData, useDrawerLoad } from './drawer-data'
@@ -66,7 +66,7 @@ export function IaDrawer() {
       // Envia o que está na tela (ainda não salvo) para o teste refletir as edições.
       const r = await api<AgentTestResultDTO>('/api/agent/test', {
         method: 'POST',
-        body: { mensagem, nome: agente.nome.trim() || undefined, tom: agente.tom, prompt: agente.prompt, handoffRules: handoff },
+        body: { mensagem, nome: agente.nome.trim() || undefined, tom: agente.tom, prompt: agente.prompt, handoffRules: handoff, canSchedule: agente.canSchedule },
       })
       setTestA(r.resposta)
     } catch (e) {
@@ -79,7 +79,7 @@ export function IaDrawer() {
   const salvar = async () => {
     const saved = await api<AgentDTO>('/api/agent', {
       method: 'PUT',
-      body: { nome: agente.nome, tom: agente.tom, prompt: agente.prompt, horario: agente.horario, handoffRules: handoff },
+      body: { nome: agente.nome, tom: agente.tom, prompt: agente.prompt, horario: agente.horario, handoffRules: handoff, canSchedule: agente.canSchedule },
     })
     setAgentName(saved.nome)
   }
@@ -166,6 +166,18 @@ export function IaDrawer() {
 
       <Section label="Quando responder">
         <Seg options={HORARIOS} value={agente.horario} onChange={(v) => edit({ horario: v })} label="Quando responder" />
+      </Section>
+
+      <Section label="Agenda">
+        <div className="flex items-start gap-3 rounded-md border border-light-divider px-3 py-[11px]">
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-medium leading-[1.3]">Permitir que o agente agende, remarque e cancele</div>
+            <div className="mt-1 text-[12px] text-light-neutral-400">
+              Ele consulta os horários livres da sua Agenda, confirma o dia e a hora com o cliente e só então marca. Só mexe nos horários do cliente da própria conversa. Desligado, a equipe confirma os horários.
+            </div>
+          </div>
+          <PearSwitch checked={agente.canSchedule} onChange={(v) => edit({ canSchedule: v })} label="Permitir que o agente agende, remarque e cancele" />
+        </div>
       </Section>
 
       <div className="flex flex-col gap-[10px] rounded-lg border border-light-divider bg-light-bg p-4">

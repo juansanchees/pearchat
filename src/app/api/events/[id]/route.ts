@@ -48,6 +48,8 @@ const patchSchema = z
     serviceTypeId: z.string().min(1).nullish(),
     cliente: z.string().trim().max(120).nullish(),
     contactId: z.string().min(1).nullish(),
+    // Confirmação marcada à mão pelo dono (ou desfeita).
+    confirmacao: z.enum(['pendente', 'confirmado']).optional(),
   })
   .strict()
 
@@ -65,7 +67,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   if (!parsed.success) return badRequest('Dados do agendamento inválidos')
   const b = parsed.data
 
-  const current = await db.event.findFirst({ where: { id: params.id, workspaceId } })
+  const current = await db.event.findFirst({ where: { id: params.id, workspaceId, status: 'ativo' } })
   if (!current) return notFound()
 
   const inicio = b.inicio ? new Date(b.inicio) : current.inicio
@@ -82,6 +84,15 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   }
 
   const data: Prisma.EventUncheckedUpdateInput = { inicio, duracaoMin }
+  if (inicio.getTime() !== current.inicio.getTime()) {
+    // Outro horário: a confirmação anterior não vale mais.
+    data.confirmacao = 'pendente'
+    data.confirmadoEm = null
+  }
+  if (b.confirmacao !== undefined) {
+    data.confirmacao = b.confirmacao
+    data.confirmadoEm = b.confirmacao === 'confirmado' ? new Date() : null
+  }
   if (b.titulo !== undefined) data.titulo = b.titulo
   if (b.tipo !== undefined) data.tipo = b.tipo
   if (b.serviceTypeId === null) data.serviceTypeId = null

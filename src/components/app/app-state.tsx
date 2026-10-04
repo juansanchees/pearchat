@@ -171,6 +171,27 @@ export function AppStateProvider({
   // A agenda mudou por fora (cliente agendou pelo link público): atualiza as telas e avisa o dono.
   useSocketEvent('agenda.updated', (p) => {
     emitAgendaChanged()
+    if (p.ia) {
+      const at = toSp(p.ia.inicio)
+      const [, mm, dd] = at.date.split('-')
+      const quando = `${p.ia.cliente}, ${dd}/${mm} ${at.hm}`
+      toast({
+        icon: <CalendarCheck size={18} weight="fill" />,
+        title: p.ia.acao === 'criado' ? `${agentNameRef.current} agendou um horário` : p.ia.acao === 'remarcado' ? 'Cliente remarcou um horário' : 'Cliente cancelou um horário',
+        text: quando,
+      })
+      return
+    }
+    if (p.confirmacao) {
+      const at = toSp(p.confirmacao.inicio)
+      const [, mm, dd] = at.date.split('-')
+      toast({
+        icon: <CalendarCheck size={18} weight="fill" />,
+        title: p.confirmacao.estado === 'confirmado' ? 'Cliente confirmou presença' : 'Cliente pediu para remarcar',
+        text: `${p.confirmacao.cliente}, ${dd}/${mm} ${at.hm}`,
+      })
+      return
+    }
     if (!p.link) return
     const at = toSp(p.link.inicio)
     const [, mm, dd] = at.date.split('-')

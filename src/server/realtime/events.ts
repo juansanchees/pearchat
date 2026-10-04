@@ -65,6 +65,10 @@ export interface AgendaUpdatedPayload {
   workspaceId: string
   /** Presente quando o agendamento veio do link público: o painel mostra um aviso. */
   link?: { cliente: string; inicio: string }
+  /** A IA criou, remarcou ou cancelou um agendamento a pedido do cliente. */
+  ia?: { acao: 'criado' | 'remarcado' | 'cancelado'; cliente: string; inicio: string }
+  /** O cliente respondeu ao lembrete: confirmou presença ou pediu para remarcar. */
+  confirmacao?: { estado: 'confirmado' | 'recusado'; cliente: string; inicio: string }
 }
 
 export interface ServerToClientEvents {

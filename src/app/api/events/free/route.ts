@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
   const local = await db.event.findMany({
     where: {
       workspaceId,
+      status: 'ativo',
       inicio: { gte: new Date(dayStart.getTime() - MAX_EVENT_MS), lt: dayEnd },
       ...(ignoreId ? { id: { not: ignoreId } } : {}),
     },

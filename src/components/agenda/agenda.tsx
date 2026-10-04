@@ -109,7 +109,7 @@ export function Agenda() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-light-bg text-light-text">
-      <AgendaTopBar subtitle={subtitle} showIa={gOn} iaOn={!!cal?.iaPodeAgendar} onIa={() => void toggleIa()} />
+      <AgendaTopBar subtitle={subtitle} showIa={!!cal} iaOn={!!cal?.iaPodeAgendar} onIa={() => void toggleIa()} />
 
       {loading && !cal && (
         <div className="grid flex-1 place-items-center">

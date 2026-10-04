@@ -7,6 +7,7 @@ export type Horario = 'Sempre' | 'Fora do expediente' | 'Só fins de semana'
 export type KbItem = { id: string; p: string; r: string }
 
 export const AGENTE_INICIAL = {
+  canSchedule: false,
   nome: 'Luna',
   tom: 'Amigável' as Tom,
   horario: 'Sempre' as Horario,

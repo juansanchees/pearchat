@@ -31,7 +31,7 @@ import {
 import type { Campanha, DispState, Horario, KbItem, PlanoNome, Template, Tom } from './mock-data'
 import { defaultDispData, toCampanha } from './view'
 
-type Agente = { nome: string; tom: Tom; horario: Horario; prompt: string }
+type Agente = { nome: string; tom: Tom; horario: Horario; prompt: string; canSchedule: boolean }
 type Fu = { espera: string; tentativas: string; msgs: string[] }
 
 const CAT: Record<TemplateDTO['category'], Template['cat']> = { MARKETING: 'Marketing', UTILIDADE: 'Utilidade' }
@@ -120,7 +120,7 @@ export function DrawerDataProvider({
       try {
         if (key === 'ia') {
           const [a, k] = await Promise.all([api<AgentDTO>('/api/agent'), api<KnowledgeItemDTO[]>('/api/agent/knowledge')])
-          setAgente({ nome: a.nome, tom: a.tom, horario: a.horario, prompt: a.prompt })
+          setAgente({ nome: a.nome, tom: a.tom, horario: a.horario, prompt: a.prompt, canSchedule: a.canSchedule })
           setAgentName(a.nome)
           setHandoff(a.handoffRules)
           setKb(k.map(toKbItem))

@@ -47,7 +47,7 @@ export async function compute(ws: string, periodo: Periodo, now: Date): Promise<
   const { de, ate, from, to } = periodBounds(periodo, now)
   const lookback = new Date(from.getTime() - SESSION_GAP_HOURS * 3_600_000)
 
-  const [tot, dias, grade, mediana, ia, motivos, ev, tipos, disp, fu] = await Promise.all([
+  const [tot, dias, grade, mediana, ia, motivos, ev, tipos, agSit, disp, fu] = await Promise.all([
     db.$queryRaw<{ conversas: Num; recebidas: Num; enviadas: Num }[]>(Prisma.sql`
       SELECT COUNT(DISTINCT m."conversationId")::int AS conversas,
              (COUNT(*) FILTER (WHERE m."direction" = 'IN'))::int AS recebidas,
@@ -127,14 +127,22 @@ export async function compute(ws: string, periodo: Periodo, now: Date): Promise<
       SELECT CASE WHEN e."canal" = 'link' THEN 'link' WHEN e."origem" = 'IA' THEN 'ia' ELSE 'manual' END AS origem,
              COUNT(*)::int AS total
       FROM "Event" e
-      WHERE e."workspaceId" = ${ws} AND e."origem" <> 'GOOGLE' AND e."createdAt" >= ${from} AND e."createdAt" < ${to}
+      WHERE e."workspaceId" = ${ws} AND e."origem" <> 'GOOGLE' AND e."status" = 'ativo' AND e."createdAt" >= ${from} AND e."createdAt" < ${to}
       GROUP BY 1`),
 
     db.$queryRaw<{ tipo: string; total: Num }[]>(Prisma.sql`
       SELECT COALESCE(st."nome", e."tipo") AS tipo, COUNT(*)::int AS total
       FROM "Event" e LEFT JOIN "ServiceType" st ON st."id" = e."serviceTypeId"
-      WHERE e."workspaceId" = ${ws} AND e."origem" <> 'GOOGLE' AND e."createdAt" >= ${from} AND e."createdAt" < ${to}
+      WHERE e."workspaceId" = ${ws} AND e."origem" <> 'GOOGLE' AND e."status" = 'ativo' AND e."createdAt" >= ${from} AND e."createdAt" < ${to}
       GROUP BY 1 ORDER BY total DESC, tipo ASC LIMIT 5`),
+
+    // Situação dos agendamentos: cancelados pelo cliente, confirmados e que pediram para remarcar (resposta ao lembrete) no período.
+    db.$queryRaw<{ cancelados: Num; confirmados: Num; remarcar: Num }[]>(Prisma.sql`
+      SELECT (COUNT(*) FILTER (WHERE e."status" = 'cancelado' AND e."canceladoPor" = 'cliente' AND e."canceladoEm" >= ${from} AND e."canceladoEm" < ${to}))::int AS cancelados,
+             (COUNT(*) FILTER (WHERE e."status" = 'ativo' AND e."confirmacao" = 'confirmado' AND e."confirmadoEm" >= ${from} AND e."confirmadoEm" < ${to}))::int AS confirmados,
+             (COUNT(*) FILTER (WHERE e."status" = 'ativo' AND e."confirmacao" = 'recusado' AND e."updatedAt" >= ${from} AND e."updatedAt" < ${to}))::int AS remarcar
+      FROM "Event" e
+      WHERE e."workspaceId" = ${ws} AND e."origem" <> 'GOOGLE'`),
 
     db.$queryRaw<{ campanhas: Num; enviadas: Num; respostas: Num }[]>(Prisma.sql`
       SELECT COUNT(DISTINCT r."campaignId")::int AS campanhas, COUNT(*)::int AS enviadas,
@@ -211,6 +219,9 @@ export async function compute(ws: string, periodo: Periodo, now: Date): Promise<
       total: origem.ia + origem.manual + origem.link,
       porOrigem: origem,
       porTipo: tipos.map((x) => ({ tipo: x.tipo, total: n(x.total) })),
+      canceladosPeloCliente: n(agSit[0]?.cancelados),
+      confirmados: n(agSit[0]?.confirmados),
+      pediramRemarcar: n(agSit[0]?.remarcar),
     },
     disparos: {
       campanhas: n(d?.campanhas),

@@ -8,7 +8,7 @@ import {
   apiError,
   getConnection,
   isRealConnection,
-  toCalendarState,
+  getCalendarState,
 } from '@/server/calendar/service'
 
 export const dynamic = 'force-dynamic'
@@ -58,7 +58,7 @@ async function connectDemo(req: NextRequest) {
     return apiError('CONEXAO_REAL_ATIVA', 'Desconecte o Google Agenda antes de usar a demonstração.', 409)
   }
 
-  const row = await db.calendarConnection.upsert({
+  await db.calendarConnection.upsert({
     where: { workspaceId },
     create: {
       workspaceId,
@@ -73,7 +73,7 @@ async function connectDemo(req: NextRequest) {
     },
     update: { provider: 'google-demo', email, tokens: null, calendarios, destinoId },
   })
-  return NextResponse.json(toCalendarState(row))
+  return NextResponse.json(await getCalendarState(workspaceId))
 }
 
 export const PUT = connectDemo

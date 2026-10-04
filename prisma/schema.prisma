@@ -257,6 +257,8 @@ model Conversation {
   typing        Boolean           @default(false)
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
+  // Horários que a IA ofereceu pela ferramenta de agenda: [{ s: serviceTypeId, i: inicio ISO, t: ofertado em ms }]. Migration 0012.
+  ofertasIa     Json?
 
   workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   contact   Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -434,6 +436,8 @@ model CalendarConnection {
   precisaReconectar Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+  // O lembrete pede "1 para confirmar, 2 para remarcar" (migration 0012).
+  pedirConfirmacao  Boolean   @default(true)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
@@ -466,6 +470,15 @@ model Event {
   canal            String?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
+  // ---- IA agendando e confirmação de presença (migration 0012) ----
+  // ativo | cancelado (cancelado some da grade e libera o horário, mas fica no banco para o painel de resultados).
+  status           String      @default("ativo")
+  canceladoEm      DateTime?
+  // cliente (pediu pelo WhatsApp) | equipe
+  canceladoPor     String?
+  // pendente | confirmado | recusado (pediu para remarcar)
+  confirmacao      String      @default("pendente")
+  confirmadoEm     DateTime?
 
   workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   contact     Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
@@ -473,6 +486,7 @@ model Event {
   reminders   EventReminder[]
 
   @@index([workspaceId, inicio])
+  @@index([contactId, inicio])
 }
 
 // Tipos de atendimento/serviços do negócio (aparecem ao agendar, nos lembretes e no prompt da IA).
@@ -534,6 +548,8 @@ model AiJob {
   attempts       Int      @default(0)
   error          String?
   createdAt      DateTime @default(now())
+  // Chamadas de ferramenta da execução: [{ nome, ok, erro? }] (sem dados pessoais). Migration 0012.
+  ferramentas    Json?
 
   workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -549,6 +565,8 @@ model EventReminder {
   kind    String // 24h | 2h | 30min
   sentAt  DateTime @default(now())
   result  String? // enviado | pulado:<motivo>
+  // O texto do lembrete pediu "1 para confirmar, 2 para remarcar" (migration 0012).
+  pediuConfirmacao Boolean @default(false)
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 

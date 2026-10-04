@@ -6,6 +6,7 @@ import { generateReply, hasLlmKey, simulateReply } from './llm'
 import { detectHandoffRule, formatAgora, genericHandoffMessage } from '@/server/engine/rules'
 import { serviceTypesForPrompt } from '@/server/calendar/service-types'
 import { buildSystemPrompt, HANDOFF_MARKER } from './prompt'
+import { createToolRunner, miniCalendar } from './tools'
 
 // Valores no banco (slugs) <-> rótulos da interface.
 const TOM_DB: Record<AgentTom, string> = { Amigável: 'amigavel', Profissional: 'profissional', Direto: 'direto' }
@@ -41,6 +42,7 @@ export const agentTestSchema = z.object({
   tom: z.enum(['Amigável', 'Profissional', 'Direto']).optional(),
   prompt: z.string().max(4000).optional(),
   handoffRules: z.array(z.string().max(120)).max(20).optional(),
+  canSchedule: z.boolean().optional(),
 })
 
 function toAgentDTO(a: { nome: string; tom: string; prompt: string; horario: string; handoffRules: string[]; canSchedule: boolean }): AgentDTO {
@@ -145,6 +147,8 @@ export async function testAgent(
   if (hit) return { resposta: hit.mensagem(responsavel), handoff: true, simulado: !hasLlmKey() }
 
   const servicos = await serviceTypesForPrompt(workspaceId)
+  // Com o agendamento ligado as ferramentas de LEITURA valem; as de escrita só simulam (dryRun) e não criam nada.
+  const runner = (input.canSchedule ?? agent.canSchedule) && servicos.length > 0 ? createToolRunner({ workspaceId, conversationId: null, contactId: null, dryRun: true }) : null
   const system = buildSystemPrompt({
     empresa: ws.nome,
     agente: { nome, tom, prompt },
@@ -153,14 +157,20 @@ export async function testAgent(
     servicos,
     horarioAtendimento: ws.horarioAtendimento,
     agora: formatAgora(new Date()),
+    agenda: runner ? { calendario: miniCalendar(new Date()), clienteNome: 'Cliente de teste' } : undefined,
   })
   const r = await generateReply({
     system,
     messages: [{ role: 'user', content: input.mensagem }],
     simulate: () => simulateReply(input.mensagem, tom, kb),
+    tools: runner ?? undefined,
   })
   if (r.texto.includes(HANDOFF_MARKER)) {
     return { resposta: genericHandoffMessage(responsavel), handoff: true, simulado: r.simulado }
   }
-  return { resposta: r.texto, handoff: false, simulado: r.simulado }
+  // Escritas na agenda só são simuladas no teste: deixa isso explícito para o dono.
+  const nota = runner && runner.simulated.length > 0 ? `
+
+[simulação] ${runner.simulated.join('; ')}. Nada foi gravado na agenda.` : ''
+  return { resposta: `${r.texto}${nota}`, handoff: false, simulado: r.simulado }
 }

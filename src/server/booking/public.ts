@@ -174,7 +174,7 @@ export async function createPublicBooking(input: BookingInput): Promise<BookingR
     })
     if (existentes.length > 0) {
       const futuros = await tx.event.count({
-        where: { workspaceId: ws.id, contactId: { in: existentes.map((c) => c.id) }, inicio: { gt: now } },
+        where: { workspaceId: ws.id, status: 'ativo', contactId: { in: existentes.map((c) => c.id) }, inicio: { gt: now } },
       })
       if (futuros >= MAX_FUTUROS_POR_TELEFONE) return { kind: 'limit' } as const
     }

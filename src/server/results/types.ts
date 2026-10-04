@@ -37,6 +37,12 @@ export interface ResultsDto {
     porOrigem: { ia: number; manual: number; link: number }
     /** Top 5 tipos de atendimento. */
     porTipo: { tipo: string; total: number }[]
+    /** Cancelados pelo cliente (pela IA, a pedido dele) no período. Não entram no total acima. */
+    canceladosPeloCliente: number
+    /** Presença confirmada pelo cliente (ou à mão) no período. */
+    confirmados: number
+    /** Responderam ao lembrete pedindo para remarcar, no período. */
+    pediramRemarcar: number
   }
   disparos: {
     campanhas: number

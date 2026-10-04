@@ -17,6 +17,8 @@ import {
 export const eventInclude = {
   contact: { select: { id: true, nome: true, telefone: true } },
   serviceType: { select: { cor: true } },
+  // Só para a etiqueta de confirmação: o lembrete que pediu "1 para confirmar" já saiu?
+  reminders: { where: { pediuConfirmacao: true, result: 'enviado' }, select: { id: true }, take: 1 },
 } satisfies Prisma.EventInclude
 export type EventRow = Prisma.EventGetPayload<{ include: typeof eventInclude }>
 
@@ -46,6 +48,8 @@ export function toEventDto(e: EventRow): EventDto {
     ...(e.origem === 'MANUAL' && e.serviceType?.cor ?{ cor: e.serviceType.cor } : {}),
     cliente: e.contact?.nome ?? null,
     noGoogle: e.googleEventId !== null,
+    confirmacao: e.confirmacao === 'confirmado' || e.confirmacao === 'recusado' ? e.confirmacao : 'pendente',
+    ...(e.reminders.length > 0 ? { lembreteEnviado: true } : {}),
   }
 }
 
@@ -59,6 +63,7 @@ export async function findOverlapping(
   const rows = await db.event.findMany({
     where: {
       workspaceId,
+      status: { not: 'cancelado' },
       inicio: { gte: new Date(inicio.getTime() - MAX_EVENT_MS), lt: fim },
       ...(ignoreId ? { id: { not: ignoreId } } : {}),
     },
@@ -101,9 +106,10 @@ export function toCalendarState(c: CalendarConnection | null): CalendarStateDto 
       email: null,
       calendarios: [],
       destinoId: null,
-      iaPodeAgendar: true,
+      iaPodeAgendar: false,
       duracaoPadraoMin: 60,
       lembretes: [...DEFAULT_LEMBRETES],
+      pedirConfirmacao: true,
       demo: false,
       googleConfigurado,
       precisaReconectar: false,
@@ -119,11 +125,23 @@ export function toCalendarState(c: CalendarConnection | null): CalendarStateDto 
     iaPodeAgendar: c.iaPodeAgendar,
     duracaoPadraoMin: dur === 30 || dur === 120 ? dur : 60,
     lembretes: c.lembretes.filter(isLembrete),
+    pedirConfirmacao: c.pedirConfirmacao,
     demo: c.provider !== 'google',
     googleConfigurado,
     precisaReconectar: c.provider === 'google' && c.precisaReconectar,
     sincronizadoEm: c.ultimaSyncEm ? c.ultimaSyncEm.toISOString() : null,
   }
+}
+
+/**
+ * Estado da agenda para a tela. "IA pode agendar" vem do agente (AiAgent.canSchedule, fonte única): vale com ou sem Google.
+ */
+export async function getCalendarState(workspaceId: string): Promise<CalendarStateDto> {
+  const [conn, agent] = await Promise.all([
+    db.calendarConnection.findUnique({ where: { workspaceId } }),
+    db.aiAgent.findUnique({ where: { workspaceId }, select: { canSchedule: true } }),
+  ])
+  return { ...toCalendarState(conn), iaPodeAgendar: agent?.canSchedule ?? false }
 }
 
 export const getConnection = (workspaceId: string) =>
