@@ -43,7 +43,21 @@ export type Campanha = {
   retida?: boolean
 }
 
-export type Template = { id: string; nome: string; cat: 'Marketing' | 'Utilidade'; status: 'Aprovado' | 'Em análise' | 'Rejeitado'; corpo: string }
+export type Template = {
+  id: string
+  nome: string
+  cat: 'Marketing' | 'Utilidade'
+  status: 'Aprovado' | 'Em análise' | 'Rejeitado' | 'Pausado' | 'Desativado'
+  corpo: string
+  /** Motivo informado pela Meta (rejeição, pausa...). */
+  motivo?: string | null
+  /** Só existe no PearChat: ainda não foi enviado para a Meta. */
+  soLocal?: boolean
+  vars?: number
+  exemplos?: string[]
+  /** O PearChat não consegue usar o modelo em disparos (motivo). */
+  naoSuportado?: string | null
+}
 export const TPL_PADRAO = 'promo_fim_de_semana'
 
 // Padrão do follow-up quando a regra ainda não tem textos (mesmos textos do servidor).
