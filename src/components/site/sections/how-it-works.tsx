@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { AutomationsPanel, ConnectPanel, TeachPanel, WorkingPanel } from '../mini/how-panels'
+import { useStepper } from '../anim/use-play'
+import { AutomationsPanel, ConnectPanel, TEACH_ITEMS, TeachPanel, WorkingPanel, type ConnectState } from '../mini/how-panels'
 import { eyebrow, wrap } from '../ui/styles'
 
-// "Como funciona": no desktop a interface fica presa (sticky) e o texto rola; a etapa visível no meio da tela
-// (IntersectionObserver) decide qual painel aparece. Abaixo de 1024 px cada etapa mostra o seu painel logo abaixo do texto.
+// "Como funciona": em telas largas E altas (largura ≥ 1024 e altura ≥ 700, variante arbitrária do Tailwind) a interface fica presa
+// e o texto rola; a etapa no meio da tela (IntersectionObserver) decide o painel, e cada painel roda a sua coreografia
+// ao ficar ativo. Em telas menores ou baixas, cada etapa mostra o seu painel logo abaixo do texto e anima ao aparecer.
 
 const STEPS = [
   {
@@ -31,11 +33,26 @@ const STEPS = [
   },
 ]
 
-function Panel({ i, className }: { i: number; className?: string }) {
-  if (i === 0) return <ConnectPanel className={className} />
-  if (i === 1) return <TeachPanel className={className} />
-  if (i === 2) return <AutomationsPanel className={className} />
-  return <WorkingPanel className={className} />
+// Coreografia de cada painel (ms por passo; o último fica parado até o painel sair).
+const CHOREO = [
+  [1400, 1000, 60000], // QR: aguardando → conectando → conectado
+  [500, ...TEACH_ITEMS.slice(1).map(() => 450), 60000], // campos preenchendo (0 a 5)
+  [600, 550, 550, 60000], // interruptores ligando
+  [500, 700, 700, 700, 700, 60000], // conversas chegando
+]
+const CONNECT: ConnectState[] = ['aguardando', 'conectando', 'conectado']
+
+function LivePanel({ i, active, className }: { i: number; active: boolean; className?: string }) {
+  const durations = CHOREO[i]!
+  const { ref, step } = useStepper<HTMLDivElement>({ durations, loop: false, enabled: active })
+  return (
+    <div ref={ref} className={className}>
+      {i === 0 && <ConnectPanel state={CONNECT[step]} />}
+      {i === 1 && <TeachPanel filled={step} />}
+      {i === 2 && <AutomationsPanel on={step} />}
+      {i === 3 && <WorkingPanel count={step} />}
+    </div>
+  )
 }
 
 export function HowItWorks() {
@@ -67,7 +84,7 @@ export function HowItWorks() {
           </h2>
         </div>
 
-        <div className="mt-16 grid grid-cols-1 gap-10 min-[1024px]:mt-8 min-[1024px]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] min-[1024px]:gap-16">
+        <div className="mt-12 grid grid-cols-1 gap-6 [@media(min-width:1024px)_and_(min-height:700px)]:mt-8 [@media(min-width:1024px)_and_(min-height:700px)]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] [@media(min-width:1024px)_and_(min-height:700px)]:gap-16">
           <ol className="m-0 list-none p-0">
             {STEPS.map((s, i) => (
               <li
@@ -76,30 +93,37 @@ export function HowItWorks() {
                   refs.current[i] = el
                 }}
                 data-step={i}
-                className="flex flex-col justify-center py-10 min-[1024px]:min-h-[72vh] min-[1024px]:py-0"
+                className="flex flex-col justify-center py-10 [@media(min-width:1024px)_and_(min-height:700px)]:min-h-[72vh] [@media(min-width:1024px)_and_(min-height:700px)]:py-0"
               >
-                <div className={cn('transition-opacity duration-500 min-[1024px]:opacity-35', active === i && 'min-[1024px]:opacity-100')}>
+                <div>
                   <span className="text-[13px] font-medium tabular-nums tracking-[.08em] text-dark-accent-400">{String(i + 1).padStart(2, '0')} / 04</span>
-                  <h3 className="mt-3 text-balance text-[28px] font-semibold leading-[1.1] tracking-[-0.03em] text-white min-[768px]:text-[36px]">{s.titulo}</h3>
+                  <h3
+                    className={cn(
+                      'mt-3 text-balance text-[28px] font-semibold leading-[1.1] tracking-[-0.03em] text-white transition-colors duration-500 min-[768px]:text-[36px]',
+                      active !== i && '[@media(min-width:1024px)_and_(min-height:700px)]:text-dark-neutral-500',
+                    )}
+                  >
+                    {s.titulo}
+                  </h3>
                   <p className="mt-4 max-w-[46ch] text-[16.5px] leading-[1.6] text-dark-neutral-400 [text-wrap:pretty]">{s.texto}</p>
                 </div>
-                {/* Celular e tablet: o painel vem logo abaixo do texto */}
-                <div className="mt-8 min-[1024px]:hidden">
+                {/* Telas menores ou baixas: o painel vem logo abaixo do texto e anima ao aparecer */}
+                <div className="mt-8 [@media(min-width:1024px)_and_(min-height:700px)]:hidden">
                   <p className="sr-only">{s.alt}</p>
                   <div aria-hidden="true">
-                    <Panel i={i} />
+                    <LivePanel i={i} active />
                   </div>
                 </div>
               </li>
             ))}
           </ol>
 
-          <div className="hidden min-[1024px]:block">
+          <div className="hidden [@media(min-width:1024px)_and_(min-height:700px)]:block">
             <div className="sticky top-[14vh] flex h-[72vh] min-h-[520px] flex-col">
               <div className="flex gap-2" aria-hidden="true">
                 {STEPS.map((s, i) => (
                   <span key={s.titulo} className="h-1 flex-1 overflow-hidden rounded-pill bg-white/10">
-                    <span className={cn('block h-full rounded-pill bg-dark-accent-500 transition-[width] duration-500', i <= active ? 'w-full' : 'w-0')} />
+                    <span className={cn('block h-full origin-left rounded-pill bg-dark-accent-500 transition-transform duration-500', i <= active ? 'scale-x-100' : 'scale-x-0')} />
                   </span>
                 ))}
               </div>
@@ -112,11 +136,11 @@ export function HowItWorks() {
                     key={s.titulo}
                     aria-hidden="true"
                     className={cn(
-                      'absolute inset-0 grid place-items-center p-10 transition-[opacity,transform] duration-500',
-                      i === active ? 'opacity-100' : 'pointer-events-none translate-y-3 opacity-0',
+                      'absolute inset-0 grid place-items-center p-10 transition-[opacity,transform] duration-700 ease-[cubic-bezier(.2,.8,.2,1)]',
+                      i === active ? 'translate-y-0 scale-100 opacity-100' : cn('pointer-events-none opacity-0', i < active ? '-translate-y-6 scale-[.97]' : 'translate-y-6 scale-[.97]'),
                     )}
                   >
-                    <Panel i={i} className="w-full max-w-[560px]" />
+                    <LivePanel i={i} active={i === active} className="w-full max-w-[560px]" />
                   </div>
                 ))}
               </div>

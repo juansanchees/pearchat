@@ -12,6 +12,8 @@ const DAYS = [
   { sem: 'SEX', n: 17 },
   { sem: 'SÁB', n: 18 },
 ]
+/** No celular a grade mostra só três dias (ter, qua, qui). */
+const MOBILE_DAYS = [1, 2, 3]
 const HOURS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00']
 const ROW = 44
 const BAR = { IA: '#2e9a48', MANUAL: '#d9a35b', GOOGLE: '#6bb39a' } as const
@@ -54,10 +56,10 @@ export function WeekAgenda({ fresh = true, confirmed = true, className }: { fres
         <span className="rounded-md border border-light-divider px-2.5 py-[3px] text-[11px]">Hoje</span>
         <CaretRight size={13} className="text-light-accent-300" />
       </div>
-      <div className="grid grid-cols-[44px_repeat(6,minmax(0,1fr))] border-b border-light-divider">
+      <div className="grid grid-cols-[44px_repeat(3,minmax(0,1fr))] border-b border-light-divider min-[640px]:grid-cols-[44px_repeat(6,minmax(0,1fr))]">
         <div />
-        {DAYS.map((d) => (
-          <div key={d.n} className={cn('flex flex-col items-center gap-1 border-l border-light-divider pb-2 pt-[9px]', d.sel && 'bg-light-accent-900')}>
+        {DAYS.map((d, i) => (
+          <div key={d.n} className={cn('flex flex-col items-center gap-1 border-l border-light-divider pb-2 pt-[9px]', d.sel && 'bg-light-accent-900', !MOBILE_DAYS.includes(i) && 'max-[639px]:hidden')}>
             <span className={cn('text-[10px] uppercase tracking-[.06em]', d.sel ? 'text-light-accent-300' : 'text-light-neutral-500')}>{d.sem}</span>
             <span
               className={cn(
@@ -70,7 +72,7 @@ export function WeekAgenda({ fresh = true, confirmed = true, className }: { fres
           </div>
         ))}
       </div>
-      <div className="relative grid grid-cols-[44px_repeat(6,minmax(0,1fr))]">
+      <div className="relative grid grid-cols-[44px_repeat(3,minmax(0,1fr))] min-[640px]:grid-cols-[44px_repeat(6,minmax(0,1fr))]">
         <div>
           {HOURS.map((h) => (
             <div key={h} className="relative" style={{ height: ROW }}>
@@ -79,7 +81,7 @@ export function WeekAgenda({ fresh = true, confirmed = true, className }: { fres
           ))}
         </div>
         {DAYS.map((d, i) => (
-          <div key={d.n} className={cn('relative border-l border-light-divider', d.sel && 'bg-[rgba(46,154,72,0.05)]')}>
+          <div key={d.n} className={cn('relative border-l border-light-divider', d.sel && 'bg-[rgba(46,154,72,0.05)]', !MOBILE_DAYS.includes(i) && 'max-[639px]:hidden')}>
             {HOURS.map((h) => (
               <div key={h} className="border-t border-light-divider" style={{ height: ROW }} />
             ))}
@@ -93,7 +95,7 @@ export function WeekAgenda({ fresh = true, confirmed = true, className }: { fres
                     className={cn(
                       'absolute inset-x-[3px] overflow-hidden rounded-[7px] border border-l-[3px] px-[6px] py-[4px]',
                       e.o === 'IA' ? 'border-light-accent-700 bg-light-accent-900' : 'border-light-divider bg-white',
-                      isNew && 'z-10 shadow-[0_0_0_2px_#2e9a48,0_14px_30px_-10px_rgba(46,154,72,.7)]',
+                      isNew && 'lp-pop z-10 shadow-[0_0_0_2px_#2e9a48,0_14px_30px_-10px_rgba(46,154,72,.7)]',
                     )}
                     style={{ top: (e.h - 9) * ROW + 2, height: e.dur * ROW - 4, borderLeftColor: BAR[e.o] }}
                   >
@@ -120,7 +122,7 @@ export function WeekAgenda({ fresh = true, confirmed = true, className }: { fres
               })}
             {fresh && i === NEW_EVENT.d && (
               <span
-                className="absolute left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-pill bg-light-text px-2.5 py-[5px] text-[10.5px] font-medium leading-none text-white shadow-lg"
+                className="lp-pop absolute inset-x-0 z-20 mx-auto w-fit whitespace-nowrap rounded-pill bg-light-text px-2.5 py-[5px] text-[10.5px] font-medium leading-none text-white shadow-lg"
                 style={{ top: (NEW_EVENT.h - 9) * ROW - 22 }}
               >
                 Novo agendamento
@@ -258,22 +260,34 @@ export function BookingPhone({ step = 3, className }: { step?: number; className
 
 /* ---------- Lembrete com confirmação de presença ---------- */
 
-/** 0 lembrete enviado · 1 cliente responde "1" · 2 presença confirmada */
+/**
+ * -1 escondido (ainda não saiu) · 0 lembrete enviado · 1 cliente responde "1" · 2 presença confirmada.
+ * Os elementos ficam sempre no lugar e só aparecem (opacity/transform), para não mexer no layout.
+ */
 export function ReminderCard({ step = 2, className }: { step?: number; className?: string }) {
+  const show = (on: boolean) => cn('transition-[opacity,transform] duration-500 ease-out', on ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0')
   return (
-    <div className={cn('flex flex-col gap-2 rounded-[14px] border border-light-divider bg-light-bg/95 p-3 shadow-[0_24px_50px_-20px_rgba(29,33,23,.4)] backdrop-blur', className)}>
+    <div
+      className={cn(
+        'flex flex-col gap-2 rounded-[14px] border border-light-divider bg-light-bg/95 p-3 shadow-[0_24px_50px_-20px_rgba(29,33,23,.4)] backdrop-blur',
+        show(step >= 0),
+        className,
+      )}
+    >
       <div className="flex items-center justify-between gap-2 px-0.5">
         <span className="text-[10px] font-medium uppercase tracking-[.12em] text-light-neutral-500">Lembrete automático</span>
-        {step >= 2 && <Tag>Confirmado</Tag>}
+        <span className={cn('transition-opacity duration-300', step >= 2 ? 'opacity-100' : 'opacity-0')}>
+          <Tag>Confirmado</Tag>
+        </span>
       </div>
-      <Bubble from="equipe" time="ter, 14:00">
+      <Bubble from="equipe" time="ter, 14:00" pop={false}>
         Lembrete: seu horário de Limpeza de pele é amanhã, às 14:00. Responda 1 para confirmar ou 2 para remarcar.
       </Bubble>
-      {step >= 1 && (
-        <Bubble from="cliente" time="14:03">
+      <div className={show(step >= 1)}>
+        <Bubble from="cliente" time="14:03" pop={false}>
           1
         </Bubble>
-      )}
+      </div>
     </div>
   )
 }

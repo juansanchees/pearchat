@@ -53,6 +53,7 @@ export function Bubble({
   time,
   sender,
   read = true,
+  pop = true,
   className,
   style,
 }: {
@@ -62,12 +63,14 @@ export function Bubble({
   /** Nome de quem da equipe enviou (só para `equipe`). */
   sender?: string
   read?: boolean
+  /** Entrada suave ao aparecer (padrão). */
+  pop?: boolean
   className?: string
   style?: CSSProperties
 }) {
   const received = from === 'cliente'
   return (
-    <div className={cn('flex', received ? 'justify-start' : 'justify-end', className)} style={style}>
+    <div className={cn(pop && 'lp-pop', 'flex', received ? 'justify-start' : 'justify-end', className)} style={style}>
       <div
         className={cn(
           'max-w-[82%] border px-[13px] pb-[7px] pt-[9px] text-[13px] leading-[1.45] text-light-text',
@@ -92,7 +95,7 @@ export function Bubble({
 /** "Luna está digitando": balão da IA com três pontos. */
 export function TypingBubble({ className }: { className?: string }) {
   return (
-    <div className={cn('flex justify-end', className)}>
+    <div className={cn('lp-pop flex justify-end', className)}>
       <div className="border border-light-accent-700 bg-light-accent-900 px-[13px] pb-[10px] pt-[9px]" style={{ borderRadius: '14px 14px 4px 14px' }}>
         <IaLabel />
         <span className="lp-typing flex gap-1" aria-label={`${AGENTE} está digitando`}>
@@ -108,7 +111,7 @@ export function TypingBubble({ className }: { className?: string }) {
 /** Aviso centralizado dentro da conversa (ex.: agendamento criado, follow-up enviado). */
 export function SystemNote({ children, icon, tone = 'accent', className }: { children: ReactNode; icon?: ReactNode; tone?: 'accent' | 'neutral'; className?: string }) {
   return (
-    <div className={cn('flex justify-center', className)}>
+    <div className={cn('lp-pop flex justify-center', className)}>
       <span
         className={cn(
           'inline-flex items-center gap-1.5 rounded-pill border px-3 py-[6px] text-[11.5px] font-medium leading-none',

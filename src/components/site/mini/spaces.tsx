@@ -147,8 +147,8 @@ export function SpacesSwitcher({ initial = 'centro', className }: { initial?: st
           )}
         </div>
         <ul key={sp.id} className="m-0 list-none p-0">
-          {sp.convs.map((c) => (
-            <li key={c.nome} className="flex items-center gap-3 border-b border-light-divider px-4 py-3">
+          {sp.convs.map((c, i) => (
+            <li key={c.nome} className="lp-pop flex items-center gap-3 border-b border-light-divider px-4 py-3" style={{ animationDelay: `${i * 70}ms` }}>
               <Avatar nome={c.nome} size={38} ia={c.ia} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">

@@ -1,4 +1,5 @@
 import { planPrice } from '@/lib/plans'
+import { RevealObserver } from './anim/reveal'
 import { Faq } from './sections/faq'
 import { Features } from './sections/features'
 import { FinalCta } from './sections/final-cta'
@@ -34,6 +35,7 @@ export function Landing() {
         <FinalCta />
       </main>
       <SiteFooter />
+      <RevealObserver />
     </div>
   )
 }

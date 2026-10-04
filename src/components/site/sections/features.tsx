@@ -17,9 +17,8 @@ import {
   UsersThree,
 } from '@phosphor-icons/react/dist/ssr'
 import { cn } from '@/lib/utils'
-import { BookingPhone, ReminderCard, WeekAgenda } from '../mini/agenda-booking'
-import { Broadcast, ContactsPanel } from '../mini/broadcast-contacts'
-import { AiChat, FollowupChat, FollowupRules, Inbox, KnowledgeCard } from '../mini/conversations'
+import { AgendaLive, AiChatLive, BroadcastLive, ContactsLive, FollowupLive, InboxLive } from '../live/feature-live'
+import { FollowupRules, KnowledgeCard } from '../mini/conversations'
 import { SpacesSwitcher } from '../mini/spaces'
 import { eyebrow, h2, h3, lead, wrap } from '../ui/styles'
 
@@ -66,7 +65,7 @@ function Fact({ Icon, title, children }: { Icon: Icon; title: string; children: 
 /** Visual ilustrativo: escondido do leitor de tela, com um texto alternativo curto. */
 function Visual({ alt, className, children }: { alt: string; className?: string; children: ReactNode }) {
   return (
-    <div className={cn('relative', className)}>
+    <div className={cn('lp-reveal relative', className)}>
       <p className="sr-only">{alt}</p>
       <div aria-hidden="true">{children}</div>
     </div>
@@ -77,7 +76,7 @@ export function Features() {
   return (
     <section id="funcionalidades" aria-labelledby="t-funcionalidades" className="relative bg-light-bg pb-16 pt-24 min-[768px]:pb-24 min-[768px]:pt-36">
       <div className={wrap}>
-        <div className="mx-auto max-w-[820px] text-center">
+        <div className="lp-reveal mx-auto max-w-[820px] text-center">
           <p className={cn(eyebrow, 'text-light-accent-300')}>Funcionalidades</p>
           <h2 id="t-funcionalidades" className={cn(h2, 'mt-5')}>
             Tudo o que o seu atendimento precisa, funcionando junto.
@@ -102,7 +101,7 @@ export function Features() {
             />
           </div>
           <Visual alt="Exemplo: a cliente pergunta se atendem sábado e se há horário às 14h; a IA responde e pede confirmação." className="min-[640px]:pb-16">
-            <AiChat className="min-[1024px]:ml-auto min-[1024px]:max-w-[620px]" />
+            <AiChatLive className="min-[1024px]:ml-auto min-[1024px]:max-w-[620px]" />
             <KnowledgeCard className="mt-4 min-[640px]:absolute min-[640px]:bottom-0 min-[640px]:left-[-20px] min-[640px]:mt-0 min-[640px]:w-[400px]" />
           </Visual>
         </article>
@@ -122,11 +121,7 @@ export function Features() {
             alt="Agenda da semana com um novo agendamento de Mariana Silva às 14:00, já confirmado, ao lado de um celular com a página pública de agendamento."
             className="mt-14 min-[1100px]:pr-[250px]"
           >
-            <WeekAgenda />
-            <div className="mt-6 flex flex-col items-center gap-6 min-[720px]:flex-row min-[720px]:items-start min-[720px]:justify-center min-[1100px]:mt-0">
-              <BookingPhone className="w-[290px] flex-none min-[1100px]:absolute min-[1100px]:-top-10 min-[1100px]:right-0" />
-              <ReminderCard className="w-[min(330px,100%)] min-[1100px]:absolute min-[1100px]:-bottom-12 min-[1100px]:-left-8" />
-            </div>
+            <AgendaLive />
           </Visual>
           <div className="mt-16 grid grid-cols-1 gap-8 min-[720px]:grid-cols-3 min-[1100px]:mt-24">
             <Fact Icon={Clock} title="Tipos de atendimento">
@@ -148,7 +143,7 @@ export function Features() {
             className="order-2 min-[1024px]:order-1"
           >
             <div className="flex flex-col gap-4 min-[720px]:flex-row min-[720px]:items-start">
-              <FollowupChat className="min-w-0 flex-1" />
+              <FollowupLive className="min-w-0 flex-1" />
               <FollowupRules className="w-full flex-none min-[720px]:-ml-4 min-[720px]:mt-24 min-[720px]:w-[250px]" />
             </div>
           </Visual>
@@ -176,7 +171,7 @@ export function Features() {
             alt="Tela de conversas: lista à esquerda; na conversa aberta, uma foto e um áudio da cliente, a IA passando a conversa para Bruno, e o menu de respostas rápidas aberto."
             className="mt-14"
           >
-            <Inbox />
+            <InboxLive />
           </Visual>
           <div className="mt-14 grid grid-cols-1 gap-8 min-[720px]:grid-cols-3">
             <Fact Icon={Paperclip} title="Imagens, áudios e documentos">
@@ -201,7 +196,7 @@ export function Features() {
               noite e respeita quem pede para parar.
             </p>
             <Visual alt="Aviso de horário de feriado agendado para hoje às 18:00, para 86 contatos, com intervalo e horário de silêncio." className="mt-10">
-              <Broadcast />
+              <BroadcastLive />
             </Visual>
           </article>
           <article className="min-[1024px]:pt-40">
@@ -209,7 +204,7 @@ export function Features() {
             <h3 className={cn(h3, 'mt-5')}>Sua base de clientes organizada.</h3>
             <p className={cn(lead, 'mt-5')}>Etiquetas para separar clientes, leads e agendamentos. Busca rápida e importação por planilha.</p>
             <Visual alt="Lista de contatos com etiquetas Cliente, Lead, Agendamento e VIP, campo de busca e botão Importar planilha." className="mt-10">
-              <ContactsPanel />
+              <ContactsLive />
             </Visual>
           </article>
         </div>

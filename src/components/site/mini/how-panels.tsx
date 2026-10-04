@@ -39,9 +39,7 @@ function FakeQr({ size = 25 }: { size?: number }) {
   }
   return (
     <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full" shapeRendering="crispEdges">
-      {cells.map(([x, y]) => (
-        <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill="#1d2117" />
-      ))}
+      <path d={cells.map(([x, y]) => `M${x} ${y}h1v1h-1z`).join('')} fill="#1d2117" />
     </svg>
   )
 }
@@ -69,10 +67,10 @@ export function ConnectPanel({ state = 'aguardando', className }: { state?: Conn
       <div className="flex flex-col items-center gap-2.5">
         <div className="relative h-[200px] w-[200px] rounded-lg border border-light-divider bg-white p-3">
           <FakeQr />
-          {state !== 'aguardando' && (
-            <div className="absolute inset-0 grid place-items-center rounded-lg bg-white/90">
+          {(
+            <div className={cn('absolute inset-0 grid place-items-center rounded-lg bg-white/90 transition-opacity duration-500', state === 'aguardando' ? 'opacity-0' : 'opacity-100')}>
               {state === 'conectado' ? (
-                <span className="flex flex-col items-center gap-2 text-[12.5px] font-medium text-light-accent-200">
+                <span key="ok" className="lp-pop flex flex-col items-center gap-2 text-[12.5px] font-medium text-light-accent-200">
                   <span className="grid h-11 w-11 place-items-center rounded-pill bg-light-accent-fill text-white">
                     <Check size={22} weight="bold" />
                   </span>
@@ -126,12 +124,12 @@ export function TeachPanel({ filled = TEACH_ITEMS.length, className }: { filled?
             <div
               key={p}
               className={cn(
-                'flex items-center gap-3 rounded-md border px-3 py-2 transition-opacity duration-300',
+                'flex items-center gap-3 rounded-md border px-3 py-2 transition-[opacity,background-color,border-color] duration-300',
                 i < filled ? 'border-light-divider bg-light-bg' : 'border-dashed border-light-divider opacity-40',
               )}
             >
               <span className="w-[110px] flex-none text-[11.5px] font-medium">{p}</span>
-              <span className="min-w-0 flex-1 truncate text-[11.5px] text-light-neutral-500">{i < filled ? r : ' '}</span>
+              <span key={i < filled ? 'on' : 'off'} className={cn('min-w-0 flex-1 truncate text-[11.5px] text-light-neutral-500', i < filled && 'lp-pop')}>{i < filled ? r : ' '}</span>
               {i < filled && <Check size={12} weight="bold" className="flex-none text-light-accent-400" />}
             </div>
           ))}
@@ -197,7 +195,7 @@ const FEED = [
   { nome: 'Carlos Menezes', previa: 'Qual o valor do serviço?', hora: '8 min', novas: 1 },
 ]
 
-/** `count` = quantas conversas já chegaram (0 a 5). */
+/** `count` = quantas conversas já chegaram (0 a 5); chegam de baixo para cima e a mais nova fica no topo. As linhas ficam reservadas (sem mexer no layout). */
 export function WorkingPanel({ count = FEED.length, className }: { count?: number; className?: string }) {
   return (
     <AppWindow title="Conversas" className={className}>
@@ -207,8 +205,14 @@ export function WorkingPanel({ count = FEED.length, className }: { count?: numbe
           <Sparkle size={11} weight="fill" /> {AGENTE} respondendo
         </span>
       </div>
-      {FEED.slice(0, count).map((c) => (
-        <div key={c.nome} className="flex items-center gap-3 border-b border-light-divider px-4 py-3 last:border-b-0">
+      {FEED.map((c, i) => (
+        <div
+          key={c.nome}
+          className={cn(
+            'flex items-center gap-3 border-b border-light-divider px-4 py-3 transition-[opacity,transform] duration-500 ease-out last:border-b-0',
+            FEED.length - i <= count ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0',
+          )}
+        >
           <Avatar nome={c.nome} size={38} ia={c.ia} />
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">

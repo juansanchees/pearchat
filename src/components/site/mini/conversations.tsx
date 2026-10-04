@@ -19,7 +19,7 @@ import {
   User,
 } from '@phosphor-icons/react/dist/ssr'
 import { cn } from '@/lib/utils'
-import { AGENTE, AppWindow, Avatar, Bubble, MiniLabel, SystemNote, TimeGap } from '../ui/primitives'
+import { AGENTE, AppWindow, Avatar, Bubble, MiniLabel, SystemNote, TimeGap, TypingBubble } from '../ui/primitives'
 
 function ChatHead({ nome, tel, mode = 'ia', resp }: { nome: string; tel: string; mode?: 'ia' | 'humano'; resp?: string }) {
   return (
@@ -55,26 +55,29 @@ function ChatHead({ nome, tel, mode = 'ia', resp }: { nome: string; tel: string;
 
 /* ---------- Agente de IA ---------- */
 
-/** 0 vazio · 1 pergunta · 2 resposta · 3 segunda pergunta · 4 pedido de confirmação */
-export const AI_CHAT_FINAL = 4
+/** 0 vazio · 1 pergunta · 2 IA digitando · 3 resposta · 4 segunda pergunta · 5 IA digitando · 6 pedido de confirmação */
+export const AI_CHAT_FINAL = 6
 const AI_MSGS = [
-  { from: 'cliente' as const, text: 'Vocês atendem sábado?', time: '18:41' },
-  { from: 'ia' as const, text: 'Sim! Aos sábados atendemos das 9h às 18h.', time: '18:41' },
-  { from: 'cliente' as const, text: 'Tem horário às 14h?', time: '18:42' },
-  { from: 'ia' as const, text: 'Tenho sim. Posso confirmar sábado às 14h?', time: '18:42' },
+  { at: 1, from: 'cliente' as const, text: 'Vocês atendem sábado?', time: '18:41' },
+  { at: 3, from: 'ia' as const, text: 'Sim! Aos sábados atendemos das 9h às 18h.', time: '18:41' },
+  { at: 4, from: 'cliente' as const, text: 'Tem horário às 14h?', time: '18:42' },
+  { at: 6, from: 'ia' as const, text: 'Tenho sim. Posso confirmar sábado às 14h?', time: '18:42' },
 ]
 
-export function AiChat({ step = AI_CHAT_FINAL, className }: { step?: number; className?: string }) {
+export function AiChat({ step = AI_CHAT_FINAL, fading = false, className }: { step?: number; fading?: boolean; className?: string }) {
   return (
     <AppWindow title="Conversas" className={className} bodyClassName="flex flex-col bg-light-bg">
       <ChatHead nome="Juliana Freitas" tel="(11) 97744-2210" />
-      <div className="flex min-h-[330px] flex-col justify-end gap-2.5 px-5 pb-5 pt-4">
-        <div className="mb-2 self-center rounded-pill bg-white px-3 py-1 text-[10.5px] text-light-neutral-500 shadow-[0_0_0_1px_#e3e7d6]">Hoje</div>
-        {AI_MSGS.slice(0, step).map((m, i) => (
-          <Bubble key={i} from={m.from} time={m.time} className="text-[14px]">
-            {m.text}
-          </Bubble>
-        ))}
+      <div className={cn('flex h-[360px] flex-col justify-end gap-2.5 overflow-hidden px-5 pb-5 pt-4 transition-opacity duration-500', fading && 'opacity-0')}>
+        <div className="mb-auto self-center rounded-pill bg-white px-3 py-1 text-[10.5px] text-light-neutral-500 shadow-[0_0_0_1px_#e3e7d6]">Hoje</div>
+        {AI_MSGS.map((m) => {
+          if ((m.at === 3 && step === 2) || (m.at === 6 && step === 5)) return <TypingBubble key={`t${m.at}`} />
+          return m.at <= step ? (
+            <Bubble key={m.at} from={m.from} time={m.time} className="text-[14px]">
+              {m.text}
+            </Bubble>
+          ) : null
+        })}
       </div>
       <Composer />
     </AppWindow>
@@ -127,30 +130,40 @@ export function KnowledgeCard({ className }: { className?: string }) {
 
 /* ---------- Follow-up ---------- */
 
-/** 0 conversa parada · 1 "2 h sem resposta" · 2 follow-up enviado · 3 mensagem de retomada · 4 cliente volta */
-export const FOLLOWUP_FINAL = 4
+/**
+ * 0 conversa parada · 1 "30 min sem resposta" · 2 "1 h…" · 3 "2 h sem resposta" · 4 follow-up enviado
+ * 5 mensagem de retomada · 6 cliente volta
+ */
+export const FOLLOWUP_FINAL = 6
+const GAP = ['', '30 min sem resposta', '1 h sem resposta', '2 h sem resposta']
 
-export function FollowupChat({ step = FOLLOWUP_FINAL, className }: { step?: number; className?: string }) {
+export function FollowupChat({ step = FOLLOWUP_FINAL, fading = false, className }: { step?: number; fading?: boolean; className?: string }) {
   return (
     <AppWindow title="Conversas" className={className} bodyClassName="flex flex-col bg-light-bg">
       <ChatHead nome="Patrícia Gomes" tel="(11) 99120-4488" />
-      <div className="flex min-h-[380px] flex-col justify-end gap-2.5 px-5 py-5">
+      <div className={cn('flex h-[430px] flex-col justify-end gap-2.5 overflow-hidden px-5 py-5 transition-opacity duration-500', fading && 'opacity-0')}>
         <Bubble from="ia" time="10:02">
           A limpeza de pele custa R$ 120 e leva cerca de 1 hora. Quer ver os horários desta semana?
         </Bubble>
         <Bubble from="cliente" time="10:05">
           Vou pensar e te aviso.
         </Bubble>
-        {step >= 1 && <TimeGap>2 h sem resposta</TimeGap>}
-        {step >= 2 && (
+        {step >= 1 && (
+          <TimeGap>
+            <span key={Math.min(step, 3)} className="lp-pop tabular-nums">
+              {GAP[Math.min(step, 3)]}
+            </span>
+          </TimeGap>
+        )}
+        {step >= 4 && (
           <SystemNote icon={<ArrowsClockwise size={13} weight="bold" className="text-light-accent-400" />}>Follow-up automático enviado</SystemNote>
         )}
-        {step >= 3 && (
+        {step >= 5 && (
           <Bubble from="equipe" time="12:05">
             Oi! Conseguiu analisar? Se precisar, posso te ajudar 😊
           </Bubble>
         )}
-        {step >= 4 && (
+        {step >= 6 && (
           <Bubble from="cliente" time="12:11">
             Consegui sim! Tem horário na sexta?
           </Bubble>
@@ -208,7 +221,12 @@ export function FollowupRules({ className }: { className?: string }) {
 
 /* ---------- Central de conversas e equipe ---------- */
 
-const INBOX = [
+type InboxRow = { nome: string; previa: string; hora: string; ativa?: boolean; resp?: string; ia?: boolean; foto?: boolean; novas?: number }
+
+/** Conversa que chega durante a animação (entra no topo da lista). */
+const INCOMING: InboxRow = { nome: 'Larissa Moura', previa: 'Oi! Vocês abrem amanhã cedo?', hora: '14:26', novas: 1 }
+
+const INBOX: InboxRow[] = [
   { nome: 'Ana Paula Ribeiro', previa: 'Bruno: Oi, Ana! É possível sim.', hora: '14:24', ativa: true, resp: 'Bruno Lima' },
   { nome: 'Fernanda Lopes', previa: `${AGENTE}: Tenho às 10h e às 15h.`, hora: '14:19', ia: true },
   { nome: 'Rodrigo Alves', previa: 'Foto', foto: true, hora: '14:02', novas: 1, resp: 'Carla Dias' },
@@ -217,8 +235,103 @@ const INBOX = [
   { nome: 'Marcos Vieira', previa: 'Você: Combinado, até amanhã!', hora: 'Ontem' },
 ]
 
-/** Estados: `quickReplies` abre o menu de respostas rápidas (o atendente digitou "/"). */
-export function Inbox({ quickReplies = true, className }: { quickReplies?: boolean; className?: string }) {
+const ROW_H = 65
+
+function InboxItem({ c }: { c: InboxRow }) {
+  return (
+    <div
+      className={cn('flex items-center gap-3 border-t border-light-divider px-3.5', c.ativa && 'bg-light-accent-900 shadow-[inset_3px_0_0_#2e9a48]')}
+      style={{ height: ROW_H }}
+    >
+      <Avatar nome={c.nome} size={40} ia={c.ia} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="flex-1 truncate text-[13px] font-medium">{c.nome}</span>
+          <span className={cn('text-[10.5px]', c.novas ? 'text-light-accent-300' : 'text-light-neutral-500')}>{c.hora}</span>
+        </div>
+        <div className="mt-1 flex items-center gap-2">
+          <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-[11.5px] text-light-neutral-500">
+            {c.foto && <Camera size={12} className="flex-none" />}
+            <span className="truncate">{c.previa}</span>
+          </span>
+          {c.resp && <Avatar nome={c.resp} size={18} className="!text-[7.5px]" />}
+          {c.novas && <span className="h-[18px] min-w-[18px] rounded-pill bg-light-accent-fill px-[5px] text-center text-[10.5px] font-medium leading-[18px] text-white">{c.novas}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Miniatura da foto enviada pela cliente: uma mecha de cabelo acobreado, ilustrada em SVG. */
+function HairSwatch() {
+  const fios = Array.from({ length: 11 }, (_, i) => i)
+  return (
+    <svg viewBox="0 0 230 150" className="block h-[150px] w-[230px] max-w-full rounded-[10px]" role="presentation">
+      <defs>
+        <linearGradient id="lp-sw-bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#f6ede4" />
+          <stop offset="1" stopColor="#e7d5c4" />
+        </linearGradient>
+        <linearGradient id="lp-sw-hair" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#7a3a1d" />
+          <stop offset="0.45" stopColor="#c0672f" />
+          <stop offset="1" stopColor="#e39a5c" />
+        </linearGradient>
+      </defs>
+      <rect width="230" height="150" fill="url(#lp-sw-bg)" />
+      <ellipse cx="118" cy="140" rx="70" ry="6" fill="#b08a6c" opacity="0.25" />
+      {fios.map((i) => {
+        const x0 = 104 + i * 2.2
+        const x1 = 62 + i * 10.5
+        return (
+          <path
+            key={i}
+            d={`M${x0} 22 C${x0 - 34 + i * 5} 52, ${x0 + 34 - i * 5} 92, ${x1} 138`}
+            fill="none"
+            stroke="url(#lp-sw-hair)"
+            strokeWidth="8"
+            strokeLinecap="round"
+            opacity={0.92}
+          />
+        )
+      })}
+      {[1, 4, 7, 9].map((i) => {
+        const x0 = 104 + i * 2.2
+        const x1 = 62 + i * 10.5
+        return (
+          <path key={`b${i}`} d={`M${x0 + 1} 30 C${x0 - 32 + i * 5} 56, ${x0 + 36 - i * 5} 94, ${x1 + 1} 132`} fill="none" stroke="#f7c08e" strokeWidth="1.4" strokeLinecap="round" opacity="0.7" />
+        )
+      })}
+      <rect x="99" y="14" width="34" height="13" rx="5" fill="#2c3025" />
+      <rect x="103" y="17" width="12" height="3" rx="1.5" fill="#ffffff" opacity="0.25" />
+    </svg>
+  )
+}
+
+const QUICK = [
+  ['precos', 'Corte feminino R$ 80 · Escova R$ 50 · Coloração a partir de R$ 180'],
+  ['endereco', 'Rua das Flores, 120, Centro'],
+  ['horarios', 'Seg a sáb, das 9h às 19h'],
+] as const
+
+/**
+ * Estados (a etapa de animação controla): `incoming` faz uma conversa nova entrar no topo da lista (só transform);
+ * `typed` é o que o atendente digitou ("/" abre o menu); `quickReplies` mostra o menu de respostas rápidas e
+ * `qrActive` destaca uma opção.
+ */
+export function Inbox({
+  incoming = true,
+  typed = '/',
+  quickReplies = true,
+  qrActive = 0,
+  className,
+}: {
+  incoming?: boolean
+  typed?: string
+  quickReplies?: boolean
+  qrActive?: number
+  className?: string
+}) {
   return (
     <AppWindow title="Conversas" className={className} bodyClassName="grid grid-cols-1 min-[900px]:grid-cols-[300px_minmax(0,1fr)]">
       <div className="hidden flex-col border-r border-light-divider bg-white min-[900px]:flex">
@@ -240,42 +353,27 @@ export function Inbox({ quickReplies = true, className }: { quickReplies?: boole
             ))}
           </div>
         </div>
-        {INBOX.map((c) => (
+        <div className="relative overflow-hidden" style={{ height: ROW_H * INBOX.length }}>
           <div
-            key={c.nome}
-            className={cn('flex items-center gap-3 border-t border-light-divider px-3.5 py-3', c.ativa && 'bg-light-accent-900 shadow-[inset_3px_0_0_#2e9a48]')}
+            className="transition-transform duration-700 ease-[cubic-bezier(.2,.8,.2,1)]"
+            style={{ transform: `translateY(${incoming ? 0 : -ROW_H}px)` }}
           >
-            <Avatar nome={c.nome} size={40} ia={c.ia} />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <span className="flex-1 truncate text-[13px] font-medium">{c.nome}</span>
-                <span className={cn('text-[10.5px]', c.novas ? 'text-light-accent-300' : 'text-light-neutral-500')}>{c.hora}</span>
-              </div>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-[11.5px] text-light-neutral-500">
-                  {c.foto && <Camera size={12} className="flex-none" />}
-                  <span className="truncate">{c.previa}</span>
-                </span>
-                {c.resp && <Avatar nome={c.resp} size={18} className="!text-[7.5px]" />}
-                {c.novas && <span className="h-[18px] min-w-[18px] rounded-pill bg-light-accent-fill px-[5px] text-center text-[10.5px] font-medium leading-[18px] text-white">{c.novas}</span>}
-              </div>
+            <div className={cn('transition-[opacity,background-color] duration-700', incoming ? 'bg-light-accent-900/60 opacity-100' : 'opacity-0')}>
+              <InboxItem c={INCOMING} />
             </div>
+            {INBOX.map((c) => (
+              <InboxItem key={c.nome} c={c} />
+            ))}
           </div>
-        ))}
+        </div>
       </div>
 
       <div className="flex min-w-0 flex-col bg-light-bg">
         <ChatHead nome="Ana Paula Ribeiro" tel="(11) 95527-1840" mode="humano" resp="Bruno Lima" />
-        <div className="flex flex-1 flex-col justify-end gap-2.5 px-5 pb-3 pt-5">
+        <div className="flex h-[484px] flex-col justify-end gap-2.5 overflow-hidden px-5 pb-3 pt-5">
           <div className="flex justify-start">
             <div className="max-w-[78%] border border-light-divider bg-white p-1.5 text-[13px]" style={{ borderRadius: '14px 14px 14px 4px' }}>
-              <div
-                className="h-[150px] w-[230px] max-w-full rounded-[10px]"
-                style={{
-                  background:
-                    'radial-gradient(60% 70% at 30% 35%, #c98a5b 0%, transparent 60%), radial-gradient(50% 60% at 70% 60%, #7a3f2a 0%, transparent 70%), radial-gradient(40% 50% at 55% 20%, #e8c39a 0%, transparent 70%), linear-gradient(160deg, #5b2e1f, #2b1a14)',
-                }}
-              />
+              <HairSwatch />
               <div className="px-1.5 pb-0.5 pt-1.5">Quero fazer essa cor. É possível?</div>
               <div className="px-1.5 text-right text-[10px] text-light-neutral-500">14:20</div>
             </div>
@@ -301,27 +399,27 @@ export function Inbox({ quickReplies = true, className }: { quickReplies?: boole
           </Bubble>
         </div>
         <div className="relative flex items-center gap-2 border-t border-light-divider bg-white px-4 py-3">
-          {quickReplies && (
-            <div className="absolute bottom-full left-4 right-4 mb-1 hidden rounded-lg min-[640px]:block border border-light-divider bg-white p-1.5 shadow-[0_12px_32px_rgba(0,0,0,.18)] min-[640px]:right-auto min-[640px]:w-[370px]">
-              {[
-                ['precos', 'Corte feminino R$ 80 · Escova R$ 50 · Coloração a partir de R$ 180'],
-                ['endereco', 'Rua das Flores, 120, Centro'],
-                ['horarios', 'Seg a sáb, das 9h às 19h'],
-              ].map(([a, t], i) => (
-                <div key={a} className={cn('flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[12px]', i === 0 && 'bg-[rgba(29,33,23,.07)]')}>
-                  <span className="flex-none font-mono text-[11.5px] text-light-accent-300">/{a}</span>
-                  <span className="min-w-0 flex-1 truncate text-light-neutral-500">{t}</span>
-                </div>
-              ))}
-              <div className="mt-1 flex items-center gap-2.5 border-t border-light-divider px-2.5 pb-1.5 pt-2.5 text-[12px]">
-                <GearSix size={13} className="text-light-neutral-500" /> Gerenciar respostas rápidas
+          <div
+            className={cn(
+              'absolute bottom-full left-4 right-4 mb-1 hidden origin-bottom-left rounded-lg border border-light-divider bg-white p-1.5 shadow-[0_12px_32px_rgba(0,0,0,.18)] transition-[opacity,transform] duration-300 min-[640px]:right-auto min-[640px]:block min-[640px]:w-[370px]',
+              quickReplies ? 'scale-100 opacity-100' : 'pointer-events-none translate-y-1 scale-[.98] opacity-0',
+            )}
+          >
+            {QUICK.map(([a, t], i) => (
+              <div key={a} className={cn('flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[12px] transition-colors duration-200', i === qrActive && 'bg-[rgba(29,33,23,.07)]')}>
+                <span className="flex-none font-mono text-[11.5px] text-light-accent-300">/{a}</span>
+                <span className="min-w-0 flex-1 truncate text-light-neutral-500">{t}</span>
               </div>
+            ))}
+            <div className="mt-1 flex items-center gap-2.5 border-t border-light-divider px-2.5 pb-1.5 pt-2.5 text-[12px]">
+              <GearSix size={13} className="text-light-neutral-500" /> Gerenciar respostas rápidas
             </div>
-          )}
+          </div>
           <Paperclip size={16} className="flex-none text-light-accent-500" />
           <Lightning size={16} className="flex-none text-light-accent-500" />
-          <span className="flex h-9 min-w-0 flex-1 items-center rounded-md border border-light-accent-500 px-2.5 text-[13px]">
-            /<span className="ml-px h-4 w-px bg-light-accent-500" />
+          <span className={cn('flex h-9 min-w-0 flex-1 items-center rounded-md border px-2.5 text-[13px]', typed ? 'border-light-accent-500' : 'border-light-divider text-light-neutral-500')}>
+            {typed || 'Digite uma mensagem'}
+            {typed && <span className="lp-caret ml-px h-4 w-px bg-light-accent-500" />}
           </span>
           <span className="hidden items-center gap-1.5 rounded-md border border-light-accent-500 px-3 py-2 text-[12.5px] font-medium text-light-accent-300 min-[480px]:inline-flex">
             <PaperPlaneRight size={14} /> Enviar

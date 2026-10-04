@@ -1,9 +1,10 @@
 'use client'
 
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { Icon } from '@phosphor-icons/react'
 import { Cake, FirstAidKit, ForkKnife, HairDryer, PawPrint, Scissors, Storefront, Wrench } from '@phosphor-icons/react/dist/ssr'
 import { cn } from '@/lib/utils'
+import { usePlay } from '../anim/use-play'
 import { AGENTE, Avatar, Bubble } from '../ui/primitives'
 import { eyebrow, h2, wrap } from '../ui/styles'
 
@@ -28,6 +29,20 @@ export function Niches() {
   const btns = useRef<(HTMLButtonElement | null)[]>([])
   const n = NICHOS[i]!
 
+  // Telas sem hover (toque): alterna sozinha, devagar, até o primeiro toque na seção. Pausa fora da tela.
+  const section = useRef<HTMLElement>(null)
+  const { play } = usePlay(section)
+  const [auto, setAuto] = useState(false)
+  useEffect(() => {
+    setAuto(window.matchMedia('(hover: none)').matches)
+  }, [])
+  useEffect(() => {
+    if (!auto || !play) return
+    const t = window.setInterval(() => setI((k) => (k + 1) % NICHOS.length), 3800)
+    return () => window.clearInterval(t)
+  }, [auto, play])
+  const stopAuto = () => setAuto(false)
+
   const onKey = (e: KeyboardEvent<HTMLButtonElement>, idx: number) => {
     const next = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? idx + 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? idx - 1 : null
     if (next === null) return
@@ -38,7 +53,7 @@ export function Niches() {
   }
 
   return (
-    <section id="para-quem-e" aria-labelledby="t-quem" className="bg-white py-24 min-[768px]:py-36">
+    <section ref={section} onPointerDown={stopAuto} onKeyDown={stopAuto} id="para-quem-e" aria-labelledby="t-quem" className="bg-white py-24 min-[768px]:py-36">
       <div className={wrap}>
         <div className="grid grid-cols-1 gap-14 min-[1024px]:grid-cols-[minmax(0,6fr)_minmax(0,6fr)] min-[1024px]:gap-20">
           <div>
@@ -62,7 +77,7 @@ export function Niches() {
                     onClick={() => setI(idx)}
                     onKeyDown={(e) => onKey(e, idx)}
                     className={cn(
-                      'group flex items-center gap-3.5 border-b border-light-divider py-4 text-left text-[18px] font-medium tracking-[-0.01em] transition-colors duration-200 min-[768px]:text-[20px]',
+                      'group flex min-h-[56px] items-center gap-3.5 border-b border-light-divider py-4 text-left text-[18px] font-medium tracking-[-0.01em] transition-colors duration-200 min-[768px]:text-[20px]',
                       on ? 'text-light-text' : 'text-light-neutral-500 hover:text-light-text',
                     )}
                   >
@@ -91,7 +106,7 @@ export function Niches() {
                     <div className="mt-0.5 text-[11px] text-light-neutral-500">WhatsApp · {n.negocio}</div>
                   </div>
                 </div>
-                <div key={i} className="flex min-h-[260px] flex-col justify-end gap-2.5 bg-light-bg px-4 py-5 min-[560px]:px-5">
+                <div key={i} className="flex h-[280px] flex-col justify-end gap-2.5 overflow-hidden bg-light-bg px-4 py-5 min-[560px]:px-5">
                   <p className="sr-only">
                     Exemplo para {n.nome.toLowerCase()}: o cliente pergunta “{n.pergunta}” e a IA responde “{n.resposta}”
                   </p>

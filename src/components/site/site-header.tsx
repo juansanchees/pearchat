@@ -33,15 +33,15 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-1.5 min-[480px]:gap-3">
-          <Link href="/login" className="rounded-md px-2.5 py-2 text-[14px] font-medium text-light-neutral-300 transition-colors hover:text-light-text">
+          <Link href="/login" className="inline-flex min-h-[44px] items-center rounded-md px-2.5 text-[14px] font-medium text-light-neutral-300 transition-colors hover:text-light-text">
             Entrar
           </Link>
-          <Link href="/registro" className={btnSmall}>
+          <Link href="/registro" className={`${btnSmall} min-h-[44px]`}>
             Começar grátis
           </Link>
           <details className="group relative min-[1024px]:hidden">
             <summary
-              className="grid h-10 w-10 cursor-pointer list-none place-items-center rounded-md text-light-text hover:bg-[rgba(29,33,23,.06)] [&::-webkit-details-marker]:hidden"
+              className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-md text-light-text hover:bg-[rgba(29,33,23,.06)] [&::-webkit-details-marker]:hidden"
               aria-label="Abrir menu de seções"
             >
               <List size={20} className="group-open:hidden" aria-hidden="true" />
@@ -52,7 +52,7 @@ export function SiteHeader() {
               className="absolute right-0 top-[calc(100%+10px)] flex w-[220px] flex-col rounded-[14px] border border-light-divider bg-white p-2 shadow-[0_24px_50px_-20px_rgba(29,33,23,.35)]"
             >
               {NAV.map((n) => (
-                <a key={n.href} href={n.href} className="rounded-md px-3 py-2.5 text-[15px] text-light-neutral-300 hover:bg-light-bg hover:text-light-text">
+                <a key={n.href} href={n.href} className="flex min-h-[44px] items-center rounded-md px-3 text-[15px] text-light-neutral-300 hover:bg-light-bg hover:text-light-text">
                   {n.label}
                 </a>
               ))}

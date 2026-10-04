@@ -49,7 +49,7 @@ export function Pricing() {
               <li
                 key={key}
                 className={cn(
-                  'relative flex flex-col rounded-[22px] p-7 transition-[transform,box-shadow] duration-300 hover:-translate-y-1 min-[1100px]:p-8',
+                  'relative flex flex-col rounded-[22px] p-7 transition-[transform,box-shadow] duration-300 hover:-translate-y-1 focus-within:-translate-y-1 motion-reduce:hover:translate-y-0 min-[1100px]:p-8',
                   destaque
                     ? 'bg-[#0d1410] text-dark-text shadow-[0_40px_80px_-30px_rgba(13,20,16,.7),0_0_0_1px_rgba(92,203,110,.35)] hover:shadow-[0_48px_90px_-30px_rgba(13,20,16,.75),0_0_0_1px_rgba(92,203,110,.55)]'
                     : 'border border-light-divider bg-white shadow-[0_1px_2px_rgba(29,33,23,.04)] hover:shadow-[0_24px_50px_-24px_rgba(29,33,23,.25)]',

@@ -1,4 +1,4 @@
-import { Hand, Lightning, MagnifyingGlass, Microphone, Paperclip, PaperPlaneRight, Sparkle } from '@phosphor-icons/react/dist/ssr'
+import { Lightning, MagnifyingGlass, Microphone, Paperclip, PaperPlaneRight, Sparkle } from '@phosphor-icons/react/dist/ssr'
 import { cn } from '@/lib/utils'
 import { AGENTE, AppWindow, Avatar, Bubble, MiniLabel, Switch, SystemNote, Tag, TypingBubble } from '../ui/primitives'
 
@@ -35,7 +35,18 @@ function previa(step: number) {
 }
 
 /** Janela principal do herói: lista + conversa do Rafael com a IA agendando. */
-export function HeroChat({ step = HERO_FINAL, compact = false, className }: { step?: number; compact?: boolean; className?: string }) {
+export function HeroChat({
+  step = HERO_FINAL,
+  compact = false,
+  fading = false,
+  className,
+}: {
+  step?: number
+  compact?: boolean
+  /** Esmaece as mensagens antes de a história recomeçar. */
+  fading?: boolean
+  className?: string
+}) {
   const p = previa(step)
   return (
     <AppWindow title="Conversas" className={className} bodyClassName={cn('grid', compact ? 'grid-cols-1' : 'grid-cols-1 min-[768px]:grid-cols-[228px_minmax(0,1fr)]')}>
@@ -98,16 +109,20 @@ export function HeroChat({ step = HERO_FINAL, compact = false, className }: { st
           <Avatar nome="Rafael Costa" size={34} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-medium leading-tight">Rafael Costa</div>
-            <div className="mt-0.5 text-[10.5px] text-light-neutral-500">(11) 98765-4321</div>
+            <div className="mt-0.5 whitespace-nowrap text-[10.5px] text-light-neutral-500">(11) 98765-4321</div>
           </div>
           <span className="hidden items-center gap-1.5 whitespace-nowrap rounded-pill border border-light-accent-700 bg-light-accent-900 px-2.5 py-[4px] text-[10.5px] text-light-accent-200 min-[480px]:flex">
             <Sparkle size={12} /> {AGENTE} (IA) respondendo
           </span>
-          <span className="hidden items-center gap-1.5 whitespace-nowrap rounded-md border border-light-accent-500 px-2.5 py-[5px] text-[10.5px] font-medium text-light-accent-300 min-[1100px]:inline-flex">
-            <Hand size={12} /> Assumir conversa
-          </span>
+          
         </div>
-        <div className="flex min-h-[330px] flex-1 flex-col justify-end gap-2 px-4 py-4">
+        <div
+          className={cn(
+            'flex flex-col justify-end gap-2 overflow-hidden px-4 py-4 transition-opacity duration-500',
+            compact ? 'h-[468px]' : 'h-[438px]',
+            fading && 'opacity-0',
+          )}
+        >
           {MSGS.map((m, i) => {
             const typingBefore = (m.at === 3 && step === 2) || (m.at === 6 && step === 5)
             if (typingBefore) return <TypingBubble key={`t${i}`} />
@@ -200,7 +215,7 @@ export function HeroAgenda({ created = true, className }: { created?: boolean; c
                   className={cn(
                     'absolute inset-x-1 overflow-hidden rounded-[7px] border border-l-[3px] px-1.5 py-1',
                     e.ia ? 'border-light-accent-700 bg-light-accent-900' : 'border-light-divider bg-white',
-                    e.isNew && 'z-10 shadow-[0_0_0_2px_#2e9a48,0_10px_24px_-8px_rgba(46,154,72,.6)]',
+                    e.isNew && 'lp-pop z-10 shadow-[0_0_0_2px_#2e9a48,0_10px_24px_-8px_rgba(46,154,72,.6)]',
                   )}
                   style={{ top: (e.start - 13) * ROW + 2, height: e.dur * ROW - 4, borderLeftColor: e.ia ? '#2e9a48' : '#d9a35b' }}
                 >

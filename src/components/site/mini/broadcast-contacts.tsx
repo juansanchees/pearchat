@@ -7,8 +7,13 @@ import { AppWindow, Avatar, MiniLabel, Switch, Tag } from '../ui/primitives'
 /** 0 rascunho · 1 agendado para hoje, 18:00 · 2 enviando (com intervalo) · 3 concluído */
 export const BROADCAST_FINAL = 3
 
-export function Broadcast({ step = 1, className }: { step?: number; className?: string }) {
-  const status = step >= 3 ? 'Enviada para 86 contatos' : step === 2 ? 'Enviando · 31 de 86' : step === 1 ? 'Para 86 contatos · hoje, 18:00' : 'Rascunho'
+export const BROADCAST_TOTAL = 86
+
+/** `sent` = quantas mensagens já saíram no passo "enviando" (a animação conta de 0 a 86). */
+export function Broadcast({ step = 1, sent = 31, className }: { step?: number; sent?: number; className?: string }) {
+  const total = BROADCAST_TOTAL
+  const status = step >= 3 ? `Enviada para ${total} contatos` : step === 2 ? `Enviando · ${sent} de ${total}` : step === 1 ? `Para ${total} contatos · hoje, 18:00` : 'Rascunho'
+  const tag = step >= 3 ? 'Concluída' : step === 2 ? 'Enviando' : step === 1 ? 'Agendada' : 'Rascunho'
   return (
     <AppWindow title="Disparos" className={className} bodyClassName="flex flex-col gap-4 p-5">
       <div className="flex items-start gap-3">
@@ -17,9 +22,11 @@ export function Broadcast({ step = 1, className }: { step?: number; className?: 
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-medium leading-tight">Aviso de horário de feriado</div>
-          <div className="mt-1 text-[11.5px] text-light-neutral-500">{status}</div>
+          <div className="mt-1 text-[11.5px] tabular-nums text-light-neutral-500">{status}</div>
         </div>
-        <Tag tone={step >= 1 ? 'accent' : 'neutral'}>{step >= 3 ? 'Concluída' : step >= 1 ? 'Agendada' : 'Rascunho'}</Tag>
+        <span key={tag} className="lp-pop">
+          <Tag tone={step >= 1 ? 'accent' : 'neutral'}>{tag}</Tag>
+        </span>
       </div>
 
       <div>
@@ -60,11 +67,12 @@ export function Broadcast({ step = 1, className }: { step?: number; className?: 
         <Switch />
       </div>
 
-      {step === 2 && (
-        <div className="h-1.5 overflow-hidden rounded-pill bg-light-neutral-900">
-          <div className="h-full w-[36%] rounded-pill bg-light-accent-fill" />
-        </div>
-      )}
+      <div className={cn('h-1.5 overflow-hidden rounded-pill bg-light-neutral-900 transition-opacity duration-300', step >= 2 ? 'opacity-100' : 'opacity-0')}>
+        <div
+          className="h-full w-full origin-left rounded-pill bg-light-accent-fill transition-transform duration-150 ease-linear"
+          style={{ transform: `scaleX(${step >= 3 ? 1 : step === 2 ? sent / total : 0})` }}
+        />
+      </div>
     </AppWindow>
   )
 }
@@ -79,7 +87,7 @@ const CONTATOS = [
   { nome: 'Beatriz Sousa', tel: '(11) 98110-7742', tags: ['Lead'], quando: '1 semana' },
 ]
 
-/** `filter` destaca uma etiqueta (a etapa 2 pode alternar filtros). */
+/** `filter` filtra por etiqueta (a animação alterna). A lista tem altura fixa: trocar o filtro não mexe no layout. */
 export function ContactsPanel({ filter = 'Todos', className }: { filter?: string; className?: string }) {
   const rows = filter === 'Todos' ? CONTATOS : CONTATOS.filter((c) => c.tags.includes(filter))
   return (
@@ -97,7 +105,7 @@ export function ContactsPanel({ filter = 'Todos', className }: { filter?: string
           <span
             key={t}
             className={cn(
-              'whitespace-nowrap rounded-pill border px-[10px] py-[4px] text-[11px]',
+              'whitespace-nowrap rounded-pill border px-[10px] py-[4px] text-[11px] transition-colors duration-300',
               t === filter ? 'border-light-accent-600 bg-light-accent-900 text-light-accent-200' : 'border-light-divider text-light-neutral-400',
             )}
           >
@@ -105,8 +113,9 @@ export function ContactsPanel({ filter = 'Todos', className }: { filter?: string
           </span>
         ))}
       </div>
-      {rows.map((c) => (
-        <div key={c.nome} className="flex items-center gap-3 border-t border-light-divider px-4 py-3">
+      <div className="h-[305px] overflow-hidden">
+      {rows.map((c, i) => (
+        <div key={`${filter}-${c.nome}`} className="lp-pop flex h-[61px] items-center gap-3 border-t border-light-divider px-4" style={{ animationDelay: `${i * 60}ms` }}>
           <Avatar nome={c.nome} size={36} />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5">
@@ -120,6 +129,7 @@ export function ContactsPanel({ filter = 'Todos', className }: { filter?: string
           <span className="hidden text-[11px] text-light-neutral-500 min-[400px]:inline">{c.quando}</span>
         </div>
       ))}
+      </div>
     </AppWindow>
   )
 }
