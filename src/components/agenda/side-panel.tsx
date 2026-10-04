@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarPlus, Check, GoogleLogo, PencilSimple, Sparkle, TrashSimple, User } from '@phosphor-icons/react'
+import { CalendarPlus, Check, CheckCircle, GoogleLogo, PencilSimple, Sparkle, TrashSimple, User } from '@phosphor-icons/react'
 import { Spinner, Tag } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import type { EventDto, EventOrigem, ServiceTypeDto } from '@/server/calendar/types'
+import { ConfirmacaoTag } from './confirmation-tag'
 import { TIPO_DUR_OPTS } from './data'
 import { GRID_END_HOUR, GRID_START_HOUR, durLabel, toSp } from './time'
 
@@ -34,6 +35,7 @@ export function DayCard({
   activeEventId,
   onEdit,
   onDelete,
+  onConfirm,
 }: {
   title: string
   events: EventDto[]
@@ -44,6 +46,8 @@ export function DayCard({
   onEdit: (ev: EventDto) => void
   /** Exclui o evento; devolve true se excluiu. */
   onDelete: (id: string) => Promise<boolean>
+  /** Marca o agendamento como confirmado à mão. */
+  onConfirm?: (ev: EventDto) => void
 }) {
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -96,6 +100,7 @@ export function DayCard({
                   {o.label}
                 </span>
                 {ev.canal === 'link' && <Tag className="!px-[7px] !py-px !text-[10px]">Link</Tag>}
+                <ConfirmacaoTag ev={ev} />
                 {fora && <span className="text-light-neutral-500">{fora}</span>}
                 {ev.somenteLeitura && <span className="text-light-neutral-500">Edite no Google Agenda</span>}
               </div>
@@ -123,6 +128,17 @@ export function DayCard({
                 </div>
               ) : (
                 <div className="flex items-center">
+                {onConfirm && ev.confirmacao !== 'confirmado' && (
+                  <button
+                    type="button"
+                    title="Marcar como confirmado"
+                    aria-label={`Marcar ${ev.titulo} como confirmado`}
+                    onClick={() => onConfirm(ev)}
+                    className="grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent p-0 text-light-neutral-500 hover:bg-[rgba(29,33,23,.07)] hover:text-light-text"
+                  >
+                    <CheckCircle size={13} />
+                  </button>
+                )}
                 <button
                   type="button"
                   title="Editar agendamento"

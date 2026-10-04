@@ -16,7 +16,7 @@ import { addDays, diffDays, longLabel, shortLabel, spInstant, spToday, toSp, wee
 import { useFreeSlots, useServiceTypes, useWeekEvents } from './use-agenda'
 import { WeekGrid } from './week-grid'
 
-export type CalendarPatch = Partial<Pick<CalendarStateDto, 'iaPodeAgendar' | 'duracaoPadraoMin' | 'lembretes'>>
+export type CalendarPatch = Partial<Pick<CalendarStateDto, 'iaPodeAgendar' | 'duracaoPadraoMin' | 'lembretes' | 'pedirConfirmacao'>>
 
 /** Agenda conectada: grade semanal | coluna lateral (dia, novo agendamento, preferências). */
 export function ConnectedView({
@@ -304,6 +304,17 @@ export function ConnectedView({
     }
   }
 
+  const confirmarManual = async (ev: EventDto) => {
+    try {
+      await api<EventWriteResponse>(`/api/events/${ev.id}`, { method: 'PATCH', body: { confirmacao: 'confirmado' } })
+      toast({ icon: <CalendarCheck size={18} weight="fill" />, title: 'Marcado como confirmado', text: `${ev.cliente ?? 'Cliente sem nome'} · ${shortLabel(toSp(ev.inicio).date, today)}, ${toSp(ev.inicio).hm}` })
+      emitAgendaChanged()
+      void week.reload()
+    } catch (e) {
+      toast({ icon: <Warning size={18} weight="fill" />, title: 'Não foi possível confirmar', text: e instanceof Error ? e.message : 'Tente novamente em instantes.' })
+    }
+  }
+
   const toggleLembrete = (l: Lembrete) => {
     const next = cal.lembretes.includes(l) ? cal.lembretes.filter((x) => x !== l) : [...cal.lembretes, l]
     void patch({ lembretes: LEMBRETES.filter((x) => next.includes(x)) })
@@ -407,6 +418,7 @@ export function ConnectedView({
           activeEventId={editing?.id ?? focusId}
           onEdit={startEdit}
           onDelete={excluir}
+          onConfirm={(ev) => void confirmarManual(ev)}
         />
         {editorOpen ? (
           <ServiceTypeEditor tipos={tipos} onCancel={() => setEditorOpen(false)} onSaved={tiposSalvos} />
@@ -446,6 +458,8 @@ export function ConnectedView({
           onDuracao={(d) => void patch({ duracaoPadraoMin: d })}
           lembretes={cal.lembretes}
           onToggleLembrete={toggleLembrete}
+          pedirConfirmacao={cal.pedirConfirmacao}
+          onPedirConfirmacao={(on) => void patch({ pedirConfirmacao: on })}
           tiposCount={tipos.length}
           onEditTipos={() => setEditorOpen(true)}
           oficial={wa.provider === 'oficial'}

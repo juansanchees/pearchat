@@ -4,6 +4,7 @@ import { ArrowClockwise, CaretLeft, CaretRight, Sparkle } from '@phosphor-icons/
 import { Spinner, Tag } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import type { EventDto } from '@/server/calendar/types'
+import { ConfirmacaoTag } from './confirmation-tag'
 import { ORIGEM_BAR } from './data'
 import { GRID_END_HOUR, GRID_HOURS, GRID_START_HOUR, HOUR_PX, dayNumber, semLabel, toSp } from './time'
 
@@ -236,6 +237,7 @@ export function WeekGrid({
                             {toSp(ev.inicio).hm} · {ev.titulo}
                           </span>
                           {ev.canal === 'link' && <Tag className="!flex-none !rounded-[4px] !px-[5px] !py-px !text-[9px]">Link</Tag>}
+                          <ConfirmacaoTag ev={ev} compact />
                         </div>
                         {ev.origem !== 'GOOGLE' && (
                           <div className="mt-0.5 truncate text-[10.5px] text-light-neutral-500">{ev.cliente ?? 'Cliente sem nome'}</div>

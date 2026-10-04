@@ -1,6 +1,7 @@
 'use client'
 
 import { CaretRight, Check, GoogleLogo, Info, PencilSimple, Plus } from '@phosphor-icons/react'
+import { PearSwitch } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import type { Lembrete } from '@/server/calendar/types'
 import { BookingLinkSettings } from './booking-link-settings'
@@ -12,6 +13,8 @@ export function Preferences({
   onDuracao,
   lembretes,
   onToggleLembrete,
+  pedirConfirmacao,
+  onPedirConfirmacao,
   tiposCount,
   onEditTipos,
   oficial,
@@ -25,6 +28,9 @@ export function Preferences({
   onDuracao: (d: 30 | 60 | 120) => void
   lembretes: Lembrete[]
   onToggleLembrete: (l: Lembrete) => void
+  /** O lembrete pede "1 para confirmar, 2 para remarcar". */
+  pedirConfirmacao: boolean
+  onPedirConfirmacao: (on: boolean) => void
   tiposCount: number
   onEditTipos: () => void
   oficial: boolean
@@ -72,7 +78,7 @@ export function Preferences({
           <div className="flex gap-1.5 text-[11px] text-light-neutral-500 [text-wrap:pretty]">
             <Info size={12} className="mt-px flex-none" />
             <span>
-              Pelo WhatsApp oficial, o lembrete usa o modelo aprovado <b className="font-semibold">lembrete_agendamento</b>.
+              Pelo WhatsApp oficial, o lembrete usa o modelo aprovado <b className="font-semibold">lembrete_agendamento</b> e, por enquanto, não pede confirmação.
             </span>
           </div>
         )}
@@ -98,6 +104,13 @@ export function Preferences({
               </button>
             )
           })}
+        </div>
+        <div className="flex items-center gap-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] text-light-neutral-400">Pedir confirmação no lembrete</div>
+            <div className="text-[11px] text-light-neutral-500">O cliente responde 1 para confirmar ou 2 para remarcar.</div>
+          </div>
+          <PearSwitch size="sm" checked={pedirConfirmacao} onChange={onPedirConfirmacao} label="Pedir confirmação no lembrete" />
         </div>
         </>
       )}

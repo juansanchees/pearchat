@@ -25,18 +25,36 @@ export const CodeBoxes = forwardRef<CodeBoxesHandle, Props>(function CodeBoxes(
 ) {
   const refs = useRef<Array<HTMLInputElement | null>>([])
   useImperativeHandle(ref, () => ({ focus: (i = 0) => refs.current[i]?.focus() }), [])
+  // Valor MAIS RECENTE do código: digitar muito rápido (ou um gerenciador preencher de uma vez) dispara vários eventos antes
+  // de a tela renderizar de novo; ler `code` do render descartaria todos menos o primeiro.
+  const latest = useRef(code)
+  latest.current = code
+
+  function apply(next: string[], focusAt: number) {
+    latest.current = next
+    onChange(next)
+    refs.current[Math.min(Math.max(focusAt, 0), 5)]?.focus()
+    if (next.every(Boolean)) onComplete(next)
+  }
 
   function setDigit(i: number, v: string) {
     const d = v.replace(/\D/g, '')
-    const next = code.slice()
+    const next = latest.current.slice()
+    if (d.length >= 6) {
+      // Preenchimento automático (o código inteiro caiu no primeiro campo): distribui pelos 6 campos.
+      for (let k = 0; k < 6; k++) next[k] = d[k]
+      apply(next, 5)
+      return
+    }
     next[i] = d.slice(-1)
+    latest.current = next
     onChange(next)
     if (d && i < 5) refs.current[i + 1]?.focus()
     if (d && next.every(Boolean)) onComplete(next)
   }
 
   function onKey(i: number, e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Backspace' && !code[i] && i > 0) refs.current[i - 1]?.focus()
+    if (e.key === 'Backspace' && !latest.current[i] && i > 0) refs.current[i - 1]?.focus()
     if (e.key === 'Enter') onEnter?.()
   }
 
@@ -45,6 +63,7 @@ export const CodeBoxes = forwardRef<CodeBoxesHandle, Props>(function CodeBoxes(
     if (!t) return
     e.preventDefault()
     const next = EMPTY_CODE.map((_, j) => t[j] ?? '')
+    latest.current = next
     onChange(next)
     refs.current[Math.min(t.length, 6) - 1]?.focus()
     if (t.length === 6) onComplete(next)
@@ -65,7 +84,7 @@ export const CodeBoxes = forwardRef<CodeBoxesHandle, Props>(function CodeBoxes(
           disabled={disabled}
           inputMode="numeric"
           autoComplete={i === 0 ? 'one-time-code' : 'off'}
-          maxLength={1}
+          maxLength={i === 0 ? 6 : 1}
           aria-label={`Dígito ${i + 1} de 6`}
           aria-invalid={invalid ? true : undefined}
           aria-describedby={invalid ? describedBy : undefined}

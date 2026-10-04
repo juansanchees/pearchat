@@ -12,7 +12,15 @@ import { getConnected, log, logError, shortError, spParts, templateFirstName } f
 const OFFSETS_MIN: Record<string, number> = { '24h': 24 * 60, '2h': 120, '30min': 30 }
 export const REMINDER_TEMPLATE = 'lembrete_agendamento'
 
-function diaLabel(inicio: Date, now: Date): string {
+/**
+ * Qual lembrete pede confirmação ("Responda 1 para confirmar ou 2 para remarcar"): o de 24 h; se não há o de 24 h, o de 2 h.
+ * (Só o de 30 min nunca pede.) Só no provedor não oficial: no oficial o lembrete usa o modelo aprovado e fica como era.
+ */
+export function confirmationKind(kinds: string[]): string | null {
+  return kinds.includes('24h') ? '24h' : kinds.includes('2h') ? '2h' : null
+}
+
+export function diaLabel(inicio: Date, now: Date): string {
   const a = spParts(inicio)
   const b = spParts(now)
   if (a.ymd === b.ymd) return 'hoje'
@@ -22,7 +30,7 @@ function diaLabel(inicio: Date, now: Date): string {
   return `${dd}/${mm}`
 }
 
-const horaLabel = (d: Date): string => {
+export const horaLabel = (d: Date): string => {
   const p = spParts(d)
   return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
 }
@@ -43,7 +51,7 @@ export async function runDueReminders(): Promise<number> {
   const now = new Date()
   const conns = await db.calendarConnection.findMany({
     where: { lembretes: { isEmpty: false }, workspace: { arquivadoEm: null, whatsappSession: { is: { status: 'CONECTADO' } } } },
-    select: { workspaceId: true, lembretes: true },
+    select: { workspaceId: true, lembretes: true, pedirConfirmacao: true },
   })
   let sent = 0
   for (const conn of conns) {
@@ -57,7 +65,7 @@ export async function runDueReminders(): Promise<number> {
   return sent
 }
 
-async function remindWorkspace(conn: { workspaceId: string; lembretes: string[] }, now: Date): Promise<number> {
+async function remindWorkspace(conn: { workspaceId: string; lembretes: string[]; pedirConfirmacao: boolean }, now: Date): Promise<number> {
   let sent = 0
   {
     const kinds = conn.lembretes.filter((k) => k in OFFSETS_MIN).sort((a, b) => (OFFSETS_MIN[a] ?? 0) - (OFFSETS_MIN[b] ?? 0))
@@ -66,6 +74,7 @@ async function remindWorkspace(conn: { workspaceId: string; lembretes: string[] 
     const events = await db.event.findMany({
       where: {
         workspaceId: conn.workspaceId,
+        status: 'ativo',
         inicio: { gt: now, lte: new Date(now.getTime() + maxOffset * 60_000) },
         contactId: { not: null },
       },
@@ -93,8 +102,9 @@ async function remindWorkspace(conn: { workspaceId: string; lembretes: string[] 
         if (skip) continue
 
         // Nome do tipo de atendimento atual (o texto "tipo" do evento guarda o nome da época do agendamento).
-        const result = await sendReminder(conn.workspaceId, { id: ev.id, inicio: ev.inicio, tipo: ev.serviceType?.nome ?? ev.tipo }, contact, now)
-        await db.eventReminder.updateMany({ where: { eventId: ev.id, kind: target }, data: { result } })
+        const ask = conn.pedirConfirmacao && ev.confirmacao === 'pendente' && target === confirmationKind(kinds)
+        const { result, asked } = await sendReminder(conn.workspaceId, { id: ev.id, inicio: ev.inicio, tipo: ev.serviceType?.nome ?? ev.tipo }, contact, now, ask)
+        await db.eventReminder.updateMany({ where: { eventId: ev.id, kind: target }, data: { result, pediuConfirmacao: asked && result === 'enviado' } })
         if (result === 'enviado') sent++
       } catch (e) {
         logError('reminders', `evento ${ev.id} falhou`, e)
@@ -109,14 +119,16 @@ async function sendReminder(
   ev: { id: string; inicio: Date; tipo: string },
   contact: { id: string; nome: string; waUserId: string | null; telefone: string | null },
   now: Date,
-): Promise<string> {
+  ask: boolean,
+): Promise<{ result: string; asked: boolean }> {
   const session = await getConnected(workspaceId)
-  if (!session) return 'pulado: WhatsApp desconectado'
+  if (!session) return { result: 'pulado: WhatsApp desconectado', asked: false }
   const dia = diaLabel(ev.inicio, now)
   const hora = horaLabel(ev.inicio)
   const to = contactRef(contact)
   let content: OutboundContent
   let freeform = false
+  let asked = false
 
   if (session.official) {
     const t = await db.template.findFirst({ where: { workspaceId, name: REMINDER_TEMPLATE } })
@@ -130,8 +142,11 @@ async function sendReminder(
       freeform = true
       content = { kind: 'text', text: `Lembrete: seu horário (${ev.tipo}) é ${dia} às ${hora}.` }
     } else {
-      return 'pulado: modelo lembrete_agendamento ausente ou não aprovado'
+      return { result: 'pulado: modelo lembrete_agendamento ausente ou não aprovado', asked: false }
     }
+  } else if (ask) {
+    asked = true
+    content = { kind: 'text', text: `Lembrete: seu horário de ${ev.tipo} é ${dia}, às ${hora}. Responda 1 para confirmar ou 2 para remarcar.` }
   } else {
     content = { kind: 'text', text: `Lembrete: seu horário (${ev.tipo}) é ${dia} às ${hora}.` }
   }
@@ -139,8 +154,8 @@ async function sendReminder(
   try {
     const conv = await ensureConversation(workspaceId, contact.id)
     await sendAndRecord({ session, conversationId: conv.id, to, author: 'IA', content, countAtendimento: freeform })
-    return 'enviado'
+    return { result: 'enviado', asked }
   } catch (e) {
-    return `erro: ${e instanceof OutboundError ? e.message : shortError(e)}`.slice(0, 200)
+    return { result: `erro: ${e instanceof OutboundError ? e.message : shortError(e)}`.slice(0, 200), asked: false }
   }
 }

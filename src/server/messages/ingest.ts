@@ -18,6 +18,7 @@ import { cleanText } from './api'
 import { loadConversationItem, toMessageDTO } from './dto'
 import { registerManualReply } from './takeover'
 import { notifySpaceAttention } from '@/server/spaces/attention'
+import { handleReminderReply } from '@/server/calendar/confirmation'
 
 /** Campos de mídia de uma Message nova (metadados do webhook; o arquivo vem depois). */
 function mediaColumns(media: NormalizedMedia, opts: { imported: boolean; direction: 'IN' | 'OUT' }) {
@@ -164,6 +165,11 @@ export async function ingestInboundMessage(input: {
   }
   void notifySpaceAttention(workspaceId)
   if (media) startInboundMedia(message.id, media.inlineBase64)
+  // Resposta a um lembrete de agendamento ("1" confirma, "2" remarca): tratada aqui, sem acionar a IA para a mesma mensagem.
+  if (!media && !optOut) {
+    const lembrete = await handleReminderReply({ workspaceId, conversationId: conversation.id, contactId: contact.id, text: body, optOut })
+    if (lembrete.handled) return
+  }
   await scheduleAiReply({ workspaceId, conversationId: conversation.id, optOut })
 }
 
