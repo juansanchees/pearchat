@@ -7,6 +7,7 @@ import { DisparosDrawer } from './disparos-drawer'
 import { FollowupDrawer } from './followup-drawer'
 import { IaDrawer } from './ia-drawer'
 import { PlanoDrawer } from './plano-drawer'
+import { ResultadosDrawer } from './resultados-drawer'
 
 export function DrawerHost() {
   const { drawer, closeDrawer } = useAppState()
@@ -32,6 +33,8 @@ export function DrawerHost() {
       return <ConfigDrawer />
     case 'plano':
       return <PlanoDrawer />
+    case 'resultados':
+      return <ResultadosDrawer />
     default:
       return null
   }

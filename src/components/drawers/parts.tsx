@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, CrownSimple, GearSix, LockSimple, PaperPlaneTilt, Sparkle, ClockClockwise, Warning, X } from '@phosphor-icons/react'
+import { ChartBar, Check, CrownSimple, GearSix, LockSimple, PaperPlaneTilt, Sparkle, ClockClockwise, Warning, X } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import type { DrawerKey } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -17,6 +17,7 @@ const HEAD_ICONS: Record<DrawerKey, Icon> = {
   followup: ClockClockwise,
   config: GearSix,
   plano: CrownSimple,
+  resultados: ChartBar,
 }
 
 /** Casca comum dos drawers: cabeçalho, faixa de bloqueio, corpo rolável e rodapé. */
