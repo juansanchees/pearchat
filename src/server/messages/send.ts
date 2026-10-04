@@ -4,7 +4,7 @@ import type { MessageDTO } from '@/lib/types'
 import { spMonthKey } from '@/server/calendar/time'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { getProvider } from '@/server/whatsapp'
-import { loadConversationItem, toMessageDTO } from './dto'
+import { loadConversationItem, senderFirstNames, toMessageDTO } from './dto'
 import { registerManualReply } from './takeover'
 
 export type SendErrorCode =
@@ -39,6 +39,8 @@ export function sendUserMessage(input: {
   conversationId: string
   body: string
   clientId?: string
+  /** Equipe: quem está enviando (autoria da mensagem e atribuição automática da conversa). */
+  userId?: string
 }): Promise<MessageDTO> {
   const { clientId, ...rest } = input
   return withIdempotency(input.workspaceId, input.conversationId, clientId, () => sendUserMessageOnce(rest))
@@ -67,8 +69,9 @@ async function sendUserMessageOnce(input: {
   workspaceId: string
   conversationId: string
   body: string
+  userId?: string
 }): Promise<MessageDTO> {
-  const { workspaceId, conversationId, body } = input
+  const { workspaceId, conversationId, body, userId } = input
 
   const conversation = await db.conversation.findFirst({
     where: { id: conversationId, workspaceId },
@@ -92,7 +95,7 @@ async function sendUserMessageOnce(input: {
 
   const now = new Date()
   const pending = await db.message.create({
-    data: { conversationId, direction: 'OUT', author: 'USER', body, status: 'PENDENTE', createdAt: now },
+    data: { conversationId, direction: 'OUT', author: 'USER', body, status: 'PENDENTE', createdAt: now, senderUserId: userId ?? null },
   })
 
   let sent
@@ -112,7 +115,7 @@ async function sendUserMessageOnce(input: {
   if (failure) {
     await db.conversation.update({ where: { id: conversationId }, data: { unread: 0, lastMessageAt: now } })
   } else {
-    await registerManualReply({ conversationId, currentMode: conversation.mode, at: now })
+    await registerManualReply({ conversationId, currentMode: conversation.mode, at: now, userId })
   }
 
   if (!failure && session.provider === 'OFICIAL') {
@@ -127,6 +130,9 @@ async function sendUserMessageOnce(input: {
   const item = await loadConversationItem(workspaceId, conversationId)
   if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })
 
+  // Equipe: as outras pessoas com a conversa aberta veem a mensagem na hora (o cliente de quem enviou deduplica por id).
+  const dto = toMessageDTO(sent, (await senderFirstNames([sent])).get(userId ?? ''))
+  if (!failure) emitToWorkspace(workspaceId, 'message.received', { workspaceId, conversationId, message: dto })
   if (failure) throw new SendError('ENVIO_FALHOU', 502, failure)
-  return toMessageDTO(sent)
+  return dto
 }

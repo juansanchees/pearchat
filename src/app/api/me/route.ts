@@ -14,6 +14,6 @@ export async function GET() {
   })
   if (!user) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 })
 
-  const me: AppUser = { nome: user.nome, email: user.email, empresa: user.workspace.nome, organizacao: user.workspace.organization?.nome ?? user.workspace.nome, fotoUrl: user.fotoUrl ?? user.image }
+  const me: AppUser = { nome: user.nome, email: user.email, empresa: user.workspace.nome, organizacao: user.workspace.organization?.nome ?? user.workspace.nome, fotoUrl: user.fotoUrl ?? user.image, papel: session?.user?.papel, id: userId }
   return NextResponse.json(me)
 }

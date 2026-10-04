@@ -3,6 +3,7 @@
 import { Camera, FileText, Microphone, Sparkle, Sticker, VideoCamera } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
 import { formatDuration } from '@/server/media/mime'
+import { Avatar } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import { ContactAvatar } from './contact-avatar'
 import { formatListTime } from './format'
@@ -93,6 +94,7 @@ export function ConversationItem({
               `${prefix}${item.lastMessagePreview ?? ''}`
             )}
           </span>
+          {item.assignee ? <Avatar name={item.assignee.nome} src={item.assignee.fotoUrl} size={18} className="!text-[8px]" /> : null}
           {hasUnread ? (
             <span className="h-[18px] min-w-[18px] rounded-pill bg-light-accent-fill px-[5px] text-center text-[10.5px] font-medium leading-[18px] text-white">
               {item.unread}

@@ -10,6 +10,7 @@ const FILTERS: { key: ConversationFilter; label: string }[] = [
   { key: 'todas', label: 'Todas' },
   { key: 'nao_lidas', label: 'Não lidas' },
   { key: 'com_ia', label: 'Com IA' },
+  { key: 'minhas', label: 'Minhas' },
 ]
 
 // Clientes fictícios (só com WA_MOCK) com mensagens genéricas: servem a qualquer segmento, não só à conta de demonstração.

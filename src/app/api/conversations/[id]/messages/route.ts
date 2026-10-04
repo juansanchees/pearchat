@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { badRequest, isValidId, notFound, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
-import { toMessageDTO } from '@/server/messages/dto'
+import { badRequest, isValidId, notFound, readJson, sessionIds, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { senderFirstNames, toMessageDTO } from '@/server/messages/dto'
 import { SendError, sendUserMessage } from '@/server/messages/send'
 
 export const dynamic = 'force-dynamic'
@@ -38,12 +38,14 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     take: PAGE,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   })
-  return NextResponse.json(rows.reverse().map(toMessageDTO))
+  const names = await senderFirstNames(rows)
+  return NextResponse.json(rows.reverse().map((m) => toMessageDTO(m, names.get(m.senderUserId ?? ''))))
 }
 
 export async function POST(req: NextRequest, { params }: Ctx) {
-  const workspaceId = await sessionWorkspaceId()
-  if (!workspaceId) return unauthorized()
+  const ids = await sessionIds()
+  if (!ids) return unauthorized()
+  const { workspaceId, userId } = ids
   if (!isValidId(params.id)) return notFound()
 
   const json = await readJson(req)
@@ -52,7 +54,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   try {
     const message = await sendUserMessage({ workspaceId, conversationId: params.id, body: parsed.data.body,
-      clientId: parsed.data.clientId,
+      clientId: parsed.data.clientId, userId,
     })
     return NextResponse.json(message, { status: 201 })
   } catch (e) {

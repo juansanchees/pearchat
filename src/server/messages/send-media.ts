@@ -7,7 +7,7 @@ import { buildMediaKey, getMediaStore } from '@/server/media/store'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { getProvider, ProviderUnsupportedError } from '@/server/whatsapp'
 import { cleanText } from './api'
-import { loadConversationItem, toMessageDTO } from './dto'
+import { loadConversationItem, senderFirstNames, toMessageDTO } from './dto'
 import { SendError, withIdempotency } from './send'
 import { registerManualReply } from './takeover'
 
@@ -25,13 +25,15 @@ export function sendUserMedia(input: {
   file: OutboundFile
   caption?: string
   clientId?: string
+  /** Equipe: quem está enviando (autoria e atribuição automática). */
+  userId?: string
 }): Promise<MessageDTO> {
   const { workspaceId, conversationId, clientId } = input
   return withIdempotency(workspaceId, conversationId, clientId, () => sendOnce(input))
 }
 
-async function sendOnce(input: { workspaceId: string; conversationId: string; file: OutboundFile; caption?: string }): Promise<MessageDTO> {
-  const { workspaceId, conversationId, file } = input
+async function sendOnce(input: { workspaceId: string; conversationId: string; file: OutboundFile; caption?: string; userId?: string }): Promise<MessageDTO> {
+  const { workspaceId, conversationId, file, userId } = input
 
   if (file.data.length === 0) throw new SendError('ARQUIVO_INVALIDO', 400, 'O arquivo está vazio')
   if (file.data.length > MAX_OUTBOUND_BYTES) throw new SendError('ARQUIVO_GRANDE', 413, 'O arquivo passa do limite de 16 MB')
@@ -74,6 +76,7 @@ async function sendOnce(input: { workspaceId: string; conversationId: string; fi
       mediaName: fileName,
       mediaKey: key,
       mediaStatus: 'ok',
+      senderUserId: userId ?? null,
     },
   })
 
@@ -96,7 +99,7 @@ async function sendOnce(input: { workspaceId: string; conversationId: string; fi
   if (failure) {
     await db.conversation.update({ where: { id: conversationId }, data: { unread: 0, lastMessageAt: now } })
   } else {
-    await registerManualReply({ conversationId, currentMode: conversation.mode, at: now })
+    await registerManualReply({ conversationId, currentMode: conversation.mode, at: now, userId })
   }
 
   if (!failure && session.provider === 'OFICIAL') {
@@ -111,6 +114,8 @@ async function sendOnce(input: { workspaceId: string; conversationId: string; fi
   const item = await loadConversationItem(workspaceId, conversationId)
   if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })
 
+  const dto = toMessageDTO(sent, (await senderFirstNames([sent])).get(userId ?? ''))
+  if (!failure) emitToWorkspace(workspaceId, 'message.received', { workspaceId, conversationId, message: dto })
   if (failure) throw new SendError('ENVIO_FALHOU', 502, failure)
-  return toMessageDTO(sent)
+  return dto
 }

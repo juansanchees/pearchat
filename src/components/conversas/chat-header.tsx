@@ -3,6 +3,7 @@
 import { CaretLeft, Clock, Hand, Sparkle, User } from '@phosphor-icons/react'
 import type { ReactNode } from 'react'
 import type { ConversationModeKind } from '@/lib/types'
+import { AssigneePicker } from './assignee-picker'
 import { ContactAvatar } from './contact-avatar'
 import { formatPhone } from './format'
 import type { ConversationItem } from './types'
@@ -76,6 +77,7 @@ export function ChatHeader({
         {pill.icon}
         {pill.text}
       </span>
+      <AssigneePicker conversation={conversation} />
       {isIaMode ? (
         <button
           type="button"
