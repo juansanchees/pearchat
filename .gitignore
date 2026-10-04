@@ -47,3 +47,6 @@ deploy/.env.production
 
 # mídias locais das conversas (MEDIA_DIR em desenvolvimento)
 /.media/
+
+# hash do ultimo deploy (gerado por deploy.sh)
+.deploy-commit

@@ -16,6 +16,8 @@ URL="https://$DOMAIN/login"
 fp() { curl -s -m 10 "$URL" 2>/dev/null | grep -o '/_next/static/[^"]*' | sort -u | sha256sum | cut -c1-16; }
 FP0="$(fp || true)"
 
+# Hash do commit enviado (vira /opt/pearchat/.deploy-commit; lido pelo backup e por /api/health).
+(git rev-parse HEAD 2>/dev/null || echo desconhecido) > .deploy-commit
 echo "==> Enviando codigo e disparando build na VPS (1 conexao SSH)"
 tar czf - \
   --exclude=node_modules --exclude=.next --exclude=.git --exclude='.env' --exclude='.env.local' \

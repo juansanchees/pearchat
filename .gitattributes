@@ -1,0 +1,2 @@
+# Scripts de shell precisam de LF (rodam na VPS Linux; com autocrlf=true o checkout no Windows os converteria para CRLF).
+*.sh text eol=lf

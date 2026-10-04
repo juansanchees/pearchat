@@ -38,5 +38,5 @@ export default auth((req) => {
 
 export const config = {
   // Exclui: /api/auth, /api/wa/* (webhooks), _next e arquivos estáticos.
-  matcher: ['/((?!api/auth|api/wa|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
+  matcher: ['/((?!api/auth|api/wa|api/health|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 }

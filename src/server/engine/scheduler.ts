@@ -70,6 +70,7 @@ export async function runTick(): Promise<TickSummary> {
     // Mídia: retoma downloads e transcrições que ficaram pendentes (servidor reiniciou no meio).
     task('midia', { downloads: 0, transcricoes: 0 }, async () => ({ downloads: await runDueMediaDownloads(), transcricoes: await runDueTranscriptions() }), ignoradas),
   ])
+  ;(globalThis as unknown as { __pearchat_last_tick?: number }).__pearchat_last_tick = Date.now() // lido por /api/health
   return { ia, disparos, followup, lembretes, agenda, historico, midia, ignoradas }
 }
 

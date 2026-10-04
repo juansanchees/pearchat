@@ -106,4 +106,22 @@ elif [ "$cert" != 1 ]; then
   echo "--- ultimas 40 linhas do caddy"
   docker logs --tail 40 "$CADDY" 2>&1 | cut -c1-300
 fi
+
+# (g) Pos-deploy (NAO bloqueante: nada aqui muda DEPLOY_RESULT). So depois de um deploy bem-sucedido.
+if [ "$RESULT" = ok ]; then
+  # Limpeza de sobras de build: so imagens SEM etiqueta e cache de build com mais de 48 h (nunca -a, nunca volumes).
+  echo "--- limpeza de sobras de build"
+  L0="$(df -Pk / | awk 'NR==2{print $4}')"
+  docker image prune -f 2>&1 | tail -n 2
+  docker builder prune -f --filter until=48h 2>&1 | tail -n 2
+  L1="$(df -Pk / | awk 'NR==2{print $4}')"
+  echo "espaco livre em /: antes $((L0 / 1024)) MB, depois $((L1 / 1024)) MB"
+  # Instalacao idempotente do backup (sem rodar backup agora; o cron roda) e do monitor.
+  echo "--- instalando backup diario (nao bloqueante)"
+  bash deploy/backup/install.sh --no-first-run 2>&1 | tail -n 15
+  [ "${PIPESTATUS[0]}" = 0 ] || echo "(AVISO: install do backup falhou; deploy segue ok)"
+  echo "--- instalando monitor (nao bloqueante)"
+  bash deploy/monitor/install.sh 2>&1 | tail -n 15
+  [ "${PIPESTATUS[0]}" = 0 ] || echo "(AVISO: install do monitor falhou; deploy segue ok)"
+fi
 final

@@ -118,3 +118,9 @@ Imagens, audios, videos e documentos recebidos e enviados ficam no disco, atras 
 - Transcricao (opcional): `OPENAI_API_KEY` + `AI_TRANSCRIBE_MODEL` (padrao `gpt-4o-mini-transcribe`). O projeto da OpenAI dono da chave precisa liberar o modelo (Settings > Project > Limits > Model access, marcar `gpt-4o-mini-transcribe` ou `whisper-1` e ajustar `AI_TRANSCRIBE_MODEL`). Enquanto nao liberar, o audio aparece normalmente e a transcricao fica "indisponivel"; o PearChat testa de novo a cada 6 h sozinho.
 - Visao da IA: `AI_VISION=auto` (padrao) envia a imagem da ULTIMA mensagem do cliente (ate 4 MB) ao modelo; `off` desliga.
 - Limpeza (futuro): nada e apagado ao arquivar/excluir nesta etapa. Tudo de um espaco fica em `<MEDIA_DIR>/<workspaceId>/aaaa-mm/`; excluir um espaco = apagar essa pasta (ou o prefixo, num futuro S3).
+
+## Backup, monitoramento e limpeza (pos-deploy)
+
+Depois de cada deploy bem-sucedido, `remote.sh` (1) limpa sobras de build (`docker image prune -f` e `docker builder prune -f --filter until=48h`; nunca `-a`, nunca volumes) e registra o espaco livre antes/depois, e (2) instala de forma idempotente e nao bloqueante o backup diario (`deploy/backup/`, ver `deploy/backup/README.md`) e o monitor a cada 5 min (`deploy/monitor/`, ver `deploy/monitor/README.md`). Falha nessas etapas nao muda o `DEPLOY_RESULT`. O `deploy.sh`/`deploy-domain.sh` enviam `.deploy-commit` (hash do commit) para `/opt/pearchat`.
+
+Acoes do dono: guardar `/root/.pearchat-backup-key` FORA do servidor; configurar a copia externa (`BACKUP_REMOTE`) e um canal de alerta (`MONITOR_WEBHOOK_URL` ou `MONITOR_EMAIL_TO`); opcionalmente `HEALTH_TOKEN` no `.env.production`. Sem a copia externa o backup e somente local.
