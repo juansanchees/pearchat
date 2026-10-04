@@ -31,8 +31,8 @@ const env = {
   OPENAI_API_KEY: src.OPENAI_API_KEY ?? '',
   ANTHROPIC_API_KEY: src.ANTHROPIC_API_KEY ?? '',
   AI_MODEL: src.AI_MODEL ?? '',
-  AI_TRANSCRIBE_MODEL: src.AI_TRANSCRIBE_MODEL ?? '',
-  AI_VISION: src.AI_VISION ?? '',
+  AI_TRANSCRIBE_MODEL: src.AI_TRANSCRIBE_MODEL || prev.AI_TRANSCRIBE_MODEL || '',
+  AI_VISION: src.AI_VISION || prev.AI_VISION || '',
   ENCRYPTION_KEY: prev.ENCRYPTION_KEY || src.ENCRYPTION_KEY, // nunca trocar: quebraria dados já criptografados
   AUTH_URL: url,
   NEXT_PUBLIC_APP_URL: url,
@@ -55,7 +55,11 @@ const env = {
   MAIL_FROM: src.MAIL_FROM || prev.MAIL_FROM || '',
   EMAIL_VERIFICATION_SINCE: src.EMAIL_VERIFICATION_SINCE || prev.EMAIL_VERIFICATION_SINCE || '',
 }
+// Chaves que este script não conhece (ex.: HEALTH_TOKEN, MONITOR_WEBHOOK_URL, MONITOR_EMAIL_TO, BACKUP_*, MEDIA_DIR) e que já
+// existem no arquivo gerado antes: preservadas como estão, em vez de descartadas a cada geração.
+const preserved = Object.keys(prev).filter((k) => !(k in env))
+for (const k of preserved) env[k] = prev[k]
 for (const k of ['DATABASE_URL', 'ENCRYPTION_KEY']) if (!env[k]) throw new Error(`${k} ausente no .env local`)
 // Valores entre aspas simples: compatível com env_file do compose e com --env-file (sem expansão de $).
 writeFileSync(out, Object.entries(env).map(([k, v]) => `${k}='${String(v).replace(/'/g, '')}'`).join('\n') + '\n', { mode: 0o600 })
-console.log(`gerado ${out} (${Object.keys(env).length} variáveis)`)
+console.log(`gerado ${out} (${Object.keys(env).length} variáveis${preserved.length ? `; preservadas as não gerenciadas: ${preserved.join(', ')}` : ''})`)
