@@ -30,6 +30,8 @@ export type SpaceDTO = {
   /** Pendências de atendimento: conversas em HUMANO com mensagens não lidas. */
   handoffs: number
   ativo: boolean
+  /** Logo do negócio (URL autenticada dentro do app), ou null. */
+  logoUrl: string | null
 }
 
 export type SpacesResponse = {
@@ -56,7 +58,7 @@ export async function listSpaces(organizationId: string, activeWorkspaceId: stri
     db.workspace.findMany({
       where: { organizationId, arquivadoEm: null, ...(onlyIds ? { id: { in: onlyIds } } : {}) },
       orderBy: [{ ordem: 'asc' }, { createdAt: 'asc' }],
-      select: { id: true, nome: true, ordem: true, whatsappSession: { select: { provider: true, status: true, numero: true } } },
+      select: { id: true, nome: true, ordem: true, logoUrl: true, whatsappSession: { select: { provider: true, status: true, numero: true } } },
     }),
   ])
   const ids = rows.map((r) => r.id)
@@ -77,6 +79,7 @@ export async function listSpaces(organizationId: string, activeWorkspaceId: stri
       unread: unreadBy.get(r.id) ?? 0,
       handoffs: handoffBy.get(r.id) ?? 0,
       ativo: r.id === activeWorkspaceId,
+      logoUrl: r.logoUrl,
     })),
     plano: PLAN_NAME[org.plano],
     limite: PLAN_SPACE_LIMIT[org.plano],

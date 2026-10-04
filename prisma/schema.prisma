@@ -94,6 +94,8 @@ model Workspace {
   arquivadoEm            DateTime?
   nome                   String
   horarioAtendimento     String?
+  // Logo do negócio deste WhatsApp: `/api/logo/<id opaco>` (arquivo em MEDIA_DIR/logos/<workspaceId>/), como User.fotoUrl.
+  logoUrl                String?
   plano                  Plan     @default(PRO)
   statusAssinatura       String   @default("ativa")
   disparosAtivos         Boolean  @default(false)

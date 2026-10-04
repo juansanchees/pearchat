@@ -22,6 +22,8 @@ export const MAX_OBS = 200
 export type PublicWorkspace = {
   id: string
   nome: string
+  /** Tem logo cadastrada (a imagem sai de /api/public/booking/<slug>/logo). */
+  temLogo: boolean
   mensagem: string | null
   antecedenciaMin: number
   diasAFrente: number
@@ -39,11 +41,12 @@ export async function getPublicWorkspace(slug: string): Promise<PublicWorkspace 
       bookingAntecedenciaMin: true,
       bookingDiasAFrente: true,
       bookingMensagem: true,
+      logoUrl: true,
       arquivadoEm: true,
     },
   })
   if (!ws || !ws.bookingAtivo || ws.arquivadoEm) return null
-  return { id: ws.id, nome: ws.nome, mensagem: ws.bookingMensagem, antecedenciaMin: ws.bookingAntecedenciaMin, diasAFrente: ws.bookingDiasAFrente }
+  return { id: ws.id, nome: ws.nome, temLogo: !!ws.logoUrl, mensagem: ws.bookingMensagem, antecedenciaMin: ws.bookingAntecedenciaMin, diasAFrente: ws.bookingDiasAFrente }
 }
 
 export type PublicService = { id: string; nome: string; duracaoMin: number }

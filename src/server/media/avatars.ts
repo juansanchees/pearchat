@@ -36,9 +36,12 @@ export function avatarIdFromUrl(url: string | null | undefined): string | null {
 }
 export const avatarMime = (id: string): string => TYPES[id.slice(-1) as Marker].mime
 
-function avatarPath(userId: string, id: string): string {
+// Fotos de perfil ficam em `avatars/<userId>/`; logos de negócio, no mesmo formato, em `logos/<workspaceId>/`.
+type Dir = 'avatars' | 'logos'
+
+function avatarPath(userId: string, id: string, dir: Dir = 'avatars'): string {
   if (!USER_RE.test(userId) || !isAvatarId(id)) throw new Error('Avatar inválido')
-  const root = path.resolve(mediaRoot(), 'avatars')
+  const root = path.resolve(mediaRoot(), dir)
   const full = path.resolve(root, userId, `${id}.${TYPES[id.slice(-1) as Marker].ext}`)
   const rel = path.relative(root, full)
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('Avatar inválido')
@@ -57,10 +60,10 @@ export function checkAvatarBytes(head: Buffer): AvatarCheck {
 }
 
 /** Grava a foto e devolve o id opaco. */
-export async function putAvatar(userId: string, data: Buffer, marker: Marker): Promise<string> {
+export async function putAvatar(userId: string, data: Buffer, marker: Marker, dir: Dir = 'avatars'): Promise<string> {
   if (data.length > AVATAR_MAX_BYTES) throw new Error('Arquivo grande demais')
   const id = randomBytes(12).toString('hex') + marker
-  const full = avatarPath(userId, id)
+  const full = avatarPath(userId, id, dir)
   await mkdir(path.dirname(full), { recursive: true, mode: 0o700 })
   const tmp = `${full}.tmp-${randomBytes(6).toString('hex')}`
   try {
@@ -73,17 +76,17 @@ export async function putAvatar(userId: string, data: Buffer, marker: Marker): P
   return id
 }
 
-export async function deleteAvatar(userId: string, id: string): Promise<void> {
+export async function deleteAvatar(userId: string, id: string, dir: Dir = 'avatars'): Promise<void> {
   try {
-    await unlink(avatarPath(userId, id))
+    await unlink(avatarPath(userId, id, dir))
   } catch {
     /* já não existe, ou id inválido */
   }
 }
 
-export async function openAvatar(userId: string, id: string): Promise<{ stream: Readable; size: number } | null> {
+export async function openAvatar(userId: string, id: string, dir: Dir = 'avatars'): Promise<{ stream: Readable; size: number } | null> {
   try {
-    const full = avatarPath(userId, id)
+    const full = avatarPath(userId, id, dir)
     const st = await stat(full)
     if (!st.isFile()) return null
     return { stream: createReadStream(full), size: st.size }
@@ -91,6 +94,18 @@ export async function openAvatar(userId: string, id: string): Promise<{ stream: 
     return null
   }
 }
+
+// ---- Logo do negócio (por espaço): mesmas regras e formato da foto de perfil ----
+export const LOGO_URL_PREFIX = '/api/logo/'
+export const logoUrl = (id: string): string => `${LOGO_URL_PREFIX}${id}`
+export function logoIdFromUrl(url: string | null | undefined): string | null {
+  if (!url || !url.startsWith(LOGO_URL_PREFIX)) return null
+  const id = url.slice(LOGO_URL_PREFIX.length)
+  return isAvatarId(id) ? id : null
+}
+export const putLogo = (workspaceId: string, data: Buffer, marker: Marker): Promise<string> => putAvatar(workspaceId, data, marker, 'logos')
+export const deleteLogo = (workspaceId: string, id: string): Promise<void> => deleteAvatar(workspaceId, id, 'logos')
+export const openLogo = (workspaceId: string, id: string) => openAvatar(workspaceId, id, 'logos')
 
 /** Lê o corpo com teto de bytes ANTES de montar o multipart (não carrega um upload gigante na memória). null = estourou. */
 export async function readBodyCapped(req: Request, max: number): Promise<Buffer | null> {

@@ -37,7 +37,7 @@ import { useLogout } from '@/components/app/use-logout'
 import { usePermissions } from '@/components/app/use-permissions'
 import { usePhotoPicker } from '@/components/app/use-photo-picker'
 import { useDrawerData } from '@/components/drawers/drawer-data'
-import { PearSwitch, Tag, initials } from '@/components/pear'
+import { Avatar, PearSwitch, Tag, initials } from '@/components/pear'
 import { useSidebarData } from './use-sidebar-data'
 
 const ICONS: Record<AutomationKey, Icon> = { ia: Sparkle, disparos: PaperPlaneTilt, followup: ClockClockwise }
@@ -151,9 +151,13 @@ export function Sidebar() {
           )
           const body = (
             <>
-              <span className="grid h-9 w-9 flex-none place-items-center rounded-pill border border-dark-accent-700 bg-dark-accent-900">
-                <WhatsappLogo size={18} className="text-dark-accent-300" />
-              </span>
+              {sp.logoUrl ? (
+                <Avatar name={active ? user.empresa : sp.nome} size={36} src={sp.logoUrl} />
+              ) : (
+                <span className="grid h-9 w-9 flex-none place-items-center rounded-pill border border-dark-accent-700 bg-dark-accent-900">
+                  <WhatsappLogo size={18} className="text-dark-accent-300" />
+                </span>
+              )}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium leading-[1.25]">{active ? user.empresa : sp.nome}</span>
                 <span className="mt-[2px] block truncate text-[11.5px] text-dark-neutral-400">
