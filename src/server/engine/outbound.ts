@@ -49,7 +49,8 @@ export async function sendAndRecord(input: {
     }
     sent = await db.message.update({ where: { id: pending.id }, data: { providerMessageId, status: 'ENVIADA' } })
   } catch (e) {
-    await db.message.update({ where: { id: pending.id }, data: { status: 'FALHOU' } })
+    // Motivo curto e legível (sem dados do cliente: os erros de provedor já vêm sem o corpo da resposta).
+    await db.message.update({ where: { id: pending.id }, data: { status: 'FALHOU', failReason: shortError(e) } })
     if (input.emit !== false) {
       const item = await loadConversationItem(workspaceId, conversationId)
       if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })

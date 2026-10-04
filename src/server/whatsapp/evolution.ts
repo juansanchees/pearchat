@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { ConnectionStatusKind } from '@/lib/types'
-import { onlyDigits, recipientDigits, toE164 } from './phone'
+import { evolutionRecipient, onlyDigits, toE164 } from './phone'
 import { WhatsAppProviderError } from './provider'
 import type { ContactRef, FetchedMedia, OutboundMedia, WhatsAppProvider } from './provider'
 
@@ -49,6 +49,21 @@ async function evo(method: string, path: string, body?: unknown, timeoutMs = 15_
   }
   if (!res.ok) throw new WhatsAppProviderError(`Evolution API respondeu ${res.status}`, res.status, parsed)
   return parsed
+}
+
+/**
+ * evo() para envios: traduz a recusa "número fora do WhatsApp" (400 com `exists: false`) em um motivo legível, que vai para
+ * `Message.failReason`. O corpo da resposta nunca entra na mensagem (tem o número do cliente).
+ */
+async function evoSend(method: string, path: string, body: unknown, timeoutMs?: number): Promise<unknown> {
+  try {
+    return await evo(method, path, body, timeoutMs)
+  } catch (e) {
+    if (e instanceof WhatsAppProviderError && e.status === 400 && JSON.stringify(e.body ?? '').includes('"exists":false')) {
+      throw new WhatsAppProviderError('O WhatsApp não reconheceu este número', 400, null)
+    }
+    throw e
+  }
 }
 
 /**
@@ -264,8 +279,8 @@ export class EvolutionProvider implements WhatsAppProvider {
   }
 
   async sendText(workspaceId: string, to: ContactRef, text: string): Promise<{ providerMessageId: string }> {
-    const raw = await evo('POST', `/message/sendText/${encodeURIComponent(instanceNameFor(workspaceId))}`, {
-      number: recipientDigits(to),
+    const raw = await evoSend('POST', `/message/sendText/${encodeURIComponent(instanceNameFor(workspaceId))}`, {
+      number: evolutionRecipient(to),
       text,
     })
     const parsed = sendSchema.safeParse(raw)
@@ -275,11 +290,11 @@ export class EvolutionProvider implements WhatsAppProvider {
 
   /** POST /message/sendMedia: imagem, vídeo ou documento em base64 (a Evolution reprocessa imagens para JPEG). */
   async sendMedia(workspaceId: string, to: ContactRef, media: OutboundMedia): Promise<{ providerMessageId: string }> {
-    const raw = await evo(
+    const raw = await evoSend(
       'POST',
       `/message/sendMedia/${encodeURIComponent(instanceNameFor(workspaceId))}`,
       {
-        number: recipientDigits(to),
+        number: evolutionRecipient(to),
         mediatype: media.type,
         mimetype: media.mime,
         fileName: media.fileName,
@@ -298,10 +313,10 @@ export class EvolutionProvider implements WhatsAppProvider {
    * para ogg/opus com o ffmpeg embutido na imagem dela (@ffmpeg-installer): não precisa de ffmpeg no PearChat.
    */
   async sendAudio(workspaceId: string, to: ContactRef, media: OutboundMedia): Promise<{ providerMessageId: string }> {
-    const raw = await evo(
+    const raw = await evoSend(
       'POST',
       `/message/sendWhatsAppAudio/${encodeURIComponent(instanceNameFor(workspaceId))}`,
-      { number: recipientDigits(to), audio: media.data.toString('base64') },
+      { number: evolutionRecipient(to), audio: media.data.toString('base64') },
       90_000,
     )
     const parsed = sendSchema.safeParse(raw)
@@ -333,7 +348,7 @@ export class EvolutionProvider implements WhatsAppProvider {
    * foto privada ou inexistente vem como `profilePictureUrl: null` (não é erro).
    */
   async fetchProfilePicture(workspaceId: string, to: ContactRef): Promise<string | null> {
-    const raw = await evo('POST', `/chat/fetchProfilePictureUrl/${encodeURIComponent(instanceNameFor(workspaceId))}`, { number: recipientDigits(to) }, 15_000)
+    const raw = await evo('POST', `/chat/fetchProfilePictureUrl/${encodeURIComponent(instanceNameFor(workspaceId))}`, { number: evolutionRecipient(to) }, 15_000)
     const parsed = z.object({ profilePictureUrl: z.string().nullable().optional() }).passthrough().safeParse(raw)
     if (!parsed.success) throw new WhatsAppProviderError('Resposta inesperada da Evolution', 502, null)
     return parsed.data.profilePictureUrl || null

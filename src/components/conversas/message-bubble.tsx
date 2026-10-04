@@ -59,7 +59,7 @@ export function MessageBubble({
         ) : null}
         <div className="mt-1 flex items-center justify-end gap-1 text-right text-[10px] text-light-neutral-500">
           {message.status === 'falhou' ? (
-            <span className="flex items-center gap-0.5 text-[#b4372a]">
+            <span className="flex items-center gap-0.5 text-[#b4372a]" title={message.failReason ?? undefined}>
               <WarningCircle size={11} weight="fill" />
               Falha no envio
             </span>

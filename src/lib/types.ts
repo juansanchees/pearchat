@@ -50,6 +50,8 @@ export interface MessageDTO {
   /** Equipe: quem enviou pelo app (primeiro nome em senderNome). */
   senderUserId?: string | null
   senderNome?: string | null
+  /** Motivo curto da falha de envio (status 'falhou'); mostrado ao passar o mouse em "Falha no envio". */
+  failReason?: string | null
   mediaType?: MediaTypeKind | null
   mediaMime?: string | null
   mediaSize?: number | null

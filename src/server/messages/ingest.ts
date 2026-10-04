@@ -67,7 +67,20 @@ export async function findOrCreateContact(
     if (waUserId && !contact.waUserId) patch.waUserId = waUserId
     if (telefone && !contact.telefone) patch.telefone = telefone
     if (nome && contact.nome === (contact.telefone ?? contact.waUserId)) patch.nome = nome
-    return Object.keys(patch).length ? db.contact.update({ where: { id: contact.id }, data: patch }) : contact
+    if (!Object.keys(patch).length) return contact
+    try {
+      return await db.contact.update({ where: { id: contact.id }, data: patch })
+    } catch (e) {
+      // O telefone/LID informado já pertence a OUTRO contato do espaço (o mesmo cliente apareceu por LID e por telefone):
+      // não junta nada às cegas; segue com o contato encontrado, sem a parte em conflito (a mensagem não pode se perder).
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const rest: Prisma.ContactUpdateInput = { ...patch }
+        delete rest.telefone
+        delete rest.waUserId
+        return Object.keys(rest).length ? db.contact.update({ where: { id: contact.id }, data: rest }) : contact
+      }
+      throw e
+    }
   }
 
   try {

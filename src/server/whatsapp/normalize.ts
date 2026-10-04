@@ -359,10 +359,18 @@ const evoMessage = z
   })
   .passthrough()
 
+/** Parte do usuário de um JID, sem o sufixo de dispositivo ("5511999990000:12@s.whatsapp.net" -> "5511999990000"). */
+const jidUser = (jid: string): string => (jid.split('@')[0] ?? '').split(':')[0] ?? ''
+
+/**
+ * JID da Evolution/Baileys -> contato. `@lid` vira `waUserId` (o LID), NUNCA telefone; o telefone real só entra quando a
+ * Evolution o informa em `key.remoteJidAlt` (Baileys 7 / Evolution 2.3.x) ou `key.senderPn` (Baileys 6): `<tel>@s.whatsapp.net`.
+ */
 function jidToRef(jid: string, alt?: string): ContactRef | null {
-  const [user = '', host = ''] = jid.split('@')
+  const host = jid.split('@')[1] ?? ''
+  const user = jidUser(jid)
   if (host === 'lid') {
-    const phoneJid = alt && alt.endsWith('@s.whatsapp.net') ? alt.split('@')[0] : undefined
+    const phoneJid = alt && alt.endsWith('@s.whatsapp.net') ? jidUser(alt) : undefined
     const telefone = phoneJid && onlyDigits(phoneJid).length >= 8 ? toE164(phoneJid) : undefined
     return { waUserId: user, ...(telefone ? { telefone } : {}) }
   }

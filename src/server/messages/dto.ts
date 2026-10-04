@@ -15,6 +15,7 @@ export function toMessageDTO(m: Message, senderNome?: string | null): MessageDTO
     body: m.body,
     mediaUrl: m.mediaKey && m.mediaStatus === 'ok' ? `/api/media/${m.id}` : m.mediaUrl,
     status: m.status.toLowerCase() as MessageDTO['status'],
+    ...(m.status === 'FALHOU' && m.failReason ? { failReason: m.failReason } : {}),
     createdAt: m.createdAt.toISOString(),
     ...(m.mediaType && isMediaKind(m.mediaType)
       ? {
