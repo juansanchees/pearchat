@@ -7,7 +7,7 @@ export type ConnectionStatusKind = 'desconectado' | 'aguardando_qr' | 'conectand
 
 export type AutomationKey = 'ia' | 'disparos' | 'followup'
 
-export type DrawerKey = AutomationKey | 'config' | 'plano'
+export type DrawerKey = AutomationKey | 'config' | 'plano' | 'resultados'
 
 export type ConversationModeKind = 'ia' | 'humano'
 export type MessageAuthorKind = 'cliente' | 'user' | 'ia'

@@ -12,6 +12,7 @@ export const DRAWER_TITLES: Record<DrawerKey, string> = {
   ...AUTOMATION_TITLES,
   config: 'Configurações',
   plano: 'Plano e pagamento',
+  resultados: 'Resultados',
 }
 
 export const DRAWER_DESCRIPTIONS: Record<DrawerKey, string> = {
@@ -20,6 +21,7 @@ export const DRAWER_DESCRIPTIONS: Record<DrawerKey, string> = {
   followup: 'Retoma conversas de quem parou de responder',
   config: 'Perfil, empresa, avisos e conexões',
   plano: 'Uso do mês, troca de plano e faturas',
+  resultados: 'Como está o atendimento, a IA e a agenda',
 }
 
 export const fmtNum = (n: number) => n.toLocaleString('pt-BR')

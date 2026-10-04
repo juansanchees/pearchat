@@ -12,6 +12,8 @@ const PUBLIC_PAGES = ['/login', '/registro', '/recuperar-senha', '/redefinir-sen
 export default auth((req) => {
   const { pathname } = req.nextUrl
   if (OPEN_PAGES.includes(pathname)) return NextResponse.next()
+  // Link público de agendamento: página e API sem login (o cliente final não tem conta).
+  if (pathname.startsWith('/a/') || pathname.startsWith('/api/public/')) return NextResponse.next()
   const isPublic = PUBLIC_PAGES.includes(pathname)
   const loggedIn = !!req.auth
 

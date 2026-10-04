@@ -21,6 +21,8 @@ export interface EventDto {
   contactId: string | null
   /** Tipo de atendimento escolhido (o texto `tipo` guarda o nome na hora do agendamento). */
   serviceTypeId?: string | null
+  /** 'link' = veio da página pública de agendamento. */
+  canal?: 'link' | null
   /** Nome do contato; null = "Cliente sem nome". */
   cliente: string | null
   /** true se o evento existe no Google Agenda (googleEventId preenchido). */

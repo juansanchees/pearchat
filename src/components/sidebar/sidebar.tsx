@@ -11,6 +11,7 @@ import {
   ClockClockwise,
   CloudCheck,
   CrownSimple,
+  ChartBar,
   GearSix,
   GoogleLogo,
   Hand,
@@ -384,6 +385,7 @@ export function Sidebar() {
       <nav className="mt-3 flex flex-col gap-[2px] border-t border-dark-divider px-4 pb-1 pt-3" aria-label="Conta">
         {(
           [
+            { key: 'resultados', label: 'Resultados', Ico: ChartBar, tag: null },
             { key: 'config', label: 'Configurações', Ico: GearSix, tag: null },
             { key: 'plano', label: 'Plano e pagamento', Ico: CrownSimple, tag: plano },
           ] as const

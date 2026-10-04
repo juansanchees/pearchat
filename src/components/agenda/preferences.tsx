@@ -3,6 +3,7 @@
 import { CaretRight, Check, GoogleLogo, Info, PencilSimple, Plus } from '@phosphor-icons/react'
 import { cn } from '@/lib/utils'
 import type { Lembrete } from '@/server/calendar/types'
+import { BookingLinkSettings } from './booking-link-settings'
 import { DUR_OPTS, LEMBRETE_OPTS } from './data'
 
 /** Card "Preferências": duração padrão, nota do WhatsApp oficial, lembretes e rodapé com a conta Google. */
@@ -91,6 +92,7 @@ export function Preferences({
           )
         })}
       </div>
+      <BookingLinkSettings />
       <div className="flex items-center gap-2.5 border-0 border-t border-solid border-light-divider pt-2.5">
         <GoogleLogo size={15} className="flex-none text-light-accent-300" />
         <div className="min-w-0 flex-1 truncate text-[11.5px] text-light-neutral-400" title={email}>
