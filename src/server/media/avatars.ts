@@ -37,7 +37,7 @@ export function avatarIdFromUrl(url: string | null | undefined): string | null {
 export const avatarMime = (id: string): string => TYPES[id.slice(-1) as Marker].mime
 
 // Fotos de perfil ficam em `avatars/<userId>/`; logos de negócio, no mesmo formato, em `logos/<workspaceId>/`.
-type Dir = 'avatars' | 'logos'
+type Dir = 'avatars' | 'logos' | 'contact-photos'
 
 function avatarPath(userId: string, id: string, dir: Dir = 'avatars'): string {
   if (!USER_RE.test(userId) || !isAvatarId(id)) throw new Error('Avatar inválido')
@@ -106,6 +106,20 @@ export function logoIdFromUrl(url: string | null | undefined): string | null {
 export const putLogo = (workspaceId: string, data: Buffer, marker: Marker): Promise<string> => putAvatar(workspaceId, data, marker, 'logos')
 export const deleteLogo = (workspaceId: string, id: string): Promise<void> => deleteAvatar(workspaceId, id, 'logos')
 export const openLogo = (workspaceId: string, id: string) => openAvatar(workspaceId, id, 'logos')
+
+// ---- Foto de contato (WhatsApp), por espaço: `contact-photos/<workspaceId>/<id>.<ext>`; mesmas regras de formato ----
+export const CONTACT_PHOTO_URL_PREFIX = '/api/contact-photo/'
+export const contactPhotoUrl = (id: string): string => `${CONTACT_PHOTO_URL_PREFIX}${id}`
+export const putContactPhoto = (workspaceId: string, data: Buffer, marker: Marker): Promise<string> => putAvatar(workspaceId, data, marker, 'contact-photos')
+export const deleteContactPhoto = (workspaceId: string, id: string): Promise<void> => deleteAvatar(workspaceId, id, 'contact-photos')
+export const openContactPhoto = (workspaceId: string, id: string) => openAvatar(workspaceId, id, 'contact-photos')
+/** Id da foto de uma `Contact.photoUrl` do PearChat, ou null. */
+export function contactPhotoIdFromUrl(url: string | null | undefined): string | null {
+  if (!url || !url.startsWith(CONTACT_PHOTO_URL_PREFIX)) return null
+  const id = url.slice(CONTACT_PHOTO_URL_PREFIX.length)
+  return isAvatarId(id) ? id : null
+}
+export type { Marker as AvatarMarker }
 
 /** Lê o corpo com teto de bytes ANTES de montar o multipart (não carrega um upload gigante na memória). null = estourou. */
 export async function readBodyCapped(req: Request, max: number): Promise<Buffer | null> {

@@ -21,6 +21,8 @@ export type ContactDTO = {
   /** última mensagem da conversa; sem conversa, a data de cadastro */
   lastContactAt: string | null
   conversationId: string | null
+  /** Foto do WhatsApp copiada pelo servidor (/api/contact-photo/<id>); null = só iniciais. */
+  photoUrl: string | null
 }
 
 export type ContactCounts = { todos: number; clientes: number; leads: number; vip: number }

@@ -36,6 +36,11 @@ export interface WhatsAppProvider {
   sendMedia?(workspaceId: string, to: ContactRef, media: OutboundMedia): Promise<{ providerMessageId: string }>
   /** Opcional: envia áudio como mensagem de voz. */
   sendAudio?(workspaceId: string, to: ContactRef, media: OutboundMedia): Promise<{ providerMessageId: string }>
+  /**
+   * Opcional: URL da foto de perfil do contato (null = sem foto ou privada). A URL expira: o chamador baixa a imagem na hora
+   * (src/server/contacts/photo.ts). A API oficial não entrega foto de cliente: não implementa.
+   */
+  fetchProfilePicture?(workspaceId: string, contact: ContactRef): Promise<string | null>
   /** Opcional: baixa a mídia de uma mensagem recebida, SÓ pelo provedor configurado (nunca por URL vinda do webhook). */
   fetchMedia?(
     workspaceId: string,

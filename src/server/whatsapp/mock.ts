@@ -69,6 +69,17 @@ export class MockProvider implements WhatsAppProvider {
     return { data: fx.data, mime: fx.mime, fileName: fx.fileName }
   }
 
+  /**
+   * Foto de teste: só quando WA_MOCK_PHOTO_BASE aponta para um servidor de imagens de teste (os testes usam 127.0.0.1:3049).
+   * O final do número escolhe a imagem: terminado em 0 = sem foto (privada); sem a variável, ninguém tem foto.
+   */
+  async fetchProfilePicture(_workspaceId: string, to: ContactRef): Promise<string | null> {
+    const base = process.env.WA_MOCK_PHOTO_BASE?.trim()
+    const digits = (to.telefone ?? '').replace(/\D/g, '')
+    if (!base || !digits || digits.endsWith('0')) return null
+    return `${base.replace(/\/+$/, '')}/${digits}`
+  }
+
   async sendTemplate(workspaceId: string, to: ContactRef, _templateName: string, _vars: string[]) {
     return this.sendText(workspaceId, to, '')
   }

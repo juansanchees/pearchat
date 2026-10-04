@@ -1,6 +1,7 @@
 import { Tag } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import { formatLastContact, sigla } from './format'
+import { PhotoLayer } from '@/components/conversas/contact-avatar'
 import type { Contact } from './types'
 
 export function ContactRow({
@@ -27,11 +28,12 @@ export function ContactRow({
       <span
         aria-hidden="true"
         className={cn(
-          'grid h-[38px] w-[38px] flex-none place-items-center rounded-pill text-[12.5px] font-medium leading-none text-light-accent-200',
+          'relative grid h-[38px] w-[38px] flex-none place-items-center rounded-pill text-[12.5px] font-medium leading-none text-light-accent-200',
           active ? 'bg-light-accent-800' : 'bg-light-neutral-900',
         )}
       >
         {sigla(contact.name)}
+        <PhotoLayer src={contact.photoUrl} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-[7px]">

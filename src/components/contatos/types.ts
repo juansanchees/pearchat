@@ -14,6 +14,7 @@ export type Contact = {
   optOut: boolean
   lastContactAt: string | null
   conversationId: string | null
+  photoUrl?: string | null
 }
 
 export type ContactCounts = { todos: number; clientes: number; leads: number; vip: number }

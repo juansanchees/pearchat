@@ -20,6 +20,7 @@ import { registerManualReply } from './takeover'
 import { notifySpaceAttention } from '@/server/spaces/attention'
 import { handleReminderReply } from '@/server/calendar/confirmation'
 import { isNonReplyableBody } from '@/server/whatsapp/labels'
+import { maybeQueuePhoto } from '@/server/contacts/photo'
 
 /** Campos de mídia de uma Message nova (metadados do webhook; o arquivo vem depois). */
 function mediaColumns(media: NormalizedMedia, opts: { imported: boolean; direction: 'IN' | 'OUT' }) {
@@ -116,6 +117,8 @@ export async function ingestInboundMessage(input: {
   if (dup) return
 
   const contact = await findOrCreateContact(workspaceId, from, nome)
+  // Foto do WhatsApp (sem foto verificada nos últimos 7 dias): busca em segundo plano, fora do caminho da mensagem.
+  maybeQueuePhoto(workspaceId, contact)
 
   // Pedido de saída ("parar", "pare", "não quero mais receber", "me tira da lista"...): vale com a IA ligada ou
   // desligada. A detecção normaliza acento/pontuação e evita falso positivo ("vou parar aí na loja").

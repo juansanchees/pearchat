@@ -69,7 +69,7 @@ export function ChatHeader({
           <CaretLeft size={16} aria-hidden="true" />
         </button>
       ) : null}
-      <ContactAvatar name={conversation.nome} size={40} />
+      <ContactAvatar name={conversation.nome} size={40} photoUrl={conversation.photoUrl} />
       <div className="min-w-[160px] flex-1">
         <div className="text-[14.5px] font-medium leading-tight">{conversation.nome}</div>
         <div className="mt-0.5 text-[11.5px] text-light-neutral-500">{formatPhone(conversation.telefone)}</div>
