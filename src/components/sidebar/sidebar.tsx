@@ -414,7 +414,11 @@ export function Sidebar() {
           title="Trocar foto"
           aria-label="Trocar foto"
           onClick={photo.open}
-          className="relative grid h-9 w-9 flex-none place-items-center rounded-pill border border-dark-accent-700 bg-dark-accent-800 p-0 text-[12px] font-medium leading-none text-dark-accent-200 hover:border-dark-accent-400"
+          aria-busy={photo.uploading}
+          className={cn(
+            'relative grid h-9 w-9 flex-none place-items-center rounded-pill border border-dark-accent-700 bg-dark-accent-800 p-0 text-[12px] font-medium leading-none text-dark-accent-200 hover:border-dark-accent-400',
+            photo.uploading && 'animate-pulse opacity-60',
+          )}
         >
           {user.fotoUrl ? (
             <span className="block h-full w-full rounded-pill bg-cover bg-center" style={{ backgroundImage: `url(${user.fotoUrl})` }} />

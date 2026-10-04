@@ -31,9 +31,7 @@ export const settingsSchema = z.object({
 export type SettingsInput = z.infer<typeof settingsSchema>
 
 /**
- * Perfil + empresa + avisos. A foto de perfil fica fora daqui.
- * TODO(foto): ainda não há storage de arquivos; a foto continua só no navegador (use-photo-picker) e
- * User.fotoUrl não é gravado. Quando houver storage (S3/Supabase Storage), subir o arquivo e salvar a URL aqui.
+ * Perfil + empresa + avisos. A foto de perfil fica fora daqui (POST/DELETE /api/me/avatar).
  */
 export async function getSettings(userId: string, workspaceId: string): Promise<SettingsDTO> {
   const [user, ws] = await Promise.all([

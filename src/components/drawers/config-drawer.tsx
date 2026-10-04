@@ -40,7 +40,7 @@ export function ConfigDrawer() {
     }
   }, [])
 
-  // A foto não é gravada aqui: ainda não há storage de arquivos (TODO: subir a imagem e salvar User.fotoUrl).
+  // A foto é enviada na hora pelo usePhotoPicker (POST /api/me/avatar); aqui só nome, e-mail, negócio e avisos.
   const salvar = async () => {
     const saved = await api<SettingsDTO>('/api/settings', {
       method: 'PUT',
@@ -61,10 +61,15 @@ export function ConfigDrawer() {
           <button type="button" title="Trocar foto" aria-label="Trocar foto" onClick={photo.open} className="rounded-pill p-0">
             <Avatar name={user.nome} size={56} src={user.fotoUrl} className="text-[17px]" />
           </button>
-          <button type="button" className="pc-btn pc-btn-secondary !text-[12px]" onClick={photo.open}>
+          <button type="button" className="pc-btn pc-btn-secondary !text-[12px]" disabled={photo.uploading} onClick={photo.open}>
             <Camera size={14} />
-            Trocar foto
+            {photo.uploading ? 'Enviando…' : 'Trocar foto'}
           </button>
+          {photo.hasOwn && (
+            <button type="button" className="pc-btn pc-btn-ghost !text-[12px]" disabled={photo.uploading} onClick={() => void photo.remove()}>
+              Remover foto
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap gap-3">
           <Field label="Seu nome" className="min-w-0 flex-[1_1_180px]">
