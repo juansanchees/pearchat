@@ -115,6 +115,7 @@ model Workspace {
   invoices           Invoice[]
   usageCounters      UsageCounter[]
   aiJobs             AiJob[]
+  quickReplies       QuickReply[]
 
   // Link público de agendamento (Etapa 4): /a/<slug>. Desligado por padrão; o slug é gerado ao ativar.
   slug                    String?  @unique
@@ -597,4 +598,24 @@ model RecoveryCode {
 
   @@index([userId])
   @@index([codeHash])
+}
+
+// ---- Respostas rápidas (migração 0013) ----
+
+// Atalhos de texto do composer ("/pix"). Por espaço (cada WhatsApp tem as suas).
+model QuickReply {
+  id          String   @id @default(cuid())
+  workspaceId String
+  atalho      String
+  titulo      String?
+  texto       String
+  ordem       Int      @default(0)
+  usos        Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, atalho])
+  @@index([workspaceId, ordem])
 }
