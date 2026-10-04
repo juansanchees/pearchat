@@ -3,7 +3,7 @@ import type { MessageDTO } from '@/lib/types'
 import { OutboundError, contactRef, sendAndRecord } from '@/server/engine/outbound'
 import { getConnected, shortError, templateFirstName } from '@/server/engine/util'
 import { countTemplateVars, templateUnsupportedReason } from '@/server/whatsapp/template-rules'
-import { toMessageDTO } from './dto'
+import { senderFirstNames, toMessageDTO } from './dto'
 import { SendError } from './send'
 import { registerManualReply } from './takeover'
 
@@ -49,7 +49,7 @@ export async function getWindowInfo(workspaceId: string, conversationId: string)
 }
 
 /** Envia um modelo APROVADO ao contato da conversa (resposta fora da janela). Conta como resposta manual. */
-export async function sendUserTemplate(input: { workspaceId: string; conversationId: string; templateId: string; vars: string[] }): Promise<MessageDTO> {
+export async function sendUserTemplate(input: { workspaceId: string; conversationId: string; templateId: string; vars: string[]; userId?: string }): Promise<MessageDTO> {
   const { workspaceId, conversationId } = input
   const conversation = await db.conversation.findFirst({ where: { id: conversationId, workspaceId }, include: { contact: true } })
   if (!conversation) throw new SendError('NAO_ENCONTRADA', 404, 'Conversa não encontrada')
@@ -70,9 +70,10 @@ export async function sendUserTemplate(input: { workspaceId: string; conversatio
       to: contactRef(conversation.contact),
       author: 'USER',
       content: { kind: 'template', name: tpl.name, vars, body },
+      senderUserId: input.userId,
     })
-    await registerManualReply({ conversationId, currentMode: conversation.mode, at: sent.createdAt })
-    return toMessageDTO(sent)
+    await registerManualReply({ conversationId, currentMode: conversation.mode, at: sent.createdAt, userId: input.userId })
+    return toMessageDTO(sent, (await senderFirstNames([sent])).get(input.userId ?? ''))
   } catch (e) {
     if (e instanceof OutboundError) throw new SendError('ENVIO_FALHOU', 502, e.message)
     throw new SendError('ENVIO_FALHOU', 502, shortError(e))

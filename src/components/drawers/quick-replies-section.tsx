@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, Check, PencilSimple, Plus, Trash } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
+import { usePermissions } from '@/components/app/use-permissions'
 import { QR_ATALHO_MAX, QR_MAX_PER_SPACE, QR_TEXTO_MAX, parseAtalho } from '@/lib/quick-replies'
 import type { QuickReplyDTO, QuickReplyList } from '@/lib/quick-replies'
 import { api } from './api'
@@ -16,6 +17,8 @@ type Draft = { id: string | null; atalho: string; texto: string }
 // Seção "Respostas rápidas" das Configurações: atalhos de texto do composer ("/pix"), por WhatsApp.
 export function QuickRepliesSection() {
   const { toast } = useAppState()
+  // Equipe: o atendente só usa as respostas (modo leitura); criar/editar/excluir/reordenar é do dono e do administrador.
+  const manage = usePermissions().can('quickreplies.manage')
   const [items, setItems] = useState<QuickReplyDTO[] | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
@@ -151,7 +154,7 @@ export function QuickRepliesSection() {
       <Section
         label="Respostas rápidas"
         aside={
-          <button
+          !manage ? null : <button
             type="button"
             className="pc-btn pc-btn-ghost !text-[12px]"
             disabled={!items || !!draft || items.length >= QR_MAX_PER_SPACE}
@@ -165,9 +168,10 @@ export function QuickRepliesSection() {
         <div className="text-[11.5px] text-light-neutral-500">
           Digite <span className="font-mono">/</span> na conversa para inserir. Variáveis: {'{primeiro_nome}'}, {'{nome}'}, {'{empresa}'} e {'{horario}'} (o horário de atendimento deste WhatsApp).
         </div>
+        {!manage ? <div className="text-[11.5px] text-light-neutral-500">Somente leitura: quem administra o WhatsApp cria e edita as respostas.</div> : null}
         {draft && !draft.id ? editor : null}
         {items === null ? <div className="text-[12px] text-light-neutral-500">Carregando…</div> : null}
-        {items?.length === 0 && !draft ? <div className="text-[12px] text-light-neutral-500">Nenhuma resposta ainda. Crie a primeira em &quot;Nova resposta&quot;.</div> : null}
+        {items?.length === 0 && !draft ? <div className="text-[12px] text-light-neutral-500">{manage ? 'Nenhuma resposta ainda. Crie a primeira em "Nova resposta".' : 'Nenhuma resposta cadastrada neste WhatsApp.'}</div> : null}
         {items?.map((it, i) =>
           draft?.id === it.id ? (
             <div key={it.id}>{editor}</div>
@@ -186,7 +190,7 @@ export function QuickRepliesSection() {
                       Manter
                     </button>
                   </>
-                ) : (
+                ) : manage ? (
                   <>
                     <button type="button" className={iconBtn} title="Subir" aria-label={`Subir /${it.atalho}`} disabled={busy || i === 0} onClick={() => void move(i, -1)}>
                       <ArrowUp size={14} />
@@ -207,7 +211,7 @@ export function QuickRepliesSection() {
                       <Trash size={14} />
                     </button>
                   </>
-                )}
+                ) : null}
               </div>
               {/* Texto puro: o React escapa, nunca é interpretado como HTML. */}
               <div className="line-clamp-2 whitespace-pre-wrap break-words text-[12.5px] text-light-neutral-500">{it.texto}</div>

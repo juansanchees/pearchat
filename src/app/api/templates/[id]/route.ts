@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { db } from '@/lib/db'
 import { apiSession, fail, notFound, unauthorized } from '@/server/settings/http'
 import { deleteTemplate, TemplateError } from '@/server/whatsapp/templates'
@@ -9,6 +10,7 @@ type Ctx = { params: { id: string } }
 
 // Exclui o modelo (na Meta, se existir lá, e no PearChat).
 export async function DELETE(_req: Request, { params }: Ctx) {
+  const deny = await denyUnless('campaigns.manage'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(params.id)) return notFound('Modelo')

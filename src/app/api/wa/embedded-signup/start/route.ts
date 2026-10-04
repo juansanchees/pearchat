@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { getApiSession } from '@/server/whatsapp/auth'
 import { connectConfig, hostedSignupUrl } from '@/server/whatsapp/config'
 import { assertOficialAllowed, ConnectError, createSignupState } from '@/server/whatsapp/meta-connect'
@@ -9,6 +10,7 @@ export const dynamic = 'force-dynamic'
 // Inicia o Cadastro incorporado: devolve um `state` de uso único (ligado ao usuário e ao workspace) e o link hospedado.
 // O navegador pré-carrega o state para poder chamar FB.login direto no clique (sem popup bloqueado).
 export async function POST() {
+  const deny = await denyUnless('wa.manage'); if (deny) return deny
   const session = await getApiSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   const cfg = connectConfig()

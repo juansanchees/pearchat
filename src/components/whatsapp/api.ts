@@ -37,7 +37,7 @@ export const waApi = {
     request('POST', '/api/wa/embedded-signup/callback', payload),
   /** Fluxo hospedado: procura o cadastro concluído na Meta. */
   hostedCheck: (payload: { state: string; numero: string }) =>
-    request<{ status: 'waiting' } | { status: 'connected'; dto: WhatsAppStatusDTO }>('POST', '/api/wa/embedded-signup/hosted/check', payload),
+    request<{ status: 'waiting' } | { status: 'ambiguous'; message: string } | { status: 'connected'; dto: WhatsAppStatusDTO }>('POST', '/api/wa/embedded-signup/hosted/check', payload),
 }
 
 /** Mensagem amigável a partir de qualquer erro. */

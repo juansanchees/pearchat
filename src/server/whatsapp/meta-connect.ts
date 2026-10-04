@@ -60,11 +60,25 @@ export async function consumeSignupState(id: string, workspaceId: string, userId
   return r.count === 1
 }
 
-/** Confere (sem consumir) que o state é válido para este usuário/workspace; devolve a hora de criação. */
-export async function peekSignupState(id: string, workspaceId: string, userId: string): Promise<Date | null> {
+/** Confere (sem consumir) que o state é válido para este usuário/workspace (e, se pedido, do modo certo); devolve a hora de criação. */
+export async function peekSignupState(id: string, workspaceId: string, userId: string, mode?: 'sdk' | 'hosted'): Promise<Date | null> {
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(id)) return null
-  const row = await db.metaSignupState.findFirst({ where: { id, workspaceId, userId, usedAt: null, expiraEm: { gt: new Date() } } })
+  const row = await db.metaSignupState.findFirst({ where: { id, workspaceId, userId, usedAt: null, expiraEm: { gt: new Date() }, ...(mode ? { mode } : {}) } })
   return row ? row.createdAt : null
+}
+
+/**
+ * Quantos workspaces tinham um cadastro hospedado ABERTO (não usado, não vencido) criado antes de `eventAt`.
+ * Se for mais de um, não dá para saber de quem é o evento da Meta: ninguém o reivindica automaticamente.
+ */
+export async function countHostedCandidates(eventAt: Date): Promise<number> {
+  const rows = await db.metaSignupState.findMany({
+    where: { mode: 'hosted', usedAt: null, expiraEm: { gt: new Date() }, createdAt: { lte: eventAt } },
+    select: { workspaceId: true },
+    distinct: ['workspaceId'],
+    take: 5,
+  })
+  return rows.length
 }
 
 export type CompleteInput = {

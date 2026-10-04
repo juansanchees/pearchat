@@ -162,6 +162,7 @@ export function OficialRealFlow({ onBack }: { onBack: () => void }) {
       const r = await waApi.hostedCheck({ state: st.id, numero })
       if (!alive.current) return
       if (r.status === 'connected') done(r.dto)
+      else if (r.status === 'ambiguous') setError(r.message)
     } catch (e) {
       if (alive.current) failWith(errMessage(e))
     }

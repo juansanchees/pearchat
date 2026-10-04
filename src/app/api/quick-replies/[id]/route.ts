@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { isValidId } from '@/server/messages/api'
 import { apiSession, fail, notFound, parseBody, unauthorized } from '@/server/settings/http'
 import { deleteQuickReply, QuickReplyError, updateQuickReply, updateSchema } from '@/server/quick-replies/service'
@@ -6,6 +7,7 @@ import { deleteQuickReply, QuickReplyError, updateQuickReply, updateSchema } fro
 export const dynamic = 'force-dynamic'
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const deny = await denyUnless('quickreplies.manage'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   if (!isValidId(params.id)) return notFound('Resposta')
@@ -20,6 +22,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const deny = await denyUnless('quickreplies.manage'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   if (!isValidId(params.id)) return notFound('Resposta')

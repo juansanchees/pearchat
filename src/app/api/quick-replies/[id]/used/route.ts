@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { isValidId } from '@/server/messages/api'
 import { apiSession, fail, notFound, unauthorized } from '@/server/settings/http'
 import { markQuickReplyUsed, QuickReplyError } from '@/server/quick-replies/service'
@@ -6,6 +7,7 @@ import { markQuickReplyUsed, QuickReplyError } from '@/server/quick-replies/serv
 export const dynamic = 'force-dynamic'
 
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
+  const deny = await denyUnless('quickreplies.use'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   if (!isValidId(params.id)) return notFound('Resposta')

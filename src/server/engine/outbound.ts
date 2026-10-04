@@ -1,6 +1,6 @@
 import type { Message, MessageAuthor } from '@prisma/client'
 import { db } from '@/lib/db'
-import { loadConversationItem, toMessageDTO } from '@/server/messages/dto'
+import { loadConversationItem, senderFirstNames, toMessageDTO } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { getProvider } from '@/server/whatsapp'
 import type { ContactRef } from '@/server/whatsapp'
@@ -26,13 +26,15 @@ export async function sendAndRecord(input: {
   countAtendimento?: boolean
   /** Emite 'message.received' + 'conversation.updated' (padrão: true). */
   emit?: boolean
+  /** Pessoa da equipe que enviou (Equipe: autoria da mensagem). Vazio nos envios automáticos. */
+  senderUserId?: string
 }): Promise<Message> {
   const { session, conversationId, to, author, content } = input
   const { workspaceId } = session
   const now = new Date()
   const body = content.kind === 'text' ? content.text : content.body
   const pending = await db.message.create({
-    data: { conversationId, direction: 'OUT', author, body, status: 'PENDENTE', createdAt: now },
+    data: { conversationId, direction: 'OUT', author, body, status: 'PENDENTE', createdAt: now, senderUserId: input.senderUserId ?? null },
   })
 
   const provider = getProvider(session.kind)
@@ -59,7 +61,7 @@ export async function sendAndRecord(input: {
   if (session.official && input.countAtendimento) await bumpUsage(workspaceId, { mensagensAtendimento: 1 })
 
   if (input.emit !== false) {
-    emitToWorkspace(workspaceId, 'message.received', { workspaceId, conversationId, message: toMessageDTO(sent) })
+    emitToWorkspace(workspaceId, 'message.received', { workspaceId, conversationId, message: toMessageDTO(sent, (await senderFirstNames([sent])).get(input.senderUserId ?? '')) })
     const item = await loadConversationItem(workspaceId, conversationId)
     if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })
   }
