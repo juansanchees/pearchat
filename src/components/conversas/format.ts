@@ -47,3 +47,10 @@ export function formatDayLabel(iso: string): string {
   if (diff === 1) return 'Ontem'
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
 }
+
+/** 1,2 MB / 340 KB / 800 B. */
+export function formatBytes(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`
+  return `${n} B`
+}

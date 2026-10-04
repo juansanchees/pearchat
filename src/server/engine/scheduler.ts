@@ -4,6 +4,8 @@ import { runDueCampaigns } from './campaigns'
 import { planFollowUps, runDueFollowUps } from './followup'
 import { runDueReminders } from './reminders'
 import { runDueHistoryImports } from '@/server/whatsapp/history-import'
+import { runDueMediaDownloads } from '@/server/media/receive'
+import { runDueTranscriptions } from './transcribe'
 import { engineDisabled, log, logError } from './util'
 
 // Agendador em processo, baseado no banco (sem Redis). A cada 5 s executa as tarefas devidas.
@@ -19,6 +21,7 @@ export type TickSummary = {
   lembretes: { enviados: number }
   agenda: { sincronizadas: number }
   historico: { importacoes: number }
+  midia: { downloads: number; transcricoes: number }
   ignoradas: string[]
 }
 
@@ -46,7 +49,7 @@ async function task<T>(name: string, fallback: T, fn: () => Promise<T>, skipped:
 /** Um ciclo completo. Também usado pela rota de desenvolvimento /api/dev/engine/tick. */
 export async function runTick(): Promise<TickSummary> {
   const ignoradas: string[] = []
-  const [ia, disparos, followup, lembretes, agenda, historico] = await Promise.all([
+  const [ia, disparos, followup, lembretes, agenda, historico, midia] = await Promise.all([
     task('ia', { varridas: 0, executadas: 0 }, async () => {
         // Primeiro responde o que já venceu; a varredura (mais lenta) não atrasa a resposta.
         const executadas = await runDueAiJobs()
@@ -64,8 +67,10 @@ export async function runTick(): Promise<TickSummary> {
     task('agenda', { sincronizadas: 0 }, async () => ({ sincronizadas: await runCalendarSync() }), ignoradas),
     // Histórico do WhatsApp: passagens incrementais depois de conectar (1, 3, 10 e 30 min).
     task('historico', { importacoes: 0 }, async () => ({ importacoes: await runDueHistoryImports() }), ignoradas),
+    // Mídia: retoma downloads e transcrições que ficaram pendentes (servidor reiniciou no meio).
+    task('midia', { downloads: 0, transcricoes: 0 }, async () => ({ downloads: await runDueMediaDownloads(), transcricoes: await runDueTranscriptions() }), ignoradas),
   ])
-  return { ia, disparos, followup, lembretes, agenda, historico, ignoradas }
+  return { ia, disparos, followup, lembretes, agenda, historico, midia, ignoradas }
 }
 
 /** Inicia o laço (uma vez por processo). Desligável com ENGINE_DISABLED=true. */

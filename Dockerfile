@@ -26,9 +26,12 @@ RUN npx prisma generate && npm run build
 FROM base AS runtime
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3000
+    PORT=3000 \
+    MEDIA_DIR=/data/media
 # node_modules completo de propósito: tsx (runtime) e prisma CLI (migrate deploy) precisam estar presentes.
 COPY --from=builder --chown=node:node /app /app
+# Mídias das conversas (volume pearchat_media): precisa existir e pertencer ao usuário não-root; o volume nomeado herda isto.
+RUN mkdir -p /data/media && chown -R node:node /data
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \

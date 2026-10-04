@@ -1,10 +1,36 @@
 'use client'
 
-import { Sparkle } from '@phosphor-icons/react'
+import { Camera, FileText, Microphone, Sparkle, Sticker, VideoCamera } from '@phosphor-icons/react'
+import type { ReactNode } from 'react'
+import { formatDuration } from '@/server/media/mime'
 import { cn } from '@/lib/utils'
 import { ContactAvatar } from './contact-avatar'
 import { formatListTime } from './format'
 import type { ConversationItem as Item } from './types'
+
+/** Prévia de mídia na lista: ícone Phosphor + rótulo (Foto, Áudio 0:12, Vídeo, Documento) ou a legenda. */
+function mediaPreview(media: NonNullable<Item['lastMessageMedia']>, caption: string): ReactNode {
+  const icon = {
+    image: <Camera size={13} className="shrink-0" />,
+    audio: <Microphone size={13} className="shrink-0" />,
+    video: <VideoCamera size={13} className="shrink-0" />,
+    document: <FileText size={13} className="shrink-0" />,
+    sticker: <Sticker size={13} className="shrink-0" />,
+  }[media.type]
+  const label = {
+    image: 'Foto',
+    audio: media.durationSec ? `Áudio ${formatDuration(media.durationSec)}` : 'Áudio',
+    video: 'Vídeo',
+    document: 'Documento',
+    sticker: 'Figurinha',
+  }[media.type]
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 align-middle">
+      {icon}
+      <span className="truncate">{caption || label}</span>
+    </span>
+  )
+}
 
 export function ConversationItem({
   item,
@@ -56,7 +82,16 @@ export function ConversationItem({
           <span
             className={cn('flex-1 truncate text-xs', item.typing ? 'text-light-accent-300' : 'text-light-neutral-500')}
           >
-            {item.typing ? `${agentName} está digitando…` : `${prefix}${item.lastMessagePreview ?? ''}`}
+            {item.typing ? (
+              `${agentName} está digitando…`
+            ) : item.lastMessageMedia ? (
+              <span className="flex items-center gap-1">
+                {prefix ? <span className="shrink-0">{prefix}</span> : null}
+                {mediaPreview(item.lastMessageMedia, item.lastMessagePreview ?? '')}
+              </span>
+            ) : (
+              `${prefix}${item.lastMessagePreview ?? ''}`
+            )}
           </span>
           {hasUnread ? (
             <span className="h-[18px] min-w-[18px] rounded-pill bg-light-accent-fill px-[5px] text-center text-[10.5px] font-medium leading-[18px] text-white">

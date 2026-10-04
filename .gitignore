@@ -44,3 +44,6 @@ next-env.d.ts
 # deploy (segredos de producao)
 deploy/.env.production
 .claude/
+
+# mídias locais das conversas (MEDIA_DIR em desenvolvimento)
+/.media/

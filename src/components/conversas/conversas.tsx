@@ -29,6 +29,9 @@ export default function Conversas(): JSX.Element {
   const history = useHistoryImport(c.reloadList)
   // Abaixo de 900 px a grade vira coluna única: lista -> conversa.
   const [showChat, setShowChat] = useState(false)
+  // Arrastar um arquivo para a área da conversa: vira o anexo do campo de mensagem.
+  const [dropped, setDropped] = useState<File | null>(null)
+  const [dragging, setDragging] = useState(false)
 
   const { loadingList, listError, items, activeId, select } = c
   useEffect(() => {
@@ -103,7 +106,24 @@ export default function Conversas(): JSX.Element {
         />
         </div>
 
-        <div className={cn('min-h-0 min-w-0 flex-col', showChat ? 'flex' : 'flex max-[899px]:hidden')}>
+        <div
+          className={cn('min-h-0 min-w-0 flex-col', showChat ? 'flex' : 'flex max-[899px]:hidden', dragging && 'outline-dashed outline-2 -outline-offset-4 outline-light-accent-500')}
+          onDragOver={(e) => {
+            if (!c.active || !Array.from(e.dataTransfer.types).includes('Files')) return
+            e.preventDefault()
+            setDragging(true)
+          }}
+          onDragLeave={(e) => {
+            if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+            setDragging(false)
+          }}
+          onDrop={(e) => {
+            setDragging(false)
+            if (!c.active || e.dataTransfer.files.length === 0) return
+            e.preventDefault()
+            setDropped(e.dataTransfer.files[0] ?? null)
+          }}
+        >
           {c.active ? (
             <>
               <ChatHeader
@@ -125,8 +145,16 @@ export default function Conversas(): JSX.Element {
                 onLoadOlder={() => void c.loadOlder()}
                 typing={c.active.typing}
                 agentName={agentName}
+                onRetryMedia={(id) => void c.retryMedia(id)}
               />
-              <Composer key={c.active.id} iaAnswering={iaAnswering} onSend={c.send} />
+              <Composer
+                key={c.active.id}
+                iaAnswering={iaAnswering}
+                onSend={c.send}
+                onSendMedia={c.sendMedia}
+                incomingFile={dropped}
+                onIncomingConsumed={() => setDropped(null)}
+              />
             </>
           ) : (
             <div

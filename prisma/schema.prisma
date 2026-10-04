@@ -265,6 +265,18 @@ model Message {
   // Veio da importação do histórico: o motor (IA, follow-up) não age sobre estas mensagens.
   imported          Boolean          @default(false)
   createdAt         DateTime         @default(now())
+  // Mídia (migration 0009): image | audio | video | document | sticker. Arquivo no MediaStore (`mediaKey`).
+  mediaType         String?
+  mediaMime         String?
+  mediaSize         Int?
+  mediaName         String?
+  mediaKey          String?
+  mediaDurationSec  Int?
+  // Transcrição de áudio recebido: pendente | feito | erro | indisponivel.
+  transcript        String?
+  transcriptStatus  String?
+  // Download/gravação do arquivo: pendente | ok | erro | expirada.
+  mediaStatus       String?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -487,6 +499,8 @@ model UsageCounter {
   mensagensAtendimento Int      @default(0)
   respostasIa          Int      @default(0)
   disparos             Int      @default(0)
+  // Segundos de áudio transcritos no mês.
+  transcricoesSeg      Int      @default(0)
   updatedAt            DateTime @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)

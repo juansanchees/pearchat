@@ -28,16 +28,29 @@ export interface ConversationListItem {
   lastMessageAt: string | null
 }
 
+export type MediaTypeKind = 'image' | 'audio' | 'video' | 'document' | 'sticker'
+export type MediaStatusKind = 'pendente' | 'ok' | 'erro' | 'expirada'
+export type TranscriptStatusKind = 'pendente' | 'feito' | 'erro' | 'indisponivel'
+
 export interface MessageDTO {
   id: string
   conversationId: string
   direction: MessageDirectionKind
   author: MessageAuthorKind
   body: string
+  /** Derivado: `/api/media/<id>` quando o arquivo está guardado (nunca uma URL pública). */
   mediaUrl: string | null
   status: MessageStatusKind
   /** ISO 8601 */
   createdAt: string
+  mediaType?: MediaTypeKind | null
+  mediaMime?: string | null
+  mediaSize?: number | null
+  mediaName?: string | null
+  mediaDurationSec?: number | null
+  mediaStatus?: MediaStatusKind | null
+  transcript?: string | null
+  transcriptStatus?: TranscriptStatusKind | null
 }
 
 export interface WhatsAppStatusDTO {
@@ -151,6 +164,8 @@ export interface BillingDTO {
   uso: {
     mensagensAtendimento: number
     respostasIa: number
+    /** Segundos de áudio transcritos no mês (soma da organização). */
+    transcricoesSeg: number
     disparos: number
     contatos: number
   }

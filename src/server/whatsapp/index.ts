@@ -17,5 +17,5 @@ export function getProvider(kind: ProviderKind): WhatsAppProvider {
   }
 }
 
-export type { WhatsAppProvider, ContactRef } from './provider'
-export { WhatsAppProviderError } from './provider'
+export type { WhatsAppProvider, ContactRef, OutboundMedia, FetchedMedia } from './provider'
+export { WhatsAppProviderError, ProviderUnsupportedError } from './provider'

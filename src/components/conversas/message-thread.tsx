@@ -20,6 +20,7 @@ export function MessageThread({
   onLoadOlder,
   typing,
   agentName,
+  onRetryMedia,
 }: {
   conversationId: string
   messages: MessageDTO[]
@@ -31,6 +32,7 @@ export function MessageThread({
   onLoadOlder: () => void
   typing: boolean
   agentName: string
+  onRetryMedia: (messageId: string) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -72,6 +74,11 @@ export function MessageThread({
       ref.current.scrollTop = ref.current.scrollHeight
     }
   }, [last?.id, lastIsMine])
+
+  // Mídia que termina de carregar aumenta a altura da conversa: quem estava no fim continua no fim.
+  function onMediaLoaded() {
+    if (stick.current && ref.current) ref.current.scrollTop = ref.current.scrollHeight
+  }
 
   function loadOlder() {
     prevHeight.current = ref.current?.scrollHeight ?? null
@@ -118,7 +125,7 @@ export function MessageThread({
                   {formatDayLabel(m.createdAt)}
                 </span>
               ) : null}
-              <MessageBubble message={m} agentName={agentName} />
+              <MessageBubble message={m} agentName={agentName} onRetryMedia={onRetryMedia} onMediaLoaded={onMediaLoaded} />
             </Fragment>
           ))}
           {typing ? (

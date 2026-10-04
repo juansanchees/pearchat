@@ -1,9 +1,24 @@
 import { z } from 'zod'
 import type { ConnectionStatusKind, MessageStatusKind } from '@/lib/types'
 import { onlyDigits, toE164 } from './phone'
+import { MEDIA_LABEL as LABEL_BY_KIND, type MediaKind } from '@/server/media/mime'
 import type { ContactRef } from './provider'
 
 // Normalização dos webhooks (Meta e Evolution) em tipos comuns. Funções puras: sem I/O.
+
+/** Metadados de uma mídia vista no webhook (o arquivo é baixado depois, em segundo plano). */
+export type NormalizedMedia = {
+  type: MediaKind
+  mime?: string
+  size?: number
+  name?: string
+  durationSec?: number
+  caption?: string
+  /** Só quando a Evolution foi configurada com base64 no webhook (não é o nosso caso por padrão). */
+  inlineBase64?: string
+  /** JID do chat (ajuda a Evolution a achar a mensagem ao baixar). */
+  remoteJid?: string
+}
 
 export type NormalizedInbound = {
   from: ContactRef
@@ -11,6 +26,7 @@ export type NormalizedInbound = {
   body: string
   providerMessageId: string
   timestamp: Date
+  media?: NormalizedMedia
 }
 /** Mensagem enviada pelo próprio dono, direto no app do WhatsApp (celular), vista pelo webhook como `fromMe`. */
 export type NormalizedOutbound = {
@@ -19,6 +35,7 @@ export type NormalizedOutbound = {
   body: string
   providerMessageId: string
   timestamp: Date
+  media?: NormalizedMedia
 }
 /** Status que vêm dos provedores; 'pendente' é só interno e nunca chega por webhook. */
 export type DeliveryStatus = Exclude<MessageStatusKind, 'pendente'>
@@ -248,14 +265,16 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
       if (!m.success) continue
       if (m.data.key.fromMe) {
         // Resposta dada pelo celular: o PearChat grava e trata como atendimento manual (a rota decide a regra).
-        const text = extractEvolutionBody(m.data.message)
+        const media = extractEvolutionMedia(m.data.message, m.data.key.remoteJid)
+        const text = media ? (media.caption || LABEL_BY_KIND[media.type]) : extractEvolutionBody(m.data.message)
         const to = jidToRef(m.data.key.remoteJid, m.data.key.remoteJidAlt ?? m.data.key.senderPn)
         if (text && text.trim() && to) {
-          outbound.push({ to, body: text, providerMessageId: m.data.key.id, timestamp: secondsToDate(m.data.messageTimestamp) })
+          outbound.push({ to, body: text, providerMessageId: m.data.key.id, timestamp: secondsToDate(m.data.messageTimestamp), ...(media ? { media } : {}) })
         }
         continue
       }
-      const body = m.data.message?.conversation ?? m.data.message?.extendedTextMessage?.text
+      const media = extractEvolutionMedia(m.data.message, m.data.key.remoteJid)
+      const body = media ? (media.caption || LABEL_BY_KIND[media.type]) : (m.data.message?.conversation ?? m.data.message?.extendedTextMessage?.text)
       if (!body) continue
       const from = jidToRef(m.data.key.remoteJid, m.data.key.remoteJidAlt ?? m.data.key.senderPn)
       if (!from) continue
@@ -265,6 +284,7 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
         body,
         providerMessageId: m.data.key.id,
         timestamp: secondsToDate(m.data.messageTimestamp),
+        ...(media ? { media } : {}),
       })
     }
     return inbound.length || outbound.length ? { kind: 'messages', instance, inbound, outbound } : { kind: 'ignored' }
@@ -311,6 +331,8 @@ export type HistoryMessage = {
   providerMessageId: string
   timestamp: Date
   status: 'ENVIADA' | 'ENTREGUE' | 'LIDA'
+  /** Só metadados: o histórico importado não baixa o arquivo (fica "expirada"). */
+  media?: NormalizedMedia
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -373,6 +395,63 @@ export function extractEvolutionBody(message: unknown): string | null {
   return '[Mensagem não suportada]'
 }
 
+const MEDIA_FIELDS: [string, MediaKind][] = [
+  ['imageMessage', 'image'],
+  ['audioMessage', 'audio'],
+  ['videoMessage', 'video'],
+  ['ptvMessage', 'video'],
+  ['documentMessage', 'document'],
+  ['stickerMessage', 'sticker'],
+]
+
+function toInt(v: unknown): number | undefined {
+  let n = NaN
+  if (typeof v === 'number') n = v
+  else if (typeof v === 'string') n = Number(v)
+  else if (isObj(v) && typeof v.low === 'number') n = v.low
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined
+}
+
+function unwrapMessage(message: unknown): { inner: Record<string, unknown>; outer: Record<string, unknown> } | null {
+  if (!isObj(message)) return null
+  let m: Record<string, unknown> = message
+  for (let i = 0; i < 4; i++) {
+    const cur: Record<string, unknown> = m
+    const key = WRAPPERS.find((k) => isObj(cur[k]))
+    if (!key) break
+    const inner = cur[key]
+    m = isObj(inner) && isObj(inner.message) ? inner.message : isObj(inner) ? inner : m
+    if (m === cur) break
+  }
+  return { inner: m, outer: message }
+}
+
+/** Descrição da mídia de uma mensagem da Evolution/Baileys (metadados, sem baixar nada). null = não é mídia. */
+export function extractEvolutionMedia(message: unknown, remoteJid?: string): NormalizedMedia | null {
+  const u = unwrapMessage(message)
+  if (!u) return null
+  for (const [field, type] of MEDIA_FIELDS) {
+    const media = u.inner[field]
+    if (!isObj(media)) continue
+    const caption = typeof media.caption === 'string' ? media.caption.trim() : ''
+    const name = typeof media.fileName === 'string' && media.fileName ? media.fileName : typeof media.title === 'string' && media.title ? media.title : undefined
+    const b64 = [u.outer.base64, u.inner.base64, media.base64].find((v): v is string => typeof v === 'string' && v.length > 0)
+    const size = toInt(media.fileLength)
+    const durationSec = toInt(media.seconds)
+    return {
+      type,
+      ...(typeof media.mimetype === 'string' && media.mimetype ? { mime: media.mimetype } : {}),
+      ...(size !== undefined ? { size } : {}),
+      ...(name ? { name } : {}),
+      ...(durationSec !== undefined ? { durationSec } : {}),
+      ...(caption ? { caption } : {}),
+      ...(b64 ? { inlineBase64: b64 } : {}),
+      ...(remoteJid ? { remoteJid } : {}),
+    }
+  }
+  return null
+}
+
 /** messageTimestamp (segundos, string, Long {low} ou ms) -> Date; null se inválido. */
 export function historyTimestamp(v: unknown): Date | null {
   let n = NaN
@@ -410,7 +489,8 @@ export function parseHistoryMessage(raw: unknown): HistoryMessage | null {
   if (!remoteJid || !id || !isIndividualJid(remoteJid)) return null
   const timestamp = historyTimestamp(raw.messageTimestamp)
   if (!timestamp) return null
-  const body = extractEvolutionBody(raw.message)
+  const media = extractEvolutionMedia(raw.message, remoteJid)
+  const body = media ? media.caption || LABEL_BY_KIND[media.type] : extractEvolutionBody(raw.message)
   if (body === null || !body.trim()) return null
   const fromMe = key.fromMe === true
   const alt =
@@ -419,5 +499,5 @@ export function parseHistoryMessage(raw: unknown): HistoryMessage | null {
   const from = jidToRef(remoteJid, alt)
   if (!from) return null
   const pushName = !fromMe && typeof raw.pushName === 'string' && raw.pushName.trim() ? raw.pushName.trim() : undefined
-  return { remoteJid, from, ...(pushName ? { pushName } : {}), fromMe, body, providerMessageId: id, timestamp, status: historyStatus(raw, fromMe) }
+  return { remoteJid, from, ...(pushName ? { pushName } : {}), fromMe, body, providerMessageId: id, timestamp, status: historyStatus(raw, fromMe), ...(media ? { media: { ...media, inlineBase64: undefined } } : {}) }
 }

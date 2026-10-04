@@ -4,6 +4,9 @@ import { generateReply, LlmError } from '@/server/agent/llm'
 import type { ChatMessage } from '@/server/agent/llm'
 import { buildSystemPrompt, HANDOFF_MARKER } from '@/server/agent/prompt'
 import { serviceTypesForPrompt } from '@/server/calendar/service-types'
+import { transcriptionAvailable, visionAvailable } from '@/server/media/ai-caps'
+import { isMediaKind, MEDIA_LABEL, isMediaLabel } from '@/server/media/mime'
+import { getMediaStore } from '@/server/media/store'
 import { getAiQuota } from '@/server/settings/service'
 import { notifySpaceAttention } from '@/server/spaces/attention'
 import { loadConversationItem, toMessageDTO } from '@/server/messages/dto'
@@ -26,6 +29,12 @@ const MAX_MESSAGE_CHARS = 1500 // trava o custo se o cliente colar um texto enor
 const STALE_RUNNING_MS = 2 * 60_000 // o modelo tem timeout de 45 s: 2 min sem terminar = processo caiu
 const SWEEP_LOOKBACK_MS = 24 * 3_600_000 // janela de 24 h do WhatsApp
 const CONCURRENCY = 4
+// Espera por transcrição/download de mídia antes de responder: até 3 vezes, 7 s cada (~20 s no total).
+const MEDIA_WAIT_MS = 7_000
+const MEDIA_WAIT_MAX = 3
+const MEDIA_WAIT_NOTE = 'aguardando-midia:'
+const VISION_MAX_BYTES = 4 * 1024 * 1024
+const VISION_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const RUN_BUDGET_MS = 30_000 // tempo máximo de uma passada do runDueAiJobs
 
 const LIMIT_NOTICE = 'Vou chamar alguém da nossa equipe para continuar seu atendimento.'
@@ -150,11 +159,26 @@ export async function sweepPending(): Promise<number> {
 
 // ---- Execução ----
 
+/** Texto de uma mensagem para a IA: áudio transcrito vira "[Áudio transcrito] ..."; mídia com legenda leva o rótulo. */
+export function aiTextOf(m: Message): string {
+  if (m.direction === 'IN' && m.mediaType === 'audio' && m.transcriptStatus === 'feito' && m.transcript?.trim()) {
+    return `[Áudio transcrito] ${m.transcript.trim()}`
+  }
+  const body = m.body.trim()
+  if (m.mediaType && isMediaKind(m.mediaType) && body && !isMediaLabel(body)) return `${MEDIA_LABEL[m.mediaType]} ${body}`
+  return body || (m.mediaUrl ? '[mídia enviada]' : '')
+}
+
+/** O que o cliente "disse" (para detectar parar/passagem): a transcrição do áudio, se houver, senão o texto. */
+function customerTextOf(m: Message): string {
+  return m.mediaType === 'audio' && m.transcriptStatus === 'feito' && m.transcript?.trim() ? m.transcript.trim() : m.body
+}
+
 function toHistory(messages: Message[]): ChatMessage[] {
   const out: ChatMessage[] = []
   for (const m of messages) {
     const role: ChatMessage['role'] = m.direction === 'IN' ? 'user' : 'assistant'
-    const raw = m.body.trim() || (m.mediaUrl ? '[mídia enviada]' : '')
+    const raw = aiTextOf(m)
     const content = raw.length > MAX_MESSAGE_CHARS ? `${raw.slice(0, MAX_MESSAGE_CHARS)}…` : raw
     if (!content) continue
     const prev = out[out.length - 1]
@@ -176,7 +200,7 @@ async function responsavelNome(workspaceId: string): Promise<string> {
   return u?.nome.trim().split(/\s+/)[0] || 'o responsável'
 }
 
-type JobResult = { kind: 'done'; note?: string } | { kind: 'retry'; error: string }
+type JobResult = { kind: 'done'; note?: string } | { kind: 'retry'; error: string } | { kind: 'wait'; note: string }
 
 async function finish(job: AiJob, status: 'feito' | 'erro', note?: string): Promise<void> {
   await db.aiJob.update({ where: { id: job.id }, data: { status, error: note ?? null } })
@@ -235,15 +259,26 @@ async function execute(job: AiJob): Promise<JobResult> {
   if (!last || last.direction !== 'IN') return { kind: 'done', note: 'nada a responder (já respondida)' }
   // Histórico importado do WhatsApp nunca gera resposta.
   if (last.imported) return { kind: 'done', note: 'nada a responder (mensagem importada)' }
-  const history = toHistory([...recent].reverse())
-  if (history.length === 0) return { kind: 'done', note: 'nada a responder' }
   // Tudo que o cliente mandou desde a nossa última mensagem.
-  const unanswered: string[] = []
+  const unansweredMsgs: Message[] = []
   for (const m of recent) {
     if (m.direction !== 'IN') break
-    unanswered.unshift(m.body)
+    unansweredMsgs.unshift(m)
   }
-  const customerText = unanswered.join('\n')
+
+  // Áudio ainda sendo baixado/transcrito (ou imagem ainda baixando, com visão): espera um pouco antes de responder.
+  const visionOn = visionAvailable()
+  const waiting = unansweredMsgs.some(
+    (m) => !m.imported && ((m.mediaType === 'audio' && m.transcriptStatus === 'pendente') || (visionOn && m.id === last.id && m.mediaType === 'image' && m.mediaStatus === 'pendente')),
+  )
+  if (waiting) {
+    const done = Number(new RegExp(`^${MEDIA_WAIT_NOTE}(\\d+)`).exec(job.error ?? '')?.[1] ?? 0)
+    if (done < MEDIA_WAIT_MAX) return { kind: 'wait', note: `${MEDIA_WAIT_NOTE}${done + 1}` }
+  }
+
+  const history = toHistory([...recent].reverse())
+  if (history.length === 0) return { kind: 'done', note: 'nada a responder' }
+  const customerText = unansweredMsgs.map(customerTextOf).join('\n')
 
   // "parar"/"sair" e variações: marca opt-out e não responde (o ingest só pega a palavra exata).
   if (isStopRequest(customerText)) {
@@ -289,7 +324,15 @@ async function execute(job: AiJob): Promise<JobResult> {
     servicos,
     horarioAtendimento: el.horarioAtendimento,
     agora: formatAgora(new Date()),
+    midia: { audio: transcriptionAvailable(), imagem: visionOn },
   })
+
+  // Visão: a imagem da ÚLTIMA mensagem do cliente (até 4 MB, formato aceito pelos modelos) segue junto da legenda.
+  if (visionOn && last.mediaType === 'image' && last.mediaStatus === 'ok' && last.mediaKey && (last.mediaSize ?? 0) <= VISION_MAX_BYTES && VISION_MIMES.has(last.mediaMime ?? '')) {
+    const bytes = await getMediaStore().read(last.mediaKey, VISION_MAX_BYTES).catch(() => null)
+    const target = history[history.length - 1]
+    if (bytes && target?.role === 'user') target.image = { mime: last.mediaMime ?? 'image/jpeg', base64: bytes.toString('base64') }
+  }
 
   let texto: string
   try {
@@ -382,6 +425,10 @@ async function runJob(job: AiJob): Promise<boolean> {
   try {
     if (result.kind === 'done') {
       await finish(job, 'feito', result.note)
+    } else if (result.kind === 'wait') {
+      // Espera por mídia não gasta tentativa: devolve a contagem e reagenda.
+      await db.aiJob.update({ where: { id: job.id }, data: { status: AI_JOB.pendente, attempts: job.attempts, runAt: new Date(Date.now() + MEDIA_WAIT_MS), error: result.note } })
+      log('ai', `job ${job.id} aguardando mídia (${result.note})`)
     } else if (attempts < MAX_ATTEMPTS) {
       const wait = RETRY_DELAYS_MS[attempts - 1] ?? 45_000
       await db.aiJob.update({

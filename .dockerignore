@@ -13,3 +13,4 @@ Dockerfile
 deploy/Caddyfile
 deploy/zapfloo-*
 deploy/last-*
+.media

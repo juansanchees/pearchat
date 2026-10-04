@@ -31,6 +31,8 @@ const env = {
   OPENAI_API_KEY: src.OPENAI_API_KEY ?? '',
   ANTHROPIC_API_KEY: src.ANTHROPIC_API_KEY ?? '',
   AI_MODEL: src.AI_MODEL ?? '',
+  AI_TRANSCRIBE_MODEL: src.AI_TRANSCRIBE_MODEL ?? '',
+  AI_VISION: src.AI_VISION ?? '',
   ENCRYPTION_KEY: prev.ENCRYPTION_KEY || src.ENCRYPTION_KEY, // nunca trocar: quebraria dados já criptografados
   AUTH_URL: url,
   NEXT_PUBLIC_APP_URL: url,

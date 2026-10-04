@@ -7,7 +7,8 @@ import { HANDOFF_WINDOW_EVENT } from '@/components/app/handoff'
 import type { HandoffRequestedPayload } from '@/components/app/handoff'
 import { redirectIfUnauthorized } from '@/lib/auth-redirect'
 import { useRawSocketEvent, useSocketEvent } from '@/lib/socket-client'
-import type { ConversationModeKind, MessageDTO } from '@/lib/types'
+import type { ConversationModeKind, MediaTypeKind, MessageDTO } from '@/lib/types'
+import { MEDIA_LABEL } from '@/server/media/mime'
 import type { ConversationFilter, ConversationItem } from './types'
 
 const PAGE_SIZE = 50
@@ -37,6 +38,35 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   }
   return (await res.json()) as T
 }
+
+/** Envio multipart com progresso (fetch ainda não informa o andamento do upload). */
+function uploadMedia(url: string, form: FormData, onProgress: (pct: number) => void): Promise<MessageDTO> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', url)
+    xhr.responseType = 'json'
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.min(99, Math.round((e.loaded / e.total) * 100)))
+    }
+    xhr.onerror = () => reject(new ApiError(0, undefined, 'Sem conexão'))
+    xhr.ontimeout = () => reject(new ApiError(0, undefined, 'Tempo esgotado'))
+    xhr.onload = () => {
+      const data = xhr.response as (MessageDTO & { error?: string; code?: string }) | null
+      if (xhr.status >= 200 && xhr.status < 300 && data) {
+        onProgress(100)
+        resolve(data)
+        return
+      }
+      redirectIfUnauthorized(xhr.status)
+      reject(new ApiError(xhr.status, data?.code, data?.error ?? `Erro ${xhr.status}`))
+    }
+    xhr.timeout = 180_000
+    xhr.send(form)
+  })
+}
+
+const kindOfFile = (f: File): MediaTypeKind =>
+  f.type.startsWith('image/') ? 'image' : f.type.startsWith('audio/') ? 'audio' : f.type.startsWith('video/') ? 'video' : 'document'
 
 const byRecent = (a: ConversationItem, b: ConversationItem) => {
   if (a.lastMessageAt === b.lastMessageAt) return 0
@@ -282,6 +312,12 @@ export function useConversations(preferredId: string | null = null) {
     if (!iaOnRef.current && message.direction === 'in') markRead(conversationId)
   })
 
+  // Mídia baixada, transcrição pronta ou erro: troca a mensagem no lugar.
+  useSocketEvent('message.updated', ({ conversationId, message }) => {
+    if (conversationId !== activeIdRef.current) return
+    setMessages((cur) => cur.map((m) => (m.id === message.id ? { ...m, ...message } : m)))
+  })
+
   useSocketEvent('message.status', ({ conversationId, messageId, status }) => {
     if (conversationId !== activeIdRef.current) return
     setMessages((cur) => cur.map((m) => (m.id === messageId ? { ...m, status } : m)))
@@ -372,6 +408,95 @@ export function useConversations(preferredId: string | null = null) {
     [items, iaOn, agentName, toast, loadMessages],
   )
 
+  /** Envia um arquivo (com legenda opcional) pela conversa aberta. Devolve true se enviou. */
+  const sendMedia = useCallback(
+    async (file: File, caption: string, onProgress: (pct: number) => void): Promise<boolean> => {
+      const conv = items.find((c) => c.id === activeIdRef.current)
+      if (!conv) return false
+      const tookOver = iaOn && conv.mode === 'ia'
+      const kind = kindOfFile(file)
+      const text = kind === 'audio' ? '' : caption.trim()
+      const tmpId = `tmp-${++tmpSeq.current}`
+      const clientId =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+      const nowIso = new Date().toISOString()
+      const optimistic: MessageDTO = {
+        id: tmpId,
+        conversationId: conv.id,
+        direction: 'out',
+        author: 'user',
+        body: text || MEDIA_LABEL[kind],
+        mediaUrl: null,
+        status: 'pendente',
+        createdAt: nowIso,
+        mediaType: kind,
+        mediaMime: file.type,
+        mediaSize: file.size,
+        mediaName: file.name,
+        mediaStatus: 'pendente',
+      }
+      const snapshot = conv
+      setMessages((cur) => [...cur, optimistic])
+      setItems((l) =>
+        upsert(l, { ...conv, unread: 0, mode: iaOn ? 'humano' : conv.mode, lastMessagePreview: text, lastMessageMedia: { type: kind, durationSec: null }, lastMessageAt: nowIso, lastMessageAuthor: 'user' }),
+      )
+      try {
+        const form = new FormData()
+        form.append('file', file, file.name)
+        if (text) form.append('caption', text)
+        form.append('clientId', clientId)
+        const saved = await uploadMedia(`/api/conversations/${conv.id}/media`, form, onProgress)
+        setMessages((cur) => {
+          const withoutTmp = cur.filter((m) => m.id !== tmpId)
+          return withoutTmp.some((m) => m.id === saved.id) ? withoutTmp : [...withoutTmp, saved]
+        })
+        if (tookOver) {
+          toast({
+            icon: createElement(Hand, { size: 18, weight: 'fill' }),
+            title: 'Você assumiu a conversa',
+            text: `${agentName} pausou para ${conv.nome}`,
+          })
+        }
+        return true
+      } catch (e) {
+        setMessages((cur) => cur.filter((m) => m.id !== tmpId))
+        setItems((l) => upsert(l, snapshot))
+        const err = e instanceof ApiError ? e : null
+        const icon = createElement(WarningCircle, { size: 18, weight: 'fill' })
+        if (err?.code === 'ARQUIVO_GRANDE') toast({ icon, title: 'Arquivo grande demais', text: 'O limite é 16 MB por arquivo.' })
+        else if (err?.code === 'ARQUIVO_INVALIDO') toast({ icon, title: 'Arquivo não permitido', text: err.message })
+        else if (err?.code === 'NAO_SUPORTADO') toast({ icon, title: 'Envio de arquivos indisponível', text: 'Esta conexão ainda não envia arquivos.' })
+        else if (err?.code === 'FORA_DA_JANELA_24H') toast({ icon, title: 'Fora da janela de 24 h', text: 'Depois de 24 h sem resposta do cliente, só é possível enviar modelos aprovados.' })
+        else if (err?.status === 409) toast({ icon, title: 'WhatsApp desconectado', text: 'Conecte o WhatsApp para enviar mensagens.' })
+        else {
+          toast({ icon, title: 'Não foi possível enviar o arquivo', text: 'Tente novamente em instantes.' })
+          if (err?.status === 502) void loadMessages(conv.id)
+        }
+        return false
+      }
+    },
+    [items, iaOn, agentName, toast, loadMessages],
+  )
+
+  /** "Tentar de novo" de uma mídia recebida que não carregou. */
+  const retryMedia = useCallback(
+    async (messageId: string) => {
+      const convId = activeIdRef.current
+      if (!convId) return
+      setMessages((cur) => cur.map((m) => (m.id === messageId ? { ...m, mediaStatus: 'pendente' } : m)))
+      try {
+        const updated = await api<MessageDTO>(`/api/conversations/${convId}/messages/${messageId}/media/retry`, { method: 'POST' })
+        setMessages((cur) => cur.map((m) => (m.id === messageId ? { ...m, ...updated } : m)))
+      } catch {
+        setMessages((cur) => cur.map((m) => (m.id === messageId ? { ...m, mediaStatus: 'erro' } : m)))
+        toast({ icon: createElement(WarningCircle, { size: 18, weight: 'fill' }), title: 'Não foi possível carregar a mídia', text: 'Tente novamente em instantes.' })
+      }
+    },
+    [toast],
+  )
+
   const setMode = useCallback(
     async (mode: ConversationModeKind) => {
       const conv = items.find((c) => c.id === activeIdRef.current)
@@ -428,6 +553,8 @@ export function useConversations(preferredId: string | null = null) {
     loadingOlder,
     loadOlder,
     send,
+    sendMedia,
+    retryMedia,
     setMode,
   }
 }

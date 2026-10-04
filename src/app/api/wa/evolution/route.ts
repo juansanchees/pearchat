@@ -68,6 +68,7 @@ export async function POST(req: Request) {
             body: m.body,
             providerMessageId: m.providerMessageId,
             timestamp: m.timestamp,
+            media: m.media,
           })
         }
         // Respostas dadas pelo celular do dono. Só assumem a conversa se forem recentes e posteriores à conexão
@@ -82,6 +83,7 @@ export async function POST(req: Request) {
             providerMessageId: m.providerMessageId,
             timestamp: m.timestamp,
             takeOver: age < OUTBOUND_TAKEOVER_MAX_AGE_MS && afterConnect,
+            media: m.media,
           })
         }
         break

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { ConnectionStatusKind } from '@/lib/types'
 import { onlyDigits, recipientDigits, toE164 } from './phone'
 import { WhatsAppProviderError } from './provider'
-import type { ContactRef, WhatsAppProvider } from './provider'
+import type { ContactRef, FetchedMedia, OutboundMedia, WhatsAppProvider } from './provider'
 
 // Provedor "conexão rápida": Evolution API 2.3.7 (Baileys / WhatsApp Web), via REST.
 
@@ -50,6 +50,64 @@ async function evo(method: string, path: string, body?: unknown, timeoutMs = 15_
   if (!res.ok) throw new WhatsAppProviderError(`Evolution API respondeu ${res.status}`, res.status, parsed)
   return parsed
 }
+
+/**
+ * Igual a evo(), mas para respostas que podem ser enormes (mídia em base64): confere o Content-Length e lê o corpo
+ * aos poucos, abortando se passar de `maxChars` (evita estourar a memória com um arquivo gigante).
+ */
+async function evoCapped(method: string, path: string, body: unknown, maxChars: number, timeoutMs: number): Promise<unknown> {
+  const apiKey = process.env.EVOLUTION_API_KEY
+  if (!apiKey) throw new Error('EVOLUTION_API_KEY não configurada')
+  let res: Response
+  try {
+    res = await fetch(`${baseUrl()}${path}`, {
+      method,
+      headers: { apikey: apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch {
+    throw new WhatsAppProviderError('Evolution API inacessível', 0, null)
+  }
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {})
+    throw new WhatsAppProviderError(`Evolution API respondeu ${res.status}`, res.status, null)
+  }
+  const declared = Number(res.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > maxChars) {
+    await res.body?.cancel().catch(() => {})
+    throw new WhatsAppProviderError('Mídia grande demais', 413, null)
+  }
+  const reader = res.body?.getReader()
+  if (!reader) throw new WhatsAppProviderError('Resposta vazia da Evolution', 502, null)
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > maxChars) {
+        await reader.cancel().catch(() => {})
+        throw new WhatsAppProviderError('Mídia grande demais', 413, null)
+      }
+      chunks.push(value)
+    }
+  } catch (e) {
+    if (e instanceof WhatsAppProviderError) throw e
+    throw new WhatsAppProviderError('Evolution API inacessível', 0, null)
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch {
+    throw new WhatsAppProviderError('Resposta inesperada da Evolution', 502, null)
+  }
+}
+
+const mediaSchema = z
+  .object({ base64: z.string().min(1), mimetype: z.string().optional(), fileName: z.string().optional() })
+  .passthrough()
 
 const stateSchema = z.object({ instance: z.object({ state: z.string() }).passthrough() }).passthrough()
 const qrSchema = z.object({ base64: z.string().optional(), code: z.string().optional() }).passthrough()
@@ -213,6 +271,61 @@ export class EvolutionProvider implements WhatsAppProvider {
     const parsed = sendSchema.safeParse(raw)
     if (!parsed.success) throw new WhatsAppProviderError('Resposta inesperada da Evolution', 502, null)
     return { providerMessageId: parsed.data.key.id }
+  }
+
+  /** POST /message/sendMedia: imagem, vídeo ou documento em base64 (a Evolution reprocessa imagens para JPEG). */
+  async sendMedia(workspaceId: string, to: ContactRef, media: OutboundMedia): Promise<{ providerMessageId: string }> {
+    const raw = await evo(
+      'POST',
+      `/message/sendMedia/${encodeURIComponent(instanceNameFor(workspaceId))}`,
+      {
+        number: recipientDigits(to),
+        mediatype: media.type,
+        mimetype: media.mime,
+        fileName: media.fileName,
+        ...(media.caption ? { caption: media.caption } : {}),
+        media: media.data.toString('base64'),
+      },
+      90_000,
+    )
+    const parsed = sendSchema.safeParse(raw)
+    if (!parsed.success) throw new WhatsAppProviderError('Resposta inesperada da Evolution', 502, null)
+    return { providerMessageId: parsed.data.key.id }
+  }
+
+  /**
+   * POST /message/sendWhatsAppAudio: mensagem de voz. Com `encoding` padrão (verdadeiro) a PRÓPRIA Evolution converte
+   * para ogg/opus com o ffmpeg embutido na imagem dela (@ffmpeg-installer): não precisa de ffmpeg no PearChat.
+   */
+  async sendAudio(workspaceId: string, to: ContactRef, media: OutboundMedia): Promise<{ providerMessageId: string }> {
+    const raw = await evo(
+      'POST',
+      `/message/sendWhatsAppAudio/${encodeURIComponent(instanceNameFor(workspaceId))}`,
+      { number: recipientDigits(to), audio: media.data.toString('base64') },
+      90_000,
+    )
+    const parsed = sendSchema.safeParse(raw)
+    if (!parsed.success) throw new WhatsAppProviderError('Resposta inesperada da Evolution', 502, null)
+    return { providerMessageId: parsed.data.key.id }
+  }
+
+  /**
+   * POST /chat/getBase64FromMediaMessage: a Evolution acha a mensagem no banco dela pelo `key.id` e devolve o arquivo
+   * em base64. Só fala com a Evolution configurada (nunca com uma URL vinda do webhook).
+   */
+  async fetchMedia(workspaceId: string, ref: { providerMessageId: string; remoteJid?: string; maxBytes: number }): Promise<FetchedMedia> {
+    const maxChars = Math.ceil((ref.maxBytes * 4) / 3) + 4096
+    const raw = await evoCapped(
+      'POST',
+      `/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceNameFor(workspaceId))}`,
+      { message: { key: { id: ref.providerMessageId, ...(ref.remoteJid ? { remoteJid: ref.remoteJid } : {}) } }, convertToMp4: false },
+      maxChars,
+      60_000,
+    )
+    const parsed = mediaSchema.safeParse(raw)
+    if (!parsed.success) throw new WhatsAppProviderError('Resposta inesperada da Evolution', 502, null)
+    const b64 = parsed.data.base64.replace(/^data:[^,]*,/, '')
+    return { data: Buffer.from(b64, 'base64'), mime: parsed.data.mimetype, fileName: parsed.data.fileName }
   }
 
   async canSendFreeform(): Promise<boolean> {

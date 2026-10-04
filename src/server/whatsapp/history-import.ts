@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { findOrCreateContact } from '@/server/messages/ingest'
 import { EvolutionProvider } from './evolution'
+import { sanitizeFileName } from '@/server/media/mime'
 import { isIndividualJid, parseHistoryMessage } from './normalize'
 import type { HistoryMessage } from './normalize'
 import { onlyDigits } from './phone'
@@ -126,6 +127,17 @@ export async function persistChat(workspaceId: string, b: ChatBatch): Promise<{ 
         providerMessageId: m.providerMessageId,
         imported: true,
         createdAt: m.timestamp,
+        // Histórico: só metadados da mídia; o arquivo não é baixado ("Mídia não disponível" na bolha).
+        ...(m.media
+          ? {
+              mediaType: m.media.type,
+              mediaMime: m.media.mime ?? null,
+              mediaSize: m.media.size !== undefined && m.media.size <= 2_147_483_647 ? m.media.size : null,
+              mediaName: m.media.name ? sanitizeFileName(m.media.name) : null,
+              mediaDurationSec: m.media.durationSec !== undefined && m.media.durationSec <= 2_147_483_647 ? m.media.durationSec : null,
+              mediaStatus: 'expirada',
+            }
+          : {}),
       })),
       skipDuplicates: true,
     })

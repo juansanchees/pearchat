@@ -9,10 +9,31 @@ import { cancelPendingFollowUps } from '@/server/engine/followup'
 import { isStopRequest } from '@/server/engine/rules'
 import { logError } from '@/server/engine/util'
 import { phoneCandidates } from '@/server/contacts/phone'
+import { transcriptionAvailable } from '@/server/media/ai-caps'
+import { sanitizeFileName } from '@/server/media/mime'
+import { startInboundMedia } from '@/server/media/receive'
+import { MAX_TRANSCRIBE_BYTES, MAX_TRANSCRIBE_SECONDS } from '@/server/media/transcribe'
+import type { NormalizedMedia } from '@/server/whatsapp/normalize'
 import { cleanText } from './api'
 import { loadConversationItem, toMessageDTO } from './dto'
 import { registerManualReply } from './takeover'
 import { notifySpaceAttention } from '@/server/spaces/attention'
+
+/** Campos de mídia de uma Message nova (metadados do webhook; o arquivo vem depois). */
+function mediaColumns(media: NormalizedMedia, opts: { imported: boolean; direction: 'IN' | 'OUT' }) {
+  const audioIn = media.type === 'audio' && opts.direction === 'IN' && !opts.imported
+  const tooLong = (media.durationSec ?? 0) > MAX_TRANSCRIBE_SECONDS || (media.size ?? 0) > MAX_TRANSCRIBE_BYTES
+  return {
+    mediaType: media.type,
+    mediaMime: media.mime ?? null,
+    mediaSize: media.size !== undefined && media.size <= 2_147_483_647 ? media.size : null,
+    mediaName: media.name ? sanitizeFileName(media.name) : null,
+    mediaDurationSec: media.durationSec !== undefined && media.durationSec <= 2_147_483_647 ? media.durationSec : null,
+    // Histórico importado: só metadados, nunca baixa (a bolha mostra "Mídia não disponível").
+    mediaStatus: opts.imported ? 'expirada' : 'pendente',
+    transcriptStatus: audioIn ? (!tooLong && transcriptionAvailable() ? 'pendente' : 'indisponivel') : null,
+  }
+}
 
 const STATUS_RANK = { PENDENTE: 0, ENVIADA: 1, ENTREGUE: 2, LIDA: 3 } as const
 
@@ -74,10 +95,12 @@ export async function ingestInboundMessage(input: {
   nome?: string
   body: string
   mediaUrl?: string
+  /** Mídia recebida (imagem, áudio, vídeo, documento, figurinha): baixada em segundo plano. */
+  media?: NormalizedMedia
   providerMessageId: string
   timestamp: Date
 }): Promise<void> {
-  const { workspaceId, from, mediaUrl, providerMessageId, timestamp } = input
+  const { workspaceId, from, mediaUrl, media, providerMessageId, timestamp } = input
   if (!from.waUserId && !from.telefone) return
   // NUL e surrogates soltos (vindos do celular do cliente) fariam o Postgres recusar a mensagem: saem do texto.
   const body = cleanText(input.body)
@@ -112,6 +135,7 @@ export async function ingestInboundMessage(input: {
       author: 'CLIENTE',
       body,
       mediaUrl: mediaUrl ?? null,
+      ...(media ? mediaColumns(media, { imported: false, direction: 'IN' }) : {}),
       status: 'ENTREGUE',
       providerMessageId,
       createdAt: timestamp,
@@ -139,6 +163,7 @@ export async function ingestInboundMessage(input: {
     logError('ingest', 'follow-up/campanha', e)
   }
   void notifySpaceAttention(workspaceId)
+  if (media) startInboundMedia(message.id, media.inlineBase64)
   await scheduleAiReply({ workspaceId, conversationId: conversation.id, optOut })
 }
 
@@ -161,8 +186,9 @@ export async function ingestOutboundFromPhone(input: {
   providerMessageId: string
   timestamp: Date
   takeOver: boolean
+  media?: NormalizedMedia
 }): Promise<'recorded' | 'duplicate' | 'ignored'> {
-  const { workspaceId, to, providerMessageId, timestamp, takeOver } = input
+  const { workspaceId, to, providerMessageId, timestamp, takeOver, media } = input
   if (!to.waUserId && !to.telefone) return 'ignored'
   const body = cleanText(input.body)
   if (!body.trim()) return 'ignored'
@@ -182,6 +208,7 @@ export async function ingestOutboundFromPhone(input: {
                 status: 'PENDENTE' as const,
                 providerMessageId: null,
                 body,
+                ...(media ? { mediaType: media.type } : {}),
                 createdAt: { gte: new Date(Date.now() - IN_FLIGHT_MS) },
               },
             ]
@@ -207,6 +234,7 @@ export async function ingestOutboundFromPhone(input: {
         direction: 'OUT',
         author: 'USER',
         body,
+        ...(media ? mediaColumns(media, { imported: !takeOver, direction: 'OUT' }) : {}),
         status: 'ENVIADA',
         providerMessageId,
         imported: !takeOver,
@@ -232,6 +260,7 @@ export async function ingestOutboundFromPhone(input: {
   const item = await loadConversationItem(workspaceId, conversation.id)
   if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })
   void notifySpaceAttention(workspaceId)
+  if (media && takeOver) startInboundMedia(message.id, media.inlineBase64)
   return 'recorded'
 }
 

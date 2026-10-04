@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { statusToKind } from '@/lib/mappers'
 import type { ConnectionStatusKind } from '@/lib/types'
-import { WhatsAppProviderError } from './provider'
+import { ProviderUnsupportedError, WhatsAppProviderError } from './provider'
 import type { ContactRef, WhatsAppProvider } from './provider'
 import { recipientDigits } from './phone'
 import { getSession, readSessionData } from './session'
@@ -107,6 +107,15 @@ export class CloudApiProvider implements WhatsAppProvider {
   async status(workspaceId: string): Promise<ConnectionStatusKind> {
     const row = await getSession(workspaceId)
     return row ? statusToKind(row.status) : 'desconectado'
+  }
+
+  // Mídia pela API oficial (upload em /media + envio por id) vem numa etapa futura.
+  async sendMedia(): Promise<{ providerMessageId: string }> {
+    throw new ProviderUnsupportedError('Envio de arquivos pela API oficial ainda não é suportado')
+  }
+
+  async sendAudio(): Promise<{ providerMessageId: string }> {
+    throw new ProviderUnsupportedError('Envio de áudio pela API oficial ainda não é suportado')
   }
 
   async sendText(workspaceId: string, to: ContactRef, text: string): Promise<{ providerMessageId: string }> {

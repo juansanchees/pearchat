@@ -7,7 +7,14 @@ import { getProvider } from '@/server/whatsapp'
 import { loadConversationItem, toMessageDTO } from './dto'
 import { registerManualReply } from './takeover'
 
-export type SendErrorCode = 'NAO_ENCONTRADA' | 'NAO_CONECTADO' | 'FORA_DA_JANELA_24H' | 'ENVIO_FALHOU'
+export type SendErrorCode =
+  | 'NAO_ENCONTRADA'
+  | 'NAO_CONECTADO'
+  | 'FORA_DA_JANELA_24H'
+  | 'ENVIO_FALHOU'
+  | 'NAO_SUPORTADO'
+  | 'ARQUIVO_INVALIDO'
+  | 'ARQUIVO_GRANDE'
 
 export class SendError extends Error {
   constructor(
@@ -34,15 +41,20 @@ export function sendUserMessage(input: {
   clientId?: string
 }): Promise<MessageDTO> {
   const { clientId, ...rest } = input
-  if (!clientId) return sendUserMessageOnce(rest)
+  return withIdempotency(input.workspaceId, input.conversationId, clientId, () => sendUserMessageOnce(rest))
+}
+
+/** Executa `run` uma vez por (workspace, conversa, clientId). Sem clientId, executa sempre. Usado também pelo envio de mídia. */
+export function withIdempotency(workspaceId: string, conversationId: string, clientId: string | undefined, run: () => Promise<MessageDTO>): Promise<MessageDTO> {
+  if (!clientId) return run()
 
   const now = Date.now()
   for (const [k, v] of Array.from(inflight)) if (v.expires <= now) inflight.delete(k)
-  const key = `${input.workspaceId}:${input.conversationId}:${clientId}`
+  const key = `${workspaceId}:${conversationId}:${clientId}`
   const hit = inflight.get(key)
   if (hit) return hit.promise
 
-  const promise = sendUserMessageOnce(rest)
+  const promise = run()
   inflight.set(key, { promise, expires: now + IDEMPOTENCY_TTL_MS })
   // Falha não fica em cache: uma nova tentativa legítima com o mesmo clientId deve poder reenviar.
   promise.catch(() => {

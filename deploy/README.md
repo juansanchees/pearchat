@@ -106,3 +106,15 @@ Requisitos na Evolution (ja no `docker-compose.prod.yml`, servico `evolution`): 
 Migration `0006_history_import` (aditiva): rode `npx prisma migrate deploy` no deploy do app.
 
 Como funciona: a instancia nova ja nasce com `syncFullHistory` e os eventos `MESSAGES_SET`, `CHATS_SET`, `CONTACTS_SET`, `CHATS_UPSERT`. Instancias ja criadas recebem a configuracao (settings/set e webhook/set, idempotente) quando a importacao roda. O WhatsApp so entrega o historico completo no PAREAMENTO: para o numero que ja estava conectado, a Evolution passa a usar o que ja guardou desde que `DATABASE_SAVE_DATA_*` foi ligado; para trazer o historico antigo do celular e preciso desconectar e reconectar o QR. Importacao automatica ao conectar e aos 1, 3, 10 e 30 min; manual por `POST /api/wa/history/import`; status em `GET /api/wa/history`.
+
+## Midia e audio nas conversas (Etapa 1)
+
+Imagens, audios, videos e documentos recebidos e enviados ficam no disco, atras da interface `MediaStore` (`src/server/media/store.ts`), em `MEDIA_DIR`. Em producao: volume Docker nomeado `pearchat_media` montado em `/data/media` no servico `app` (`MEDIA_DIR=/data/media`; o `Dockerfile` cria a pasta e a entrega ao usuario nao-root `node`). Nao existe URL publica: o arquivo so sai por `GET /api/media/<messageId>`, com sessao e conferindo o workspace.
+
+- **BACKUP: o volume `pearchat_media` PRECISA entrar no backup** (junto do banco do PearChat e do volume `evolution_instances`). Sem ele, as mensagens continuam no banco, mas as midias recebidas viram "Nao foi possivel carregar a midia" (o WhatsApp so guarda a midia por um tempo). Exemplo: `docker run --rm -v pearchat_media:/data -v "$PWD":/backup alpine tar czf /backup/pearchat_media.tgz -C /data .`
+- Migration `0009_media` (aditiva): `npx prisma migrate deploy` no deploy do app (colunas novas e anulaveis em `Message`, `UsageCounter.transcricoesSeg`).
+- Recebimento: a Evolution NAO precisa de `base64` no webhook; o PearChat baixa cada arquivo por `POST /chat/getBase64FromMediaMessage/{instancia}` (a Evolution acha a mensagem no banco dela, por isso `DATABASE_SAVE_DATA_NEW_MESSAGE=true` e obrigatorio, e ja esta no compose). Teto de 25 MB por arquivo.
+- Envio de audio: `POST /message/sendWhatsAppAudio` converte para ogg/opus dentro da Evolution (ffmpeg embutido na imagem dela): nao precisa instalar ffmpeg no PearChat.
+- Transcricao (opcional): `OPENAI_API_KEY` + `AI_TRANSCRIBE_MODEL` (padrao `gpt-4o-mini-transcribe`). O projeto da OpenAI dono da chave precisa liberar o modelo (Settings > Project > Limits > Model access, marcar `gpt-4o-mini-transcribe` ou `whisper-1` e ajustar `AI_TRANSCRIBE_MODEL`). Enquanto nao liberar, o audio aparece normalmente e a transcricao fica "indisponivel"; o PearChat testa de novo a cada 6 h sozinho.
+- Visao da IA: `AI_VISION=auto` (padrao) envia a imagem da ULTIMA mensagem do cliente (ate 4 MB) ao modelo; `off` desliga.
+- Limpeza (futuro): nada e apagado ao arquivar/excluir nesta etapa. Tudo de um espaco fica em `<MEDIA_DIR>/<workspaceId>/aaaa-mm/`; excluir um espaco = apagar essa pasta (ou o prefixo, num futuro S3).

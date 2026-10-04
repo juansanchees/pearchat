@@ -34,6 +34,8 @@ export function PlanoDrawer() {
     : []
   // WhatsApps (espaços) da conta: "N de M". Antes do billing carregar usa a lista do menu lateral.
   const espacos = billing?.espacos ?? { usados: spaces.espacos.length, limite: spaces.limite }
+  // Transcrição de áudio: minutos somados da organização no mês (sem limite por plano por enquanto).
+  if (billing) usoMes.push({ label: 'Transcrição de áudio', txt: `${fmtNum(Math.ceil(billing.uso.transcricoesSeg / 60))} min`, pct: 0 })
   usoMes.push({ label: 'WhatsApps', txt: `${espacos.usados} de ${espacos.limite}`, pct: Math.min(100, Math.round((espacos.usados / Math.max(1, espacos.limite)) * 100)) })
   const faturas = billing?.faturas ?? []
   const atual = PLANOS.find((p) => p.nome === plano) ?? PLANOS[1]

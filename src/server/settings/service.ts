@@ -100,7 +100,7 @@ export async function getBilling(workspaceId: string): Promise<BillingDTO> {
   const [usage, contatos, invoices, espacos] = await Promise.all([
     db.usageCounter.aggregate({
       where: { workspaceId: { in: ids }, mes: currentMonthKey() },
-      _sum: { mensagensAtendimento: true, respostasIa: true, disparos: true },
+      _sum: { mensagensAtendimento: true, respostasIa: true, disparos: true, transcricoesSeg: true },
     }),
     db.contact.count({ where: { workspaceId: { in: ids } } }),
     db.invoice.findMany({ where: { workspaceId: { in: ids } }, orderBy: { emitidaEm: 'desc' }, take: 12 }),
@@ -111,6 +111,7 @@ export async function getBilling(workspaceId: string): Promise<BillingDTO> {
     uso: {
       mensagensAtendimento: usage._sum.mensagensAtendimento ?? 0,
       respostasIa: usage._sum.respostasIa ?? 0,
+      transcricoesSeg: usage._sum.transcricoesSeg ?? 0,
       disparos: usage._sum.disparos ?? 0,
       contatos,
     },

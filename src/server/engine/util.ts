@@ -129,13 +129,14 @@ export async function getConnected(workspaceId: string): Promise<ConnectedSessio
 
 export async function bumpUsage(
   workspaceId: string,
-  inc: { respostasIa?: number; mensagensAtendimento?: number; disparos?: number },
+  inc: { respostasIa?: number; mensagensAtendimento?: number; disparos?: number; transcricoesSeg?: number },
 ): Promise<void> {
   const mes = monthKeyOf()
   const data = {
     respostasIa: inc.respostasIa ?? 0,
     mensagensAtendimento: inc.mensagensAtendimento ?? 0,
     disparos: inc.disparos ?? 0,
+    transcricoesSeg: inc.transcricoesSeg ?? 0,
   }
   await db.usageCounter.upsert({
     where: { workspaceId_mes: { workspaceId, mes } },
@@ -144,6 +145,7 @@ export async function bumpUsage(
       ...(data.respostasIa ? { respostasIa: { increment: data.respostasIa } } : {}),
       ...(data.mensagensAtendimento ? { mensagensAtendimento: { increment: data.mensagensAtendimento } } : {}),
       ...(data.disparos ? { disparos: { increment: data.disparos } } : {}),
+      ...(data.transcricoesSeg ? { transcricoesSeg: { increment: data.transcricoesSeg } } : {}),
     },
   })
 }

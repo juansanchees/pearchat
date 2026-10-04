@@ -14,6 +14,13 @@ export interface MessageReceivedPayload {
   message: MessageDTO
 }
 
+/** A mensagem mudou (mídia baixada, transcrição pronta...). Carrega a mensagem inteira para a tela trocar no lugar. */
+export interface MessageUpdatedPayload {
+  workspaceId: string
+  conversationId: string
+  message: MessageDTO
+}
+
 export interface MessageStatusPayload {
   workspaceId: string
   conversationId: string
@@ -57,6 +64,7 @@ export interface ServerToClientEvents {
   'space.attention': (payload: SpaceAttentionPayload) => void
   'message.received': (payload: MessageReceivedPayload) => void
   'message.status': (payload: MessageStatusPayload) => void
+  'message.updated': (payload: MessageUpdatedPayload) => void
   'connection.update': (payload: ConnectionUpdatePayload) => void
   'conversation.updated': (payload: ConversationUpdatedPayload) => void
   'handoff.requested': (payload: HandoffRequestedPayload) => void

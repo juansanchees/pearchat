@@ -1,7 +1,10 @@
 import type { AgentTom } from '@/lib/types'
+import { markVisionUnavailable } from '@/server/media/ai-caps'
 import type { KbPair } from './prompt'
 
-export type ChatMessage = { role: 'user' | 'assistant'; content: string }
+/** Imagem anexada a uma mensagem do cliente (entrada de visão). Só a última mensagem do cliente leva imagem. */
+export type ChatImage = { mime: string; base64: string }
+export type ChatMessage = { role: 'user' | 'assistant'; content: string; image?: ChatImage }
 
 export type GenerateReplyResult = { texto: string; simulado: boolean }
 
@@ -71,7 +74,20 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
   })
 }
 
-async function callAnthropic(key: string, system: string, messages: ChatMessage[]): Promise<string> {
+const stripImages = (messages: ChatMessage[]): ChatMessage[] => messages.map(({ image: _image, ...m }) => m)
+
+async function callAnthropic(key: string, system: string, chat: ChatMessage[]): Promise<string> {
+  const messages = chat.map((m) =>
+    m.image
+      ? {
+          role: m.role,
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: m.image.mime, data: m.image.base64 } },
+            { type: 'text', text: m.content },
+          ],
+        }
+      : { role: m.role, content: m.content },
+  )
   const json = (await postJson(
     `${anthropicBase()}/messages`,
     { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
@@ -84,7 +100,18 @@ async function callAnthropic(key: string, system: string, messages: ChatMessage[
   return texto
 }
 
-async function callOpenAi(key: string, system: string, messages: ChatMessage[]): Promise<string> {
+async function callOpenAi(key: string, system: string, chat: ChatMessage[]): Promise<string> {
+  const messages = chat.map((m) =>
+    m.image
+      ? {
+          role: m.role,
+          content: [
+            { type: 'text', text: m.content },
+            { type: 'image_url', image_url: { url: `data:${m.image.mime};base64,${m.image.base64}` } },
+          ],
+        }
+      : { role: m.role, content: m.content },
+  )
   const effort = process.env.AI_REASONING_EFFORT?.trim()
   const json = (await postJson(
     `${openAiBase()}/chat/completions`,
@@ -126,9 +153,21 @@ export async function generateReply({
   simulate?: () => string
 }): Promise<GenerateReplyResult> {
   const anthropic = process.env.ANTHROPIC_API_KEY
-  if (anthropic) return { texto: cleanReply(await callAnthropic(anthropic, system, messages)), simulado: false }
   const openai = process.env.OPENAI_API_KEY
-  if (openai) return { texto: cleanReply(await callOpenAi(openai, system, messages)), simulado: false }
+  if (anthropic || openai) {
+    const call = (msgs: ChatMessage[]) => (anthropic ? callAnthropic(anthropic, system, msgs) : callOpenAi(openai as string, system, msgs))
+    try {
+      return { texto: cleanReply(await call(messages)), simulado: false }
+    } catch (e) {
+      // O modelo recusou a imagem (não aceita visão, formato, tamanho): lembra por 1 h e responde só com o texto.
+      const withImage = messages.some((m) => m.image)
+      if (withImage && e instanceof LlmError && e.status !== null && [400, 403, 404, 422].includes(e.status)) {
+        markVisionUnavailable()
+        return { texto: cleanReply(await call(stripImages(messages))), simulado: false }
+      }
+      throw e
+    }
+  }
   return { texto: simulate ? simulate() : 'Posso ajudar com informações sobre nossos produtos e serviços, preços, horários e agendamentos. Sobre o que você quer saber?', simulado: true }
 }
 
