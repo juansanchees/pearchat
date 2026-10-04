@@ -359,7 +359,13 @@ describe('3. webhook', () => {
     const echo = msgPayload(P1, W1, { message_echoes: [{ from: '551100000000', to, id: 'wamid.ECO_1', timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: 'Respondi pelo celular' } }] }, 'smb_message_echoes')
     await hook(echo)
     await hook(echo)
-    const m = await until(() => db.message.findFirst({ where: { providerMessageId: 'wamid.ECO_1' }, include: { conversation: true } }))
+    const m0 = await until(() => db.message.findFirst({ where: { providerMessageId: 'wamid.ECO_1' }, include: { conversation: true } }))
+    // a mensagem é gravada antes de registerManualReply passar a conversa para HUMANO: espera, não lê na hora
+    const m = await until(async () => {
+      const x = await db.message.findFirst({ where: { providerMessageId: 'wamid.ECO_1' }, include: { conversation: true } })
+      return x && x.conversation.mode === 'HUMANO' ? x : null
+    }, 10_000)
+    assert.equal(m0.id, m.id)
     assert.equal(m.direction, 'OUT')
     assert.equal(m.author, 'USER')
     assert.equal(m.body, 'Respondi pelo celular')
@@ -678,7 +684,7 @@ describe('5. modelos', () => {
 describe('6. cadastro hospedado pela Meta', () => {
   it('PARTNER_ADDED vira evento pendente; "Já concluí" só reivindica com o número certo; evento é de uso único', async () => {
     await db.whatsAppSession.update({ where: { workspaceId: A2.workspaceId }, data: { metaPhoneNumberId: null, status: 'DESCONECTADO' } })
-    const st = ((await (await api(ca2, '/api/wa/embedded-signup/start', { method: 'POST' })).json()) as { state: string }).state
+    const st = ((await (await api(ca2, '/api/wa/embedded-signup/start', { body: { mode: 'hosted' } })).json()) as { state: string }).state
     // nada pendente ainda
     let r = await api(ca2, '/api/wa/embedded-signup/hosted/check', { body: { state: st, numero: '+55 11 97777-0005' } })
     assert.deepEqual(await r.json(), { status: 'waiting' })

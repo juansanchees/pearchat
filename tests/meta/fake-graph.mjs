@@ -51,6 +51,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/__log') return ok(res, log)
   if (url.pathname === '/__reset') {
     log.length = 0
+    cfg.templates = {} // modelos também: senão uma segunda rodada colide nomes
     return ok(res, { ok: true })
   }
   if (url.pathname === '/__cfg') {

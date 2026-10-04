@@ -32,7 +32,7 @@ export const waApi = {
   finish: (importarHistorico: boolean) => request('POST', '/api/wa/finish', { importarHistorico }),
   mockScan: () => request('POST', '/api/wa/mock/scan'),
   /** Cria o state de uso único do Cadastro incorporado e devolve o link hospedado pela Meta. */
-  signupStart: () => request<{ state: string; expiresAt: string; mode: 'sdk' | 'hosted'; hostedUrl: string }>('POST', '/api/wa/embedded-signup/start'),
+  signupStart: (mode?: 'sdk' | 'hosted') => request<{ state: string; expiresAt: string; mode: 'sdk' | 'hosted'; hostedUrl: string }>('POST', '/api/wa/embedded-signup/start', mode ? { mode } : undefined),
   embeddedSignup: (payload: { state: string; code: string; wabaId?: string; phoneNumberId?: string; businessId?: string; event?: string }) =>
     request('POST', '/api/wa/embedded-signup/callback', payload),
   /** Fluxo hospedado: procura o cadastro concluído na Meta. */

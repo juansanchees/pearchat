@@ -73,9 +73,9 @@ export function OficialRealFlow({ onBack }: { onBack: () => void }) {
   const stateRef = useRef(state)
   stateRef.current = state
 
-  const prepare = useCallback(async () => {
+  const prepare = useCallback(async (forceMode?: 'hosted') => {
     try {
-      const r = await waApi.signupStart()
+      const r = await waApi.signupStart(forceMode)
       if (alive.current) setState({ id: r.state, hostedUrl: r.hostedUrl })
     } catch (e) {
       if (alive.current) setError(errMessage(e))
@@ -101,11 +101,14 @@ export function OficialRealFlow({ onBack }: { onBack: () => void }) {
         if (cancelled) return
         setMode('hosted')
         setFallbackNote(true)
+        // O state do modo SDK não vale no hospedado: pede outro já marcado como hospedado.
+        setState(null)
+        void prepare('hosted')
       })
     return () => {
       cancelled = true
     }
-  }, [mode, fb, connectCfg.metaAppId, connectCfg.graphVersion])
+  }, [mode, fb, connectCfg.metaAppId, connectCfg.graphVersion, prepare])
 
   const done = (next: WhatsAppStatusDTO) => {
     setDto(next)
@@ -118,7 +121,7 @@ export function OficialRealFlow({ onBack }: { onBack: () => void }) {
     setError(msg)
     setStep('intro')
     setState(null)
-    void prepare() // o state é de uso único: gera outro para a nova tentativa
+    void prepare(mode === 'hosted' ? 'hosted' : undefined) // o state é de uso único: gera outro para a nova tentativa
   }
 
   const startSdk = () => {
