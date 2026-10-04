@@ -5,7 +5,7 @@ import type { PlanKey } from '@/lib/plans'
 import { audit } from '@/server/audit/log'
 import { getProvider } from './index'
 import { BillingError, billingEnabled, parseAsaasDate, spDate } from './config'
-import { maskCpfCnpj, parseCpfCnpj } from './cpf'
+import { maskCpfCnpj, openCpfCnpj, parseCpfCnpj, sealCpfCnpj } from './cpf'
 import { sendBillingMail, fmtDateBR } from './emails'
 import { entitlements, invalidateEntitlements } from './entitlements'
 import { ProviderError } from './provider'
@@ -69,10 +69,10 @@ export async function upsertInvoice(orgId: string, p: ProviderPayment): Promise<
 
 async function ensureCustomer(org: Organization, cpfInput: unknown, email: string): Promise<string> {
   if (org.asaasCustomerId) return org.asaasCustomerId
-  const doc = parseCpfCnpj(typeof cpfInput === 'string' && cpfInput.trim() ? cpfInput : org.cpfCnpj)
+  const doc = parseCpfCnpj(typeof cpfInput === 'string' && cpfInput.trim() ? cpfInput : openCpfCnpj(org.cpfCnpj))
   if (!doc) throw new BillingError('Informe um CPF ou CNPJ válido.', 400, 'CPF_INVALIDO')
   const c = await gw(() => getProvider().createCustomer({ name: org.nome.slice(0, 100), cpfCnpj: doc, email, externalReference: org.id }))
-  const r = await db.organization.updateMany({ where: { id: org.id, asaasCustomerId: null }, data: { asaasCustomerId: c.id, cpfCnpj: doc } })
+  const r = await db.organization.updateMany({ where: { id: org.id, asaasCustomerId: null }, data: { asaasCustomerId: c.id, cpfCnpj: sealCpfCnpj(doc) } })
   if (r.count === 0) return (await loadOrg(org.id)).asaasCustomerId ?? c.id
   return c.id
 }
@@ -315,7 +315,7 @@ export async function getCobranca(orgId: string): Promise<CobrancaDTO | null> {
     planoPendente: org.planoPendente ? PLANS[org.planoPendente].nome : null,
     planoAgendado: org.planoAgendado ? PLANS[org.planoAgendado].nome : null,
     temAssinatura: !!org.asaasSubscriptionId && org.billingStatus !== 'cancelada',
-    documento: org.cpfCnpj ? maskCpfCnpj(org.cpfCnpj) : null,
+    documento: openCpfCnpj(org.cpfCnpj) ? maskCpfCnpj(openCpfCnpj(org.cpfCnpj) as string) : null,
     precos: Object.fromEntries(PLAN_KEYS.map((k) => [PLANS[k].nome, planPrice(k)])),
     faturas,
   }
