@@ -150,6 +150,7 @@ export default function Conversas(): JSX.Element {
               <Composer
                 key={c.active.id}
                 iaAnswering={iaAnswering}
+                contact={{ nome: c.active.nome, telefone: c.active.telefone }}
                 onSend={c.send}
                 onSendMedia={c.sendMedia}
                 incomingFile={dropped}
