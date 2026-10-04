@@ -12,6 +12,14 @@ export type NormalizedInbound = {
   providerMessageId: string
   timestamp: Date
 }
+/** Mensagem enviada pelo próprio dono, direto no app do WhatsApp (celular), vista pelo webhook como `fromMe`. */
+export type NormalizedOutbound = {
+  /** Contato com quem o dono conversa (o chat). */
+  to: ContactRef
+  body: string
+  providerMessageId: string
+  timestamp: Date
+}
 /** Status que vêm dos provedores; 'pendente' é só interno e nunca chega por webhook. */
 export type DeliveryStatus = Exclude<MessageStatusKind, 'pendente'>
 export type NormalizedStatus = { providerMessageId: string; status: DeliveryStatus }
@@ -146,7 +154,7 @@ export function normalizeMetaPayload(json: unknown): MetaBatch[] {
 export type EvolutionEvent =
   | { kind: 'qr'; instance: string; qr: string }
   | { kind: 'connection'; instance: string; status: ConnectionStatusKind }
-  | { kind: 'messages'; instance: string; inbound: NormalizedInbound[] }
+  | { kind: 'messages'; instance: string; inbound: NormalizedInbound[]; outbound: NormalizedOutbound[] }
   | { kind: 'status'; instance: string; updates: NormalizedStatus[] }
   | { kind: 'history'; instance: string; messages: HistoryMessage[] }
   | { kind: 'ignored' }
@@ -234,9 +242,19 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
 
   if (name === 'messages.upsert') {
     const inbound: NormalizedInbound[] = []
+    const outbound: NormalizedOutbound[] = []
     for (const raw of asArray(data)) {
       const m = evoMessage.safeParse(raw)
-      if (!m.success || m.data.key.fromMe) continue
+      if (!m.success) continue
+      if (m.data.key.fromMe) {
+        // Resposta dada pelo celular: o PearChat grava e trata como atendimento manual (a rota decide a regra).
+        const text = extractEvolutionBody(m.data.message)
+        const to = jidToRef(m.data.key.remoteJid, m.data.key.remoteJidAlt ?? m.data.key.senderPn)
+        if (text && text.trim() && to) {
+          outbound.push({ to, body: text, providerMessageId: m.data.key.id, timestamp: secondsToDate(m.data.messageTimestamp) })
+        }
+        continue
+      }
       const body = m.data.message?.conversation ?? m.data.message?.extendedTextMessage?.text
       if (!body) continue
       const from = jidToRef(m.data.key.remoteJid, m.data.key.remoteJidAlt ?? m.data.key.senderPn)
@@ -249,7 +267,7 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
         timestamp: secondsToDate(m.data.messageTimestamp),
       })
     }
-    return inbound.length ? { kind: 'messages', instance, inbound } : { kind: 'ignored' }
+    return inbound.length || outbound.length ? { kind: 'messages', instance, inbound, outbound } : { kind: 'ignored' }
   }
 
   if (name === 'messages.set') {

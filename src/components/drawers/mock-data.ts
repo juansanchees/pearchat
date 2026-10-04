@@ -65,8 +65,8 @@ export const NOTIF_INICIAL = ['Conversa sem resposta há 10 min', 'IA passou uma
 export type PlanoNome = 'Essencial' | 'Pro' | 'Negócios'
 export const PLANOS: { nome: PlanoNome; preco: string; desc: string }[] = [
   { nome: 'Essencial', preco: 'R$ 79/mês', desc: '1 WhatsApp, 500 respostas de IA e 1.000 disparos por mês' },
-  { nome: 'Pro', preco: 'R$ 149/mês', desc: '1 WhatsApp, 3.000 respostas de IA, 10.000 disparos, follow-up e agenda' },
-  { nome: 'Negócios', preco: 'R$ 299/mês', desc: '3 WhatsApps, IA e disparos ilimitados, suporte prioritário' },
+  { nome: 'Pro', preco: 'R$ 149/mês', desc: '3 WhatsApps, 3.000 respostas de IA, 10.000 disparos, follow-up e agenda' },
+  { nome: 'Negócios', preco: 'R$ 299/mês', desc: '5 WhatsApps, IA e disparos ilimitados, suporte prioritário' },
 ]
 export const PLANO_RANK: Record<PlanoNome, number> = { Essencial: 0, Pro: 1, Negócios: 2 }
 export const HORARIO_ATENDIMENTO_PADRAO = 'Seg a sáb, 8h às 18h'

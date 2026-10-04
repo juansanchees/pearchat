@@ -4,14 +4,24 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import { ClockClockwise, Hand, LockSimple, PaperPlaneTilt, PauseCircle, Plugs, Sparkle, Warning } from '@phosphor-icons/react'
 import type { AutomationKey, DrawerKey, WhatsAppStatusDTO } from '@/lib/types'
+import type { SpaceDTO, SpacesResponse } from '@/server/spaces/service'
+import type { ConnectConfig } from '@/server/whatsapp/config'
+import type { SpaceAttentionPayload } from '@/server/realtime/events'
 import { redirectIfUnauthorized } from '@/lib/auth-redirect'
 import { closeSocket, useRawSocketEvent, useSocketEvent } from '@/lib/socket-client'
 import { AUTOMATION_TITLES } from './automations'
 import { HANDOFF_WINDOW_EVENT } from './handoff'
 import type { HandoffRequestedPayload } from './handoff'
 
-export type ToastInput = { icon?: ReactNode; title: string; text?: string }
-export type AppUser = { nome: string; email: string; empresa: string; fotoUrl: string | null }
+export type ToastInput = {
+  icon?: ReactNode
+  title: string
+  text?: string
+  /** Botão opcional (ex.: "Ir para esse WhatsApp"); o toast com ação fica mais tempo na tela. */
+  action?: { label: string; onClick: () => void }
+}
+// empresa = nome do negócio do WhatsApp (espaço) ativo; organizacao = nome da conta (mostrado no rodapé do menu).
+export type AppUser = { nome: string; email: string; empresa: string; organizacao: string; fotoUrl: string | null }
 export type ToastItem = ToastInput & { id: number }
 
 export type AppState = {
@@ -33,16 +43,34 @@ export type AppState = {
   /** Contatos na fila de retomada do follow-up (jobs pendentes). */
   fuQueueCount: number
   setFuQueueCount: (n: number) => void
+  /** WhatsApps (espaços) da organização. */
+  spaces: SpacesResponse
+  /** Id do espaço ativo desta tela (fixo até a página recarregar). */
+  workspaceId: string
+  /** Demo ligado? Meta configurada? (calculado no servidor a cada requisição). */
+  connectCfg: ConnectConfig
+  /** Recarrega a lista de espaços do servidor. Se o espaço ativo mudou em outra aba, recarrega a página. */
+  refreshSpaces: () => Promise<void>
 }
 
 const Ctx = createContext<AppState | null>(null)
 const TOAST_MS = 3800
+const TOAST_ACTION_MS = 9000
 
 export function AppStateProvider({
   initial,
   children,
 }: {
-  initial: { wa: WhatsAppStatusDTO; automations: Record<AutomationKey, boolean>; user: AppUser; agentName: string; fuQueueCount: number }
+  initial: {
+    wa: WhatsAppStatusDTO
+    automations: Record<AutomationKey, boolean>
+    user: AppUser
+    agentName: string
+    fuQueueCount: number
+    spaces: SpacesResponse
+    workspaceId: string
+    connectCfg: ConnectConfig
+  }
   children: ReactNode
 }) {
   const [wa, setWaState] = useState(initial.wa)
@@ -52,6 +80,9 @@ export function AppStateProvider({
   const [user, setUserState] = useState(initial.user)
   const [agentName, setAgentName] = useState(initial.agentName)
   const [fuQueueCount, setFuQueueCount] = useState(initial.fuQueueCount)
+  const [spaces, setSpaces] = useState(initial.spaces)
+  const workspaceId = initial.workspaceId
+  const connectCfg = initial.connectCfg
   const seq = useRef(0)
   const timer = useRef<number | undefined>(undefined)
   const connected = wa.status === 'conectado'
@@ -65,7 +96,7 @@ export function AppStateProvider({
   const toast = useCallback((t: ToastInput) => {
     window.clearTimeout(timer.current)
     setCurrentToast({ ...t, id: ++seq.current })
-    timer.current = window.setTimeout(() => setCurrentToast(null), TOAST_MS)
+    timer.current = window.setTimeout(() => setCurrentToast(null), t.action ? TOAST_ACTION_MS : TOAST_MS)
   }, [])
 
   const setWa = useCallback((next: WhatsAppStatusDTO) => {
@@ -133,6 +164,66 @@ export function AppStateProvider({
       text: p.motivo,
     })
     window.dispatchEvent(new CustomEvent<HandoffRequestedPayload>(HANDOFF_WINDOW_EVENT, { detail: p }))
+  })
+
+  // Recarrega os cartões dos WhatsApps. A tela é do espaço `workspaceId`; se o servidor diz que o ativo agora é outro
+  // (troca feita em outra aba), recarrega a página inteira para nunca mostrar/operar dados do espaço errado.
+  const refreshSpaces = useCallback(async () => {
+    try {
+      const res = await fetch('/api/spaces', { cache: 'no-store' })
+      redirectIfUnauthorized(res.status)
+      if (!res.ok) return
+      const next = (await res.json()) as SpacesResponse
+      if (next.ativoId !== workspaceId) {
+        window.location.reload()
+        return
+      }
+      setSpaces(next)
+    } catch {
+      // mantém a última lista conhecida
+    }
+  }, [workspaceId])
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshSpaces()
+    }
+    const t = window.setInterval(onVisible, 60_000)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(t)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [refreshSpaces])
+
+  // Aviso leve de OUTROS espaços da organização (contadores e passagens da IA). Eventos completos só vêm do ativo.
+  useSocketEvent('space.attention', (p: SpaceAttentionPayload) => {
+    if (p.workspaceId === workspaceId) return
+    setSpaces((cur) => ({
+      ...cur,
+      espacos: cur.espacos.map((e: SpaceDTO) => (e.id === p.workspaceId ? { ...e, nome: p.nome, unread: p.unread, handoffs: p.handoffs } : e)),
+    }))
+    if (p.handoff) {
+      toast({
+        icon: <Hand size={18} weight="fill" />,
+        title: `${p.nome}: ${p.handoff.agente} passou ${p.handoff.contato} para você`,
+        text: p.handoff.motivo,
+        action: {
+          label: 'Ir para esse WhatsApp',
+          onClick: () => {
+            void fetch('/api/spaces/switch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ workspaceId: p.workspaceId }),
+            })
+              .then((r) => {
+                if (r.ok) window.location.assign('/whatsapp')
+              })
+              .catch(() => {})
+          },
+        },
+      })
+    }
   })
 
   const setAutomation = useCallback(
@@ -208,8 +299,12 @@ export function AppStateProvider({
       setAgentName,
       fuQueueCount,
       setFuQueueCount,
+      spaces,
+      workspaceId,
+      connectCfg,
+      refreshSpaces,
     }),
-    [wa, setWa, connected, automations, setAutomation, drawer, closeDrawer, toast, user, agentName, currentToast, setUser, fuQueueCount],
+    [wa, setWa, connected, automations, setAutomation, drawer, closeDrawer, toast, user, agentName, currentToast, setUser, fuQueueCount, spaces, workspaceId, connectCfg, refreshSpaces],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

@@ -31,7 +31,7 @@ type CampaignRow = Awaited<ReturnType<typeof dueCampaigns>>[number]
 function dueCampaigns(now: Date) {
   return db.campaign.findMany({
     where: {
-      workspace: { disparosAtivos: true, whatsappSession: { is: { status: 'CONECTADO' } } },
+      workspace: { disparosAtivos: true, arquivadoEm: null, whatsappSession: { is: { status: 'CONECTADO' } } },
       AND: [
         { OR: [{ status: { in: ['na_fila', 'enviando'] } }, { status: 'agendada', scheduledAt: { lte: now } }] },
         { OR: [{ nextSendAt: null }, { nextSendAt: { lte: now } }] },

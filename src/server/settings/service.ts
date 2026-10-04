@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { spMonthKey } from '@/server/calendar/time'
+import { getOrgScope, PLAN_SPACE_LIMIT } from '@/server/spaces/org'
 import type { BillingDTO, SettingsDTO } from '@/lib/types'
 
 export const NOTIF_OPCOES = ['Conversa sem resposta há 10 min', 'IA passou uma conversa para mim', 'Disparo concluído', 'Novo agendamento'] as const
@@ -80,31 +81,41 @@ const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julh
 
 export const currentMonthKey = spMonthKey
 
-/** Leitura leve para o motor: plano, limite de respostas de IA e uso do mês (2 consultas simples). */
+/**
+ * Leitura leve para o motor: plano da ORGANIZAÇÃO, limite de respostas de IA e uso do mês somado em todos os
+ * WhatsApps (espaços) da organização. Sem organização (conta antiga), vale só o workspace.
+ */
 export async function getAiQuota(workspaceId: string): Promise<{ limite: number | null; usadas: number }> {
-  const [ws, usage] = await Promise.all([
-    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { plano: true } }),
-    db.usageCounter.findUnique({ where: { workspaceId_mes: { workspaceId, mes: spMonthKey() } }, select: { respostasIa: true } }),
-  ])
-  return { limite: LIMITES[ws.plano].respostasIa, usadas: usage?.respostasIa ?? 0 }
+  const scope = await getOrgScope(workspaceId)
+  const usage = await db.usageCounter.aggregate({
+    where: { workspaceId: { in: scope.workspaceIds }, mes: spMonthKey() },
+    _sum: { respostasIa: true },
+  })
+  return { limite: LIMITES[scope.plano].respostasIa, usadas: usage._sum.respostasIa ?? 0 }
 }
 
 export async function getBilling(workspaceId: string): Promise<BillingDTO> {
-  const [ws, usage, contatos, invoices] = await Promise.all([
-    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { plano: true } }),
-    db.usageCounter.findUnique({ where: { workspaceId_mes: { workspaceId, mes: currentMonthKey() } } }),
-    db.contact.count({ where: { workspaceId } }),
-    db.invoice.findMany({ where: { workspaceId }, orderBy: { emitidaEm: 'desc' }, take: 12 }),
+  const scope = await getOrgScope(workspaceId)
+  const ids = scope.workspaceIds
+  const [usage, contatos, invoices, espacos] = await Promise.all([
+    db.usageCounter.aggregate({
+      where: { workspaceId: { in: ids }, mes: currentMonthKey() },
+      _sum: { mensagensAtendimento: true, respostasIa: true, disparos: true },
+    }),
+    db.contact.count({ where: { workspaceId: { in: ids } } }),
+    db.invoice.findMany({ where: { workspaceId: { in: ids } }, orderBy: { emitidaEm: 'desc' }, take: 12 }),
+    db.workspace.count({ where: { id: { in: ids }, arquivadoEm: null } }),
   ])
   return {
-    plano: PLANO_NOME[ws.plano],
+    plano: PLANO_NOME[scope.plano],
     uso: {
-      mensagensAtendimento: usage?.mensagensAtendimento ?? 0,
-      respostasIa: usage?.respostasIa ?? 0,
-      disparos: usage?.disparos ?? 0,
+      mensagensAtendimento: usage._sum.mensagensAtendimento ?? 0,
+      respostasIa: usage._sum.respostasIa ?? 0,
+      disparos: usage._sum.disparos ?? 0,
       contatos,
     },
-    limites: LIMITES[ws.plano],
+    limites: LIMITES[scope.plano],
+    espacos: { usados: espacos, limite: PLAN_SPACE_LIMIT[scope.plano] },
     faturas: invoices.map((i) => ({
       id: i.id,
       mes: `${MESES[i.emitidaEm.getMonth()]} ${i.emitidaEm.getFullYear()}`,

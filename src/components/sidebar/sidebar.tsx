@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -13,7 +13,9 @@ import {
   CrownSimple,
   GearSix,
   GoogleLogo,
+  Hand,
   LockSimple,
+  Plus,
   PaperPlaneTilt,
   Power,
   SignOut,
@@ -28,6 +30,7 @@ import { useAppState } from '@/components/app/app-state'
 import { AUTOMATION_KEYS, AUTOMATION_TITLES, DRAWER_DESCRIPTIONS, fmtNum } from '@/components/app/automations'
 import { useShell } from '@/components/app/shell-context'
 import { useDisconnect } from '@/components/app/use-disconnect'
+import { useSpaceActions } from '@/components/app/use-spaces'
 import { Logo } from '@/components/brand/logo'
 import { useLogout } from '@/components/app/use-logout'
 import { usePhotoPicker } from '@/components/app/use-photo-picker'
@@ -41,7 +44,14 @@ const sectionLabel = 'text-[10.5px] font-medium uppercase leading-none tracking-
 
 export function Sidebar() {
   const pathname = usePathname()
-  const { wa, connected, automations, setAutomation, openDrawer, closeDrawer, drawer, user, agentName, fuQueueCount } = useAppState()
+  const { wa, connected, automations, setAutomation, openDrawer, closeDrawer, drawer, user, agentName, fuQueueCount, spaces, workspaceId } = useAppState()
+  const { switchTo, create, limitReached, busy: spaceBusy } = useSpaceActions()
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const newNameRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (adding) newNameRef.current?.focus()
+  }, [adding])
   const { campanhas, plano } = useDrawerData()
   const { menuOpen, setMenuOpen } = useShell()
   const { contatos, agenda } = useSidebarData()
@@ -80,10 +90,9 @@ export function Sidebar() {
         ? 'Conectar Google Agenda'
         : 'Carregando…'
 
-  const waTitle = connected ? 'WhatsApp conectado' : 'WhatsApp desconectado'
-  const waSub = !connected
-    ? 'Escaneie o QR para começar'
-    : `${wa.provider === 'oficial' ? 'Oficial' : 'Conexão rápida'}${wa.numero ? ` · ${wa.numero}` : ''}`
+  // Subtítulo do cartão de um WhatsApp: tipo de conexão e número, ou "Desconectado". O ativo usa o estado ao vivo.
+  const cardSub = (provider: 'oficial' | 'rapida' | null, status: string, numero: string | null) =>
+    status !== 'conectado' ? 'Desconectado' : `${provider === 'oficial' ? 'Oficial' : 'Conexão rápida'}${numero ? ` · ${numero}` : ''}`
 
   const sending = campanhas.find((c) => c.status === 'Enviando')
   const agendadas = campanhas.filter((c) => c.status === 'Agendada' || c.status === 'Na fila').length
@@ -122,30 +131,120 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* 2. Cartão do WhatsApp */}
-      <div className="px-4 pb-0 pt-[6px]">
-        <Link
-          href="/whatsapp"
-          aria-current={onWhatsapp ? 'page' : undefined}
-          onClick={goTo}
-          className={cn(
+      {/* 2. Cartões dos WhatsApps (um por espaço) + "Adicionar WhatsApp" */}
+      <div className="flex flex-col gap-2 px-4 pb-0 pt-[6px]">
+        {spaces.espacos.map((sp) => {
+          const active = sp.id === workspaceId
+          const live = active ? { provider: wa.provider, status: wa.status, numero: wa.numero } : sp
+          const isConnected = live.status === 'conectado'
+          const className = cn(
             'flex w-full items-center gap-[11px] rounded-lg border bg-dark-surface p-[13px] text-left text-dark-text hover:border-dark-accent-600',
-            onWhatsapp ? 'border-dark-accent-700' : 'border-dark-divider',
-          )}
-        >
-          <span className="grid h-9 w-9 flex-none place-items-center rounded-pill border border-dark-accent-700 bg-dark-accent-900">
-            <WhatsappLogo size={18} className="text-dark-accent-300" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-medium leading-[1.25]">{waTitle}</span>
-            <span className="mt-[2px] block truncate text-[11.5px] text-dark-neutral-400">{waSub}</span>
-          </span>
-          <span
-            className={cn('h-2 w-2 flex-none animate-zfPulse rounded-pill', connected ? 'bg-dark-accent-400' : 'bg-dark-neutral-600')}
-            style={{ animationDuration: '2.4s' }}
-            aria-hidden
-          />
-        </Link>
+            active ? (onWhatsapp ? 'border-dark-accent-500 bg-[color-mix(in_srgb,#5ccb6e_14%,#1d2117)]' : 'border-dark-accent-700') : 'border-dark-divider',
+          )
+          const body = (
+            <>
+              <span className="grid h-9 w-9 flex-none place-items-center rounded-pill border border-dark-accent-700 bg-dark-accent-900">
+                <WhatsappLogo size={18} className="text-dark-accent-300" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium leading-[1.25]">{active ? user.empresa : sp.nome}</span>
+                <span className="mt-[2px] block truncate text-[11.5px] text-dark-neutral-400">
+                  {cardSub(live.provider, live.status, live.numero)}
+                </span>
+              </span>
+              {!active && (sp.unread > 0 || sp.handoffs > 0) && (
+                <span
+                  className="flex flex-none items-center gap-[3px] rounded-pill bg-dark-accent-500 px-[6px] py-[1px] text-[10.5px] font-medium leading-[1.5] text-dark-accent-900"
+                  title={`${sp.unread} não ${sp.unread === 1 ? 'lida' : 'lidas'}${sp.handoffs > 0 ? ` · ${sp.handoffs} aguardando você` : ''}`}
+                >
+                  {sp.handoffs > 0 && <Hand size={10} weight="fill" aria-hidden />}
+                  {sp.unread > 0 ? (sp.unread > 99 ? '99+' : sp.unread) : sp.handoffs}
+                </span>
+              )}
+              <span
+                className={cn('h-2 w-2 flex-none animate-zfPulse rounded-pill', isConnected ? 'bg-dark-accent-400' : 'bg-dark-neutral-600')}
+                style={{ animationDuration: '2.4s' }}
+                aria-hidden
+              />
+            </>
+          )
+          return active ? (
+            <Link key={sp.id} href="/whatsapp" aria-current={onWhatsapp ? 'page' : undefined} onClick={goTo} className={className}>
+              {body}
+            </Link>
+          ) : (
+            <button key={sp.id} type="button" disabled={spaceBusy} onClick={() => void switchTo(sp.id)} className={className} title={`Trocar para ${sp.nome}`}>
+              {body}
+            </button>
+          )
+        })}
+
+        {adding ? (
+          <form
+            className="flex flex-col gap-2 rounded-lg border border-dashed border-dark-neutral-700 p-[11px]"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const nome = newName.trim()
+              if (nome && !spaceBusy) void create(nome)
+            }}
+          >
+            <label className="text-[11.5px] text-dark-neutral-400" htmlFor="novo-whatsapp-nome">
+              Nome do negócio deste WhatsApp
+            </label>
+            <input
+              id="novo-whatsapp-nome"
+              ref={newNameRef}
+              value={newName}
+              maxLength={120}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setAdding(false)
+              }}
+              placeholder="Ex.: Loja do Centro"
+              className="w-full rounded-md border border-dark-divider bg-dark-bg px-[10px] py-[7px] text-[13px] text-dark-text outline-none placeholder:text-dark-neutral-600 focus:border-dark-accent-600"
+            />
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={spaceBusy || !newName.trim()}
+                className="flex-1 rounded-md border border-dark-accent-600 bg-dark-accent-900 px-3 py-[6px] text-[12px] font-medium text-dark-accent-200 hover:bg-dark-accent-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {spaceBusy ? 'Criando…' : 'Criar e conectar'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdding(false)}
+                className="rounded-md border border-transparent bg-transparent px-3 py-[6px] text-[12px] text-dark-neutral-400 hover:bg-dark-neutral-900"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              if (spaces.espacos.length >= spaces.limite) {
+                limitReached(spaces.limite)
+                closeMenu()
+                return
+              }
+              setNewName('')
+              setAdding(true)
+            }}
+            className="flex w-full items-center gap-[11px] rounded-lg border border-dashed border-dark-neutral-700 bg-transparent p-[13px] text-left text-dark-neutral-300 hover:border-dark-accent-600 hover:text-dark-text"
+          >
+            <span className="grid h-9 w-9 flex-none place-items-center rounded-pill border border-dashed border-dark-neutral-700">
+              <Plus size={16} className="text-dark-neutral-400" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-medium leading-[1.25]">Adicionar WhatsApp</span>
+              <span className="mt-[2px] block truncate text-[11.5px] text-dark-neutral-500">
+                {spaces.espacos.length} de {spaces.limite} no seu plano
+              </span>
+            </span>
+          </button>
+        )}
       </div>
 
       {/* 3. Cabeçalho Automações */}
@@ -327,7 +426,7 @@ export function Sidebar() {
         <div className="min-w-0 flex-1">
           <div className="truncate text-[12.5px] font-medium leading-[1.25]">{user.nome}</div>
           <div className="truncate text-[11px] text-dark-neutral-500">
-            {user.empresa} · Plano {plano}
+            {user.organizacao} · Plano {plano}
           </div>
         </div>
         <button

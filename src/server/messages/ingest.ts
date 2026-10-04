@@ -11,14 +11,13 @@ import { logError } from '@/server/engine/util'
 import { phoneCandidates } from '@/server/contacts/phone'
 import { cleanText } from './api'
 import { loadConversationItem, toMessageDTO } from './dto'
+import { registerManualReply } from './takeover'
+import { notifySpaceAttention } from '@/server/spaces/attention'
 
 const STATUS_RANK = { PENDENTE: 0, ENVIADA: 1, ENTREGUE: 2, LIDA: 3 } as const
 
-export async function findOrCreateContact(
-  workspaceId: string,
-  from: ContactRef,
-  nome: string | undefined,
-): Promise<Contact> {
+/** Contato do workspace pelo BSUID ou telefone (aceita o mesmo número em outro formato), sem criar nada. */
+export async function findContact(workspaceId: string, from: ContactRef): Promise<Contact | null> {
   const { waUserId, telefone } = from
   let contact: Contact | null = null
   if (waUserId) contact = await db.contact.findUnique({ where: { workspaceId_waUserId: { workspaceId, waUserId } } })
@@ -27,6 +26,16 @@ export async function findOrCreateContact(
     const found = await db.contact.findMany({ where: { workspaceId, telefone: { in: phoneCandidates(telefone) } } })
     contact = found.find((c) => c.telefone === telefone) ?? found[0] ?? null
   }
+  return contact
+}
+
+export async function findOrCreateContact(
+  workspaceId: string,
+  from: ContactRef,
+  nome: string | undefined,
+): Promise<Contact> {
+  const { waUserId, telefone } = from
+  const contact = await findContact(workspaceId, from)
 
   if (contact) {
     const patch: Prisma.ContactUpdateInput = {}
@@ -129,7 +138,101 @@ export async function ingestInboundMessage(input: {
   } catch (e) {
     logError('ingest', 'follow-up/campanha', e)
   }
+  void notifySpaceAttention(workspaceId)
   await scheduleAiReply({ workspaceId, conversationId: conversation.id, optOut })
+}
+
+/** Quanto tempo uma mensagem enviada pelo PearChat fica "em voo" (gravada como PENDENTE, ainda sem id do provedor). */
+const IN_FLIGHT_MS = 120_000
+
+/**
+ * Mensagem que o DONO enviou direto pelo celular (webhook `messages.upsert` com `fromMe`).
+ *
+ * - NÃO duplica o que o próprio PearChat enviou (app, IA, follow-up, disparo, lembrete): confere pelo id do
+ *   provedor e, para a corrida em que o webhook chega ANTES de o envio gravar o id, também por uma mensagem
+ *   nossa ainda PENDENTE, sem id, com o mesmo texto na mesma conversa (tudo numa consulta só, sem janela entre as duas).
+ * - `takeOver` = resposta manual de verdade (regra única de takeover.ts). Mensagens antigas (histórico que chega
+ *   pelo upsert) são só gravadas, marcadas como importadas: o motor não age sobre elas e não assumem a conversa.
+ */
+export async function ingestOutboundFromPhone(input: {
+  workspaceId: string
+  to: ContactRef
+  body: string
+  providerMessageId: string
+  timestamp: Date
+  takeOver: boolean
+}): Promise<'recorded' | 'duplicate' | 'ignored'> {
+  const { workspaceId, to, providerMessageId, timestamp, takeOver } = input
+  if (!to.waUserId && !to.telefone) return 'ignored'
+  const body = cleanText(input.body)
+  if (!body.trim()) return 'ignored'
+
+  // Só pode haver envio nosso em voo para um contato que já existe.
+  const existing = await findContact(workspaceId, to)
+  const existingConv = existing ? await db.conversation.findUnique({ where: { contactId: existing.id }, select: { id: true } }) : null
+  const dup = await db.message.findFirst({
+    where: {
+      OR: [
+        { providerMessageId, conversation: { workspaceId } },
+        ...(existingConv
+          ? [
+              {
+                conversationId: existingConv.id,
+                direction: 'OUT' as const,
+                status: 'PENDENTE' as const,
+                providerMessageId: null,
+                body,
+                createdAt: { gte: new Date(Date.now() - IN_FLIGHT_MS) },
+              },
+            ]
+          : []),
+      ],
+    },
+    select: { id: true },
+  })
+  if (dup) return 'duplicate'
+
+  const contact = existing ?? (await findOrCreateContact(workspaceId, to, undefined))
+  const conversation = await db.conversation.upsert({
+    where: { contactId: contact.id },
+    create: { workspaceId, contactId: contact.id },
+    update: {},
+  })
+
+  let message
+  try {
+    message = await db.message.create({
+      data: {
+        conversationId: conversation.id,
+        direction: 'OUT',
+        author: 'USER',
+        body,
+        status: 'ENVIADA',
+        providerMessageId,
+        imported: !takeOver,
+        createdAt: timestamp,
+      },
+    })
+  } catch (e) {
+    // Webhook repetido (ou o envio nosso gravou o mesmo id um instante antes): já está registrado.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return 'duplicate'
+    throw e
+  }
+
+  if (takeOver) {
+    await registerManualReply({ conversationId: conversation.id, currentMode: conversation.mode, at: timestamp })
+  } else {
+    await db.conversation.updateMany({
+      where: { id: conversation.id, OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: timestamp } }] },
+      data: { lastMessageAt: timestamp },
+    })
+  }
+
+  emitToWorkspace(workspaceId, 'message.received', { workspaceId, conversationId: conversation.id, message: toMessageDTO(message) })
+  const item = await loadConversationItem(workspaceId, conversation.id)
+  if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })
+  void notifySpaceAttention(workspaceId)
+  return 'recorded'
 }
 
 export async function updateMessageStatus(input: {

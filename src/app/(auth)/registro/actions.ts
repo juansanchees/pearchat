@@ -46,9 +46,11 @@ export async function registroAction(_prev: AuthFormState, formData: FormData): 
   const passwordHash = await bcrypt.hash(password, 10)
   try {
     await db.$transaction(async (tx) => {
-      const workspace = await tx.workspace.create({ data: { nome: nomeEmpresa } })
+      // Conta = Organization (plano/assinatura) + primeiro espaço (WhatsApp) + usuário dono.
+      const org = await tx.organization.create({ data: { nome: nomeEmpresa } })
+      const workspace = await tx.workspace.create({ data: { nome: nomeEmpresa, organizationId: org.id, plano: org.plano } })
       await tx.user.create({
-        data: { workspaceId: workspace.id, nome, email, passwordHash, papel: 'owner' },
+        data: { workspaceId: workspace.id, organizationId: org.id, nome, email, passwordHash, papel: 'owner' },
       })
     })
   } catch (e) {

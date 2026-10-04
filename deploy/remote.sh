@@ -39,6 +39,24 @@ if [ "${STOP_ZAPFLOO:-0}" = 1 ]; then
   fi
 fi
 
+# (a2) Migracoes ANTES de trocar o app: constroi a imagem nova e aplica `prisma migrate deploy` com ela enquanto o
+# app ANTIGO continua no ar. As migracoes sao aditivas (tabelas/colunas novas, nuláveis ou com DEFAULT), entao o app
+# antigo segue funcionando durante a aplicacao e o app novo ja nasce com o banco pronto (sem janela de erro).
+# Se a migracao falhar, NAO troca o app (o antigo segue servindo) e o deploy termina com fail_migrate_pre.
+# (A etapa (d) abaixo continua rodando e vira um no-op idempotente.)
+echo "--- build da imagem do app (antes de trocar o app em producao)"
+$C build app 2>&1 | tail -n 15
+if [ "${PIPESTATUS[0]}" = 0 ]; then
+  echo "--- prisma migrate deploy (container descartavel, imagem nova, app antigo ainda no ar)"
+  $C run --rm --no-deps -T app npx prisma migrate deploy 2>&1 | tail -n 15
+  if [ "${PIPESTATUS[0]}" != 0 ]; then
+    RESULT=fail_migrate_pre
+    final
+  fi
+else
+  echo "(build falhou: segue para o compose up, que reporta o erro)"
+fi
+
 # (b) Sobe tudo (inclui o caddy)
 echo "--- compose up --build (todos os servicos)"
 $C up -d --build 2>&1 | tail -n 60

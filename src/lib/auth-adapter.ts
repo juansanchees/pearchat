@@ -11,7 +11,7 @@ function toAdapterUser(u: User): AdapterUser {
 
 /**
  * PrismaAdapter com createUser próprio: todo usuário precisa de um Workspace (workspaceId é obrigatório),
- * então Workspace + User nascem na mesma transação, igual ao cadastro por e-mail.
+ * então Organization + Workspace + User nascem na mesma transação, igual ao cadastro por e-mail.
  */
 export function pearchatAdapter(): Adapter {
   const base = PrismaAdapter(db)
@@ -21,10 +21,13 @@ export function pearchatAdapter(): Adapter {
       const email = data.email.toLowerCase()
       const nome = data.name?.trim() || email.split('@')[0]
       const user = await db.$transaction(async (tx) => {
-        const workspace = await tx.workspace.create({ data: { nome: `Negócio de ${nome.split(/\s+/)[0]}` } })
+        const nomeNegocio = `Negócio de ${nome.split(/\s+/)[0]}`
+        const org = await tx.organization.create({ data: { nome: nomeNegocio } })
+        const workspace = await tx.workspace.create({ data: { nome: nomeNegocio, organizationId: org.id, plano: org.plano } })
         return tx.user.create({
           data: {
             workspaceId: workspace.id,
+            organizationId: org.id,
             nome,
             email,
             emailVerified: new Date(),
@@ -52,6 +55,7 @@ export function pearchatAdapter(): Adapter {
       const data: Record<string, unknown> = { ...rest }
       if (name) data.nome = name
       delete data.workspaceId
+      delete data.organizationId
       const u = await db.user.update({ where: { id }, data })
       return toAdapterUser(u)
     },

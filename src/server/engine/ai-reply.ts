@@ -5,6 +5,7 @@ import type { ChatMessage } from '@/server/agent/llm'
 import { buildSystemPrompt, HANDOFF_MARKER } from '@/server/agent/prompt'
 import { serviceTypesForPrompt } from '@/server/calendar/service-types'
 import { getAiQuota } from '@/server/settings/service'
+import { notifySpaceAttention } from '@/server/spaces/attention'
 import { loadConversationItem, toMessageDTO } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { canSendFreeformTo } from './freeform'
@@ -139,7 +140,7 @@ export async function enqueuePendingForWorkspace(workspaceId: string): Promise<n
 /** Varre os workspaces com IA ligada e WhatsApp conectado. */
 export async function sweepPending(): Promise<number> {
   const agents = await db.aiAgent.findMany({
-    where: { enabled: true, workspace: { whatsappSession: { is: { status: 'CONECTADO' } } } },
+    where: { enabled: true, workspace: { arquivadoEm: null, whatsappSession: { is: { status: 'CONECTADO' } } } },
     select: { workspaceId: true },
   })
   let total = 0
@@ -213,6 +214,7 @@ async function handoff(opts: {
   const item = await loadConversationItem(workspaceId, conv.id)
   if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })
   emitToWorkspace(workspaceId, 'handoff.requested', { workspaceId, conversationId: conv.id, contactName: conv.contact.nome, motivo })
+  await notifySpaceAttention(workspaceId, { contato: conv.contact.nome, motivo })
   log('ai', `passagem para humano (conversa ${conv.id}): ${motivo}`)
 }
 

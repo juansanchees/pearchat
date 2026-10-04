@@ -41,7 +41,20 @@ export interface HandoffRequestedPayload {
   motivo: string
 }
 
+/**
+ * Aviso LEVE entre espaços da mesma organização (sala `org:<id>`): contadores do espaço e, quando for uma passagem
+ * da IA, quem passou o quê. Nunca leva conteúdo de mensagens; eventos completos só vão para a sala do espaço ativo.
+ */
+export interface SpaceAttentionPayload {
+  workspaceId: string
+  nome: string
+  unread: number
+  handoffs: number
+  handoff?: { agente: string; contato: string; motivo: string }
+}
+
 export interface ServerToClientEvents {
+  'space.attention': (payload: SpaceAttentionPayload) => void
   'message.received': (payload: MessageReceivedPayload) => void
   'message.status': (payload: MessageStatusPayload) => void
   'connection.update': (payload: ConnectionUpdatePayload) => void
@@ -54,3 +67,4 @@ export interface ClientToServerEvents {
 }
 
 export const workspaceRoom = (workspaceId: string) => `workspace:${workspaceId}`
+export const orgRoom = (organizationId: string) => `org:${organizationId}`

@@ -1,5 +1,5 @@
 import type { Server } from 'socket.io'
-import { workspaceRoom } from './events'
+import { orgRoom, workspaceRoom } from './events'
 import type { ClientToServerEvents, ServerToClientEvents } from './events'
 
 export type PearIo = Server<ClientToServerEvents, ServerToClientEvents>
@@ -23,5 +23,17 @@ export function emitToWorkspace<E extends keyof ServerToClientEvents>(
   const room = io.to(workspaceRoom(workspaceId)) as unknown as {
     emit: (ev: string, ...a: unknown[]) => boolean
   }
+  room.emit(event, ...args)
+}
+
+/** Aviso leve para todos os espaços da organização (veja SpaceAttentionPayload). */
+export function emitToOrganization<E extends keyof ServerToClientEvents>(
+  organizationId: string,
+  event: E,
+  ...args: Parameters<ServerToClientEvents[E]>
+): void {
+  const io = holder.__pearchat_io
+  if (!io) return
+  const room = io.to(orgRoom(organizationId)) as unknown as { emit: (ev: string, ...a: unknown[]) => boolean }
   room.emit(event, ...args)
 }

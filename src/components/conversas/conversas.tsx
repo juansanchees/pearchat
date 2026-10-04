@@ -14,6 +14,7 @@ import { ConversationList } from './conversation-list'
 import { MessageThread } from './message-thread'
 import { useConversations } from './use-conversations'
 import { useHistoryImport } from './use-history-import'
+import { NumberMenu } from '@/components/whatsapp/number-menu'
 
 const FALLBACK_SUBTITLE = 'Atendimento por WhatsApp'
 
@@ -59,6 +60,7 @@ export default function Conversas(): JSX.Element {
           <div className="text-[14.5px] font-medium leading-tight">WhatsApp</div>
           <div className="truncate text-[11px] text-light-neutral-500">{subtitle}</div>
         </div>
+        <NumberMenu onImport={history.canImport ? () => void history.start() : undefined} importing={history.importing} />
         <div className="flex-1" />
         <div className="flex flex-wrap justify-end gap-[7px] max-[899px]:hidden">
           {chips

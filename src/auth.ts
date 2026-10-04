@@ -8,6 +8,7 @@ import { authConfig } from '@/auth.config'
 import { pearchatAdapter } from '@/lib/auth-adapter'
 import { authorizeGoogleSignIn } from '@/lib/auth-google'
 import { googleLoginCredentials } from '@/lib/google-login'
+import { resolveActiveSpace } from '@/server/spaces/org'
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -16,7 +17,7 @@ const credentialsSchema = z.object({
 
 const google = googleLoginCredentials()
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
   ...authConfig,
   adapter: pearchatAdapter(),
   session: { strategy: 'jwt' },
@@ -24,6 +25,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { ...authConfig.pages, error: '/login', newUser: '/bem-vindo' },
   callbacks: {
     ...authConfig.callbacks,
+    async jwt(params) {
+      const token = await authConfig.callbacks.jwt(params)
+      // Troca de espaço (unstable_update) ou renovação: relê o usuário no banco (o Edge não tem Prisma).
+      if (params.trigger === 'update' && token.userId) {
+        try {
+          const active = await resolveActiveSpace(token.userId)
+          if (active) {
+            token.workspaceId = active.workspaceId
+            token.organizationId = active.organizationId
+          }
+        } catch (e) {
+          console.error('[auth] jwt update:', e instanceof Error ? e.message : 'erro')
+        }
+      }
+      return token
+    },
+    // O JWT pode ficar desatualizado (outra aba trocou de espaço, espaço arquivado): a cada leitura da sessão o
+    // espaço ativo vem do BANCO, e é sempre um workspace da organização do usuário.
+    async session(params) {
+      const session = authConfig.callbacks.session(params)
+      try {
+        const active = await resolveActiveSpace(params.token.userId)
+        if (active) {
+          session.user.workspaceId = active.workspaceId
+          session.user.organizationId = active.organizationId
+        }
+      } catch (e) {
+        // Banco indisponível / migração ainda não aplicada: segue com o que o token traz.
+        console.error('[auth] session:', e instanceof Error ? e.message : 'erro')
+      }
+      return session
+    },
     async signIn({ account, profile }) {
       if (account?.provider === 'google') return authorizeGoogleSignIn(account, profile)
       return true
@@ -45,6 +78,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.nome,
           image: user.fotoUrl ?? user.image,
           workspaceId: user.workspaceId,
+          organizationId: user.organizationId ?? null,
           nome: user.nome,
         }
       },

@@ -155,5 +155,7 @@ export interface BillingDTO {
     contatos: number
   }
   limites: { respostasIa: number | null; disparos: number | null; contatos: number | null }
+  /** WhatsApps (espaços) em uso e o máximo do plano. */
+  espacos: { usados: number; limite: number }
   faturas: { id: string; mes: string; valor: number; status: string; pdfUrl: string | null }[]
 }

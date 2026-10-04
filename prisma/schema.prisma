@@ -69,8 +69,25 @@ enum Plan {
   NEGOCIOS
 }
 
+// Conta/empresa do cliente: plano, assinatura e limites. Cada WhatsApp é um Workspace (espaço) dentro dela.
+model Organization {
+  id               String   @id @default(cuid())
+  nome             String
+  plano            Plan     @default(PRO)
+  statusAssinatura String   @default("ativa")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspaces Workspace[]
+  users      User[]
+}
+
 model Workspace {
   id                     String   @id @default(cuid())
+  // Nulo só em linhas anteriores à migração 0008 ou criadas pelo app antigo: o código cria sob demanda.
+  organizationId         String?
+  ordem                  Int      @default(0)
+  arquivadoEm            DateTime?
   nome                   String
   horarioAtendimento     String?
   plano                  Plan     @default(PRO)
@@ -83,6 +100,7 @@ model Workspace {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
+  organization       Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   users              User[]
   whatsappSession    WhatsAppSession?
   contacts           Contact[]
@@ -97,11 +115,15 @@ model Workspace {
   invoices           Invoice[]
   usageCounters      UsageCounter[]
   aiJobs             AiJob[]
+
+  @@index([organizationId])
 }
 
 model User {
   id            String    @id @default(cuid())
+  // workspaceId = espaço (WhatsApp) ATIVO do usuário.
   workspaceId   String
+  organizationId String?
   nome          String
   email         String    @unique
   passwordHash  String?
@@ -113,11 +135,13 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  accounts  Account[]
-  sessions  Session[]
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  accounts     Account[]
+  sessions     Session[]
 
   @@index([workspaceId])
+  @@index([organizationId])
 }
 
 model Account {

@@ -26,10 +26,6 @@ const STEPS: Array<{ id: Step; label: string }> = [
   { id: 'hist', label: 'Conversas' },
 ]
 
-const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID
-const META_CONFIG_ID = process.env.NEXT_PUBLIC_META_CONFIG_ID
-// Sem app da Meta configurado (ou em modo mock) segue o fluxo simulado do protótipo.
-const SIMULATED = process.env.NEXT_PUBLIC_WA_MOCK === 'true' || !META_APP_ID
 
 function StepIndicator({ step }: { step: Step }) {
   const current = STEPS.findIndex((s) => s.id === step)
@@ -71,7 +67,11 @@ function prettyPhone(raw: string): string {
 const h2 = 'text-[26px] font-medium leading-[1.15] tracking-[-.02em]'
 
 export function OficialFlow({ onBack }: { onBack: () => void }) {
-  const { setWa, toast } = useAppState()
+  const { setWa, toast, connectCfg } = useAppState()
+  // A simulação (QR desenhado, "Simular leitura") só existe no modo demo; o resto exige a Meta configurada.
+  const META_APP_ID = connectCfg.metaAppId
+  const META_CONFIG_ID = connectCfg.metaConfigId
+  const SIMULATED = connectCfg.demo
   const later = useLater()
   const [step, setStep] = useState<Step>('numero')
   const [numero, setNumero] = useState('+55 11 98765-4321')

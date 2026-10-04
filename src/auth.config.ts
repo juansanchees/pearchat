@@ -12,6 +12,7 @@ export const authConfig = {
       if (user) {
         token.userId = user.id as string
         token.workspaceId = user.workspaceId
+        token.organizationId = user.organizationId ?? null
         token.nome = user.nome
       }
       return token
@@ -19,6 +20,7 @@ export const authConfig = {
     session({ session, token }) {
       session.user.userId = token.userId
       session.user.workspaceId = token.workspaceId
+      session.user.organizationId = token.organizationId ?? null
       session.user.nome = token.nome
       return session
     },

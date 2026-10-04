@@ -10,10 +10,10 @@ export async function GET() {
 
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { nome: true, email: true, fotoUrl: true, image: true, workspace: { select: { nome: true } } },
+    select: { nome: true, email: true, fotoUrl: true, image: true, workspace: { select: { nome: true, organization: { select: { nome: true } } } } },
   })
   if (!user) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 })
 
-  const me: AppUser = { nome: user.nome, email: user.email, empresa: user.workspace.nome, fotoUrl: user.fotoUrl ?? user.image }
+  const me: AppUser = { nome: user.nome, email: user.email, empresa: user.workspace.nome, organizacao: user.workspace.organization?.nome ?? user.workspace.nome, fotoUrl: user.fotoUrl ?? user.image }
   return NextResponse.json(me)
 }

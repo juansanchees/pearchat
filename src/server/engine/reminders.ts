@@ -42,7 +42,7 @@ async function claim(eventId: string, kind: string, result: string | null): Prom
 export async function runDueReminders(): Promise<number> {
   const now = new Date()
   const conns = await db.calendarConnection.findMany({
-    where: { lembretes: { isEmpty: false }, workspace: { whatsappSession: { is: { status: 'CONECTADO' } } } },
+    where: { lembretes: { isEmpty: false }, workspace: { arquivadoEm: null, whatsappSession: { is: { status: 'CONECTADO' } } } },
     select: { workspaceId: true, lembretes: true },
   })
   let sent = 0

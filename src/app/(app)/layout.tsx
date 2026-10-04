@@ -11,6 +11,9 @@ import { listCampaigns } from '@/server/campaigns/service'
 import { countFollowUpQueue } from '@/server/followup/service'
 import { providerToKind, statusToKind } from '@/lib/mappers'
 import { requireSession } from '@/lib/session'
+import { ensureOrganization } from '@/server/spaces/org'
+import { listSpaces } from '@/server/spaces/service'
+import { connectConfig } from '@/server/whatsapp/config'
 import { needsEmailVerification } from '@/server/mail/email-verification'
 import { redirect } from 'next/navigation'
 import { Prisma } from '@prisma/client'
@@ -33,7 +36,7 @@ const PLANOS: Record<Plan, PlanoNome> = { ESSENCIAL: 'Essencial', PRO: 'Pro', NE
 
 // Shell do app (AppShell): sidebar escura de 288px (gaveta abaixo de 900px) + área principal clara; drawers e toasts ficam por cima.
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const { userId, workspaceId } = await requireSession()
+  const { userId, workspaceId, organizationId: sessionOrgId } = await requireSession()
   // Contas novas sem e-mail confirmado (com e-mail configurado) vão para a confirmação; contas antigas não são afetadas.
   if (await needsEmailVerification(userId)) redirect('/verificar-email')
 
@@ -41,7 +44,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const account = await db.user.findUnique({ where: { id: userId }, select: { workspaceId: true } })
   if (!account || account.workspaceId !== workspaceId) return <SessionInvalid />
 
-  const [wa, agent, followUp, user, workspace, contatosCount, campanhas, fuQueueCount] = await Promise.all([
+  // Conta anterior à migração (sem organização): cria sob demanda.
+  const organizationId = sessionOrgId ?? (await ensureOrganization(workspaceId))
+
+  const [wa, agent, followUp, user, workspace, contatosCount, campanhas, fuQueueCount, org, spaces] = await Promise.all([
     ensureRow(
       () => db.whatsAppSession.upsert({ where: { workspaceId }, create: { workspaceId }, update: {} }),
       () => db.whatsAppSession.findUnique({ where: { workspaceId } }),
@@ -59,6 +65,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     db.contact.count({ where: { workspaceId } }),
     listCampaigns(workspaceId),
     countFollowUpQueue(workspaceId),
+    db.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { nome: true, plano: true } }),
+    listSpaces(organizationId, workspaceId),
   ])
 
   const connected = wa.status === 'CONECTADO'
@@ -68,13 +76,16 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       initial={{
         wa: { provider: wa.provider ? providerToKind(wa.provider) : null, status: statusToKind(wa.status), numero: wa.numero },
         automations: { ia: connected && agent.enabled, followup: connected && followUp.enabled, disparos: connected && workspace.disparosAtivos },
-        user: { nome: user.nome, email: user.email, empresa: workspace.nome, fotoUrl: user.fotoUrl ?? user.image },
+        user: { nome: user.nome, email: user.email, empresa: workspace.nome, organizacao: org.nome, fotoUrl: user.fotoUrl ?? user.image },
         agentName: agent.nome,
         fuQueueCount,
+        spaces,
+        workspaceId,
+        connectCfg: connectConfig(),
       }}
     >
       <DrawerDataProvider
-        initial={{ plano: PLANOS[workspace.plano], horarioAtendimento: workspace.horarioAtendimento, contatosCount, campanhas }}
+        initial={{ plano: PLANOS[org.plano], horarioAtendimento: workspace.horarioAtendimento, contatosCount, campanhas }}
       >
         <AppShell>{children}</AppShell>
         <DrawerHost />

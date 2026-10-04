@@ -7,7 +7,7 @@ import { parse } from 'node:url'
 import { loadEnvConfig } from '@next/env'
 import { Server } from 'socket.io'
 import { getToken } from 'next-auth/jwt'
-import { workspaceRoom } from '@/server/realtime/events'
+import { orgRoom, workspaceRoom } from '@/server/realtime/events'
 import type { ClientToServerEvents, ServerToClientEvents } from '@/server/realtime/events'
 
 const dev = !process.argv.includes('--prod') && process.env.NODE_ENV !== 'production'
@@ -19,9 +19,12 @@ const hostname = process.env.HOSTNAME_BIND ?? '0.0.0.0'
 
 const COOKIE_NAMES = ['__Secure-authjs.session-token', 'authjs.session-token'] as const
 
-type SocketData = { workspaceId: string }
+type SocketData = { workspaceId: string; organizationId: string }
 
-async function workspaceFromCookie(cookieHeader: string | undefined): Promise<string | null> {
+// Carregada UMA vez no main() (depois do loadEnvConfig): evita compilar/importar no primeiro socket.
+let resolveActive: (userId: string) => Promise<{ workspaceId: string; organizationId: string } | null> = async () => null
+
+async function spaceFromCookie(cookieHeader: string | undefined): Promise<{ workspaceId: string; organizationId: string } | null> {
   const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET
   if (!cookieHeader || !secret) return null
   // Cookie de sessão pode estar em partes (.0, .1...) quando grande; o prefixo basta para detectar.
@@ -34,11 +37,24 @@ async function workspaceFromCookie(cookieHeader: string | undefined): Promise<st
     salt: cookieName,
     secureCookie: cookieName.startsWith('__Secure-'),
   })
-  const workspaceId = token?.workspaceId
-  return typeof workspaceId === 'string' && workspaceId ? workspaceId : null
+  const userId = token?.userId
+  if (typeof userId !== 'string' || !userId) return null
+  // O espaço ativo vem do BANCO (o token pode estar desatualizado depois de uma troca de WhatsApp) e é sempre
+  // um workspace da organização do usuário. O import é tardio porque o db só pode carregar depois do loadEnvConfig.
+  try {
+    const active = await resolveActive(userId)
+    return active ? { workspaceId: active.workspaceId, organizationId: active.organizationId } : null
+  } catch {
+    // Banco fora do ar / migração ainda não aplicada: usa o que o token traz.
+    const workspaceId = token?.workspaceId
+    return typeof workspaceId === 'string' && workspaceId
+      ? { workspaceId, organizationId: typeof token?.organizationId === 'string' ? token.organizationId : '' }
+      : null
+  }
 }
 
 async function main() {
+  resolveActive = (await import('@/server/spaces/org')).resolveActiveSpace
   const { default: next } = await import('next')
   const app = next({ dev, hostname: 'localhost', port })
   const handle = app.getRequestHandler()
@@ -56,9 +72,10 @@ async function main() {
 
   io.use(async (socket, nextFn) => {
     try {
-      const workspaceId = await workspaceFromCookie(socket.handshake.headers.cookie)
-      if (!workspaceId) return nextFn(new Error('unauthorized'))
-      socket.data.workspaceId = workspaceId
+      const space = await spaceFromCookie(socket.handshake.headers.cookie)
+      if (!space) return nextFn(new Error('unauthorized'))
+      socket.data.workspaceId = space.workspaceId
+      socket.data.organizationId = space.organizationId
       nextFn()
     } catch {
       nextFn(new Error('unauthorized'))
@@ -66,8 +83,10 @@ async function main() {
   })
 
   io.on('connection', (socket) => {
-    // O workspace vem SEMPRE do token validado, nunca do cliente.
+    // O espaço vem SEMPRE do token validado + banco, nunca do cliente. Eventos completos só da sala do espaço
+    // ATIVO; a sala da organização só recebe avisos leves (space.attention) dos outros WhatsApps.
     void socket.join(workspaceRoom(socket.data.workspaceId))
+    if (socket.data.organizationId) void socket.join(orgRoom(socket.data.organizationId))
   })
 
   const { setIo } = await import('@/server/realtime/emit')

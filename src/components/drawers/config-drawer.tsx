@@ -74,9 +74,9 @@ export function ConfigDrawer() {
         </div>
       </Section>
 
-      <Section label="Empresa" gap="gap-3">
+      <Section label="Este WhatsApp" gap="gap-3">
         <div className="flex flex-wrap gap-3">
-          <Field label="Nome da empresa" className="min-w-0 flex-[1_1_180px]">
+          <Field label="Nome do negócio" className="min-w-0 flex-[1_1_180px]">
             <input className="pc-input" value={user.empresa} onChange={(e) => setUser({ empresa: e.target.value })} />
           </Field>
           <Field label="Horário de atendimento" className="min-w-0 flex-[1_1_220px]">

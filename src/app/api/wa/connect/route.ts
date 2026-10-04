@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getApiSession } from '@/server/whatsapp/auth'
+import { connectConfig } from '@/server/whatsapp/config'
 import { getProvider, WhatsAppProviderError } from '@/server/whatsapp'
 import { instanceNameFor } from '@/server/whatsapp/evolution'
 import { onlyDigits } from '@/server/whatsapp/phone'
@@ -22,6 +23,14 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
   const { provider, numero } = parsed.data
   const { workspaceId } = session
+
+  // Oficial só existe de verdade com a Meta configurada (ou no demo, que simula): sem isso, nada de fluxo falso.
+  if (provider === 'oficial') {
+    const cfg = connectConfig()
+    if (!cfg.demo && !cfg.metaConfigured) {
+      return NextResponse.json({ error: 'A conexão oficial estará disponível em breve. Use a conexão rápida por QR.' }, { status: 409 })
+    }
+  }
 
   if (provider === 'oficial' && (!numero || onlyDigits(numero).length < 10)) {
     return NextResponse.json({ error: 'Digite o número com DDD' }, { status: 400 })

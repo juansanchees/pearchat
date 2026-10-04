@@ -8,10 +8,11 @@ import { BackLink, btnSecondary, kicker, NumberedSteps, pageShell, QrBox, QrStat
 import { useLater } from './use-later'
 
 const POLL_MS = 5000
-const MOCK = process.env.NEXT_PUBLIC_WA_MOCK === 'true'
 
 export function RapidaFlow({ onBack }: { onBack: () => void }) {
-  const { setWa, toast, user } = useAppState()
+  const { setWa, toast, user, connectCfg } = useAppState()
+  // "Simular leitura do QR" só existe no modo demo (decidido pelo servidor a cada requisição).
+  const MOCK = connectCfg.demo
   const later = useLater()
   const [qr, setQr] = useState<string | undefined>()
   const [reading, setReading] = useState(false)

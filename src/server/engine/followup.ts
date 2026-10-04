@@ -104,7 +104,7 @@ export async function planFollowUps(): Promise<number> {
   const now = new Date()
   await replanPendingJobs()
   const rules = await db.followUpRule.findMany({
-    where: { enabled: true, workspace: { whatsappSession: { is: { status: 'CONECTADO' } } } },
+    where: { enabled: true, workspace: { arquivadoEm: null, whatsappSession: { is: { status: 'CONECTADO' } } } },
   })
   let created = 0
   for (const rule of rules) {
@@ -284,7 +284,7 @@ export async function runDueFollowUps(): Promise<number> {
     where: {
       status: STATUS.pendente,
       runAt: { lte: now },
-      conversation: { workspace: { whatsappSession: { is: { status: 'CONECTADO' } }, followUpRule: { is: { enabled: true } } } },
+      conversation: { workspace: { arquivadoEm: null, whatsappSession: { is: { status: 'CONECTADO' } }, followUpRule: { is: { enabled: true } } } },
     },
     orderBy: { runAt: 'asc' },
     take: 200,

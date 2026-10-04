@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { statusToKind } from '@/lib/mappers'
-import { ingestInboundMessage, updateMessageStatus } from '@/server/messages/ingest'
+import { ingestInboundMessage, ingestOutboundFromPhone, updateMessageStatus } from '@/server/messages/ingest'
 import { queueHistoryMessages } from '@/server/whatsapp/history-import'
 import { normalizeEvolutionEvent } from '@/server/whatsapp/normalize'
 import { getProvider } from '@/server/whatsapp'
@@ -10,6 +10,9 @@ import { disableAutomations, setStatus } from '@/server/whatsapp/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+/** Resposta do celular mais velha que isto não assume a conversa (é tratada como histórico). */
+const OUTBOUND_TAKEOVER_MAX_AGE_MS = 10 * 60_000
 
 function safeEqual(a: string, b: string): boolean {
   const ha = createHmac('sha256', 'cmp').update(a).digest()
@@ -29,7 +32,7 @@ export async function POST(req: Request) {
   try {
     const session = await db.whatsAppSession.findFirst({
       where: { evolutionInstance: event.instance },
-      select: { workspaceId: true, status: true, numero: true },
+      select: { workspaceId: true, status: true, numero: true, connectedAt: true },
     })
     if (!session) return new NextResponse(null, { status: 200 })
     const { workspaceId } = session
@@ -65,6 +68,20 @@ export async function POST(req: Request) {
             body: m.body,
             providerMessageId: m.providerMessageId,
             timestamp: m.timestamp,
+          })
+        }
+        // Respostas dadas pelo celular do dono. Só assumem a conversa se forem recentes e posteriores à conexão
+        // (mensagens antigas que chegam por aqui são histórico: gravadas como importadas, sem assumir).
+        for (const m of event.outbound) {
+          const age = Date.now() - m.timestamp.getTime()
+          const afterConnect = !session.connectedAt || m.timestamp.getTime() >= session.connectedAt.getTime() - 60_000
+          await ingestOutboundFromPhone({
+            workspaceId,
+            to: m.to,
+            body: m.body,
+            providerMessageId: m.providerMessageId,
+            timestamp: m.timestamp,
+            takeOver: age < OUTBOUND_TAKEOVER_MAX_AGE_MS && afterConnect,
           })
         }
         break

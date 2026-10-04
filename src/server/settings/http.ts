@@ -3,14 +3,14 @@ import type { ZodType } from 'zod'
 import { auth } from '@/auth'
 import { readJson } from '@/server/messages/api'
 
-export type ApiSession = { userId: string; workspaceId: string }
+export type ApiSession = { userId: string; workspaceId: string; organizationId: string | null }
 
 /** Sessão da requisição (nunca aceita workspaceId do cliente), ou null (a rota responde 401). */
 export async function apiSession(): Promise<ApiSession | null> {
   const session = await auth()
   const userId = session?.user?.userId
   const workspaceId = session?.user?.workspaceId
-  return userId && workspaceId ? { userId, workspaceId } : null
+  return userId && workspaceId ? { userId, workspaceId, organizationId: session?.user?.organizationId ?? null } : null
 }
 
 export const unauthorized = () => NextResponse.json({ error: 'Não autenticado' }, { status: 401 })

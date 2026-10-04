@@ -2,11 +2,10 @@ import { db } from '@/lib/db'
 import { providerToKind } from '@/lib/mappers'
 import type { MessageDTO } from '@/lib/types'
 import { spMonthKey } from '@/server/calendar/time'
-import { cancelPendingFollowUps } from '@/server/engine/followup'
-import { logError } from '@/server/engine/util'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { getProvider } from '@/server/whatsapp'
 import { loadConversationItem, toMessageDTO } from './dto'
+import { registerManualReply } from './takeover'
 
 export type SendErrorCode = 'NAO_ENCONTRADA' | 'NAO_CONECTADO' | 'FORA_DA_JANELA_24H' | 'ENVIO_FALHOU'
 
@@ -97,19 +96,11 @@ async function sendUserMessageOnce(input: {
     sent = await db.message.update({ where: { id: pending.id }, data: { status: 'FALHOU' } })
   }
 
-  // Resposta manual = a pessoa assumiu: a conversa fica em HUMANO (com a IA ligada ou não) e os follow-ups
-  // pendentes são cancelados de vez. A automação só volta com "Devolver para IA".
-  const takeOver = !failure && conversation.mode !== 'HUMANO'
-  await db.conversation.update({
-    where: { id: conversationId },
-    data: { unread: 0, lastMessageAt: now, ...(takeOver ? { mode: 'HUMANO' as const } : {}) },
-  })
-  if (!failure) {
-    try {
-      await cancelPendingFollowUps(conversationId, 'Atendimento assumido')
-    } catch (e) {
-      logError('send', 'cancelar follow-ups do atendimento assumido', e)
-    }
+  // Resposta manual = a pessoa assumiu (regra única em takeover.ts, a mesma usada para respostas dadas pelo celular).
+  if (failure) {
+    await db.conversation.update({ where: { id: conversationId }, data: { unread: 0, lastMessageAt: now } })
+  } else {
+    await registerManualReply({ conversationId, currentMode: conversation.mode, at: now })
   }
 
   if (!failure && session.provider === 'OFICIAL') {

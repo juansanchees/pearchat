@@ -18,6 +18,11 @@ export function ToastHost() {
               <div className="text-[12.5px] font-medium leading-[1.2] text-light-text">{t.title}</div>
               {t.text && <div className="mt-[3px] text-[11.5px] text-light-neutral-500">{t.text}</div>}
             </div>
+            {t.action && (
+              <button type="button" className="pc-btn pc-btn-primary shrink-0 !text-[12px]" onClick={t.action.onClick}>
+                {t.action.label}
+              </button>
+            )}
           </div>
         </div>
       )}

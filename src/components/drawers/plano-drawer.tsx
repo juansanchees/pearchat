@@ -12,7 +12,7 @@ import { DrawerShell, ProgressBar, Section } from './parts'
 import { fmtBRL } from './view'
 
 export function PlanoDrawer() {
-  const { wa, toast, closeDrawer } = useAppState()
+  const { wa, toast, closeDrawer, spaces } = useAppState()
   const { plano, billing } = useDrawerData()
   const loading = useDrawerLoad('plano')
   const svcUsed = billing?.uso.mensagensAtendimento ?? 0
@@ -32,6 +32,9 @@ export function PlanoDrawer() {
         { label: 'Contatos', n: billing.uso.contatos, limite: billing.limites.contatos },
       ].map((u) => ({ label: u.label, txt: limiteTxt(u.n, u.limite), pct: u.limite ? Math.min(100, Math.round((u.n / u.limite) * 100)) : 0 }))
     : []
+  // WhatsApps (espaços) da conta: "N de M". Antes do billing carregar usa a lista do menu lateral.
+  const espacos = billing?.espacos ?? { usados: spaces.espacos.length, limite: spaces.limite }
+  usoMes.push({ label: 'WhatsApps', txt: `${espacos.usados} de ${espacos.limite}`, pct: Math.min(100, Math.round((espacos.usados / Math.max(1, espacos.limite)) * 100)) })
   const faturas = billing?.faturas ?? []
   const atual = PLANOS.find((p) => p.nome === plano) ?? PLANOS[1]
 
@@ -83,6 +86,11 @@ export function PlanoDrawer() {
               </div>
             </div>
           ))}
+          {espacos.usados >= espacos.limite && (
+            <div className="text-[11.5px] text-light-neutral-500">
+              Seu plano permite {espacos.limite} {espacos.limite === 1 ? 'WhatsApp' : 'WhatsApps'}. Faça upgrade para adicionar mais números.
+            </div>
+          )}
         </div>
       </div>
 

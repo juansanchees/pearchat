@@ -1,6 +1,7 @@
 'use client'
 import type { ReactNode } from 'react'
 import { ArrowRight, Check, Info, QrCode, SealCheck, Warning } from '@phosphor-icons/react'
+import { useAppState } from '@/components/app/app-state'
 import { cn } from '@/lib/utils'
 import type { ProviderKind } from '@/lib/types'
 import { kicker, pageShell, Tag } from './ui'
@@ -16,6 +17,7 @@ function Card({
   perks,
   cta,
   onClick,
+  disabled,
 }: {
   recommended?: boolean
   icon: ReactNode
@@ -23,15 +25,20 @@ function Card({
   subtitle: string
   tag: ReactNode
   perks: Perk[]
-  cta: string
-  onClick: () => void
+  cta?: string
+  onClick?: () => void
+  /** Indisponível por enquanto (ex.: Meta ainda não configurada): não clicável, opacidade reduzida. */
+  disabled?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
+      aria-disabled={disabled || undefined}
       className={cn(
-        'flex min-w-0 flex-[1_1_320px] cursor-pointer flex-col gap-3.5 rounded-lg border p-[22px] text-left text-light-text transition-[border-color,box-shadow] duration-200 hover:border-light-accent-500 hover:shadow-[0_10px_30px_rgba(29,33,23,.08)]',
+        'flex min-w-0 flex-[1_1_320px] flex-col gap-3.5 rounded-lg border p-[22px] text-left text-light-text transition-[border-color,box-shadow] duration-200',
+        disabled ? 'cursor-not-allowed opacity-55' : 'cursor-pointer hover:border-light-accent-500 hover:shadow-[0_10px_30px_rgba(29,33,23,.08)]',
         recommended ? 'border-light-accent-600 bg-[color-mix(in_srgb,#2e9a48_7%,#ffffff)]' : 'border-light-divider bg-light-surface',
       )}
     >
@@ -53,10 +60,12 @@ function Card({
           </li>
         ))}
       </ul>
-      <span className="mt-auto flex items-center gap-1.5 pt-1 text-[13px] font-medium leading-none text-light-accent-300">
-        {cta}
-        <ArrowRight size={13} />
-      </span>
+      {cta && !disabled ? (
+        <span className="mt-auto flex items-center gap-1.5 pt-1 text-[13px] font-medium leading-none text-light-accent-300">
+          {cta}
+          <ArrowRight size={13} />
+        </span>
+      ) : null}
     </button>
   )
 }
@@ -64,6 +73,9 @@ function Card({
 const ok = <Check size={14} className="text-light-accent-300" />
 
 export function Chooser({ onPick }: { onPick: (p: ProviderKind) => void }) {
+  const { connectCfg } = useAppState()
+  // Oficial só existe de verdade com a Meta configurada (ou no modo demo, que simula).
+  const oficialOk = connectCfg.demo || connectCfg.metaConfigured
   return (
     <div className={pageShell}>
       <div className="flex w-[min(860px,100%)] animate-zfIn flex-col gap-[22px]">
@@ -76,11 +88,12 @@ export function Chooser({ onPick }: { onPick: (p: ProviderKind) => void }) {
         </div>
         <div className="flex flex-wrap gap-4">
           <Card
-            recommended
+            recommended={oficialOk}
+            disabled={!oficialOk}
             icon={<SealCheck size={21} />}
             title="WhatsApp Business oficial"
             subtitle="Pela plataforma da Meta"
-            tag={<Tag tone="accent" size={10.5}>Recomendado</Tag>}
+            tag={oficialOk ? <Tag tone="accent" size={10.5}>Recomendado</Tag> : <Tag tone="neutral" size={10.5}>Em breve</Tag>}
             perks={[
               { icon: ok, text: 'Aprovado pela Meta, sem risco de bloqueio por uso de API' },
               { icon: ok, text: 'Disparos com modelos aprovados e mais estabilidade' },
@@ -88,10 +101,11 @@ export function Chooser({ onPick }: { onPick: (p: ProviderKind) => void }) {
               { icon: <Info size={14} className="text-light-neutral-500" />, text: '1.000 respostas grátis por mês, depois cobradas pela Meta' },
             ]}
             cta="Conectar oficial"
-            onClick={() => onPick('oficial')}
+            onClick={oficialOk ? () => onPick('oficial') : undefined}
           />
           <Card
             icon={<QrCode size={21} />}
+            recommended={!oficialOk}
             title="Conexão rápida por QR"
             subtitle="Pelo WhatsApp Web"
             tag={<Tag tone="neutral" size={10.5}>Não oficial</Tag>}
@@ -104,6 +118,11 @@ export function Chooser({ onPick }: { onPick: (p: ProviderKind) => void }) {
             onClick={() => onPick('rapida')}
           />
         </div>
+        {!oficialOk && (
+          <p className="text-[12.5px] text-light-neutral-400">
+            Estamos finalizando a aprovação com a Meta. Por enquanto, use a conexão rápida por QR.
+          </p>
+        )}
         <p className="text-[11.5px] text-light-neutral-500">Você pode trocar o tipo de conexão depois, em Configurações.</p>
       </div>
     </div>
