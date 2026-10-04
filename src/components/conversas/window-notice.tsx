@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ClockCountdown, PaperPlaneTilt } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
+import { usePermissions } from '@/components/app/use-permissions'
 import { api } from '@/components/drawers/api'
 
 type WindowInfo = {
@@ -22,6 +23,7 @@ const fill = (body: string, vars: string[]) => body.replace(/\{\{\s*(\d+)\s*\}\}
  */
 export function WindowNotice({ conversationId, refreshKey }: { conversationId: string; refreshKey: string }) {
   const { toast, openDrawer } = useAppState()
+  const { can } = usePermissions()
   const [info, setInfo] = useState<WindowInfo | null>(null)
   const [tplId, setTplId] = useState('')
   const [vars, setVars] = useState<string[]>([])
@@ -81,9 +83,11 @@ export function WindowNotice({ conversationId, refreshKey }: { conversationId: s
       {info.templates.length === 0 ? (
         <div className="mt-1.5 text-[12px] leading-[1.45]">
           Você ainda não tem modelo aprovado pela Meta.{' '}
-          <button type="button" className="border-0 bg-transparent p-0 text-[12px] text-amber-text underline" onClick={() => openDrawer('disparos')}>
-            Criar um modelo em Disparos
-          </button>
+          {can('campaigns.manage') && (
+            <button type="button" className="border-0 bg-transparent p-0 text-[12px] text-amber-text underline" onClick={() => openDrawer('disparos')}>
+              Criar um modelo em Disparos
+            </button>
+          )}
         </div>
       ) : (
         <div className="mt-2 flex flex-col gap-2">

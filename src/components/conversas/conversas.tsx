@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { ChatCircle, ClockClockwise, PaperPlaneTilt, Sparkle, Warning } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
 import { MenuButton } from '@/components/app/menu-button'
+import { usePermissions } from '@/components/app/use-permissions'
 import { cn } from '@/lib/utils'
 import type { AutomationKey } from '@/lib/types'
 import { ChatHeader } from './chat-header'
@@ -47,6 +48,9 @@ export default function Conversas(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [param, loadingList, listError])
 
+  const { can } = usePermissions()
+  // Quem não administra a conta (atendente) vê o chip, mas o clique fica desligado: o drawer bateria em 403.
+  const chipAllowed: Record<AutomationKey, boolean> = { ia: can('agent.manage'), disparos: can('campaigns.manage'), followup: can('followup.manage') }
   const chips: { key: AutomationKey; label: string; icon: ReactNode }[] = [
     { key: 'ia', label: `${agentName} ativa`, icon: <Sparkle size={12} /> },
     { key: 'disparos', label: 'Disparos automáticos', icon: <PaperPlaneTilt size={12} /> },
@@ -74,7 +78,8 @@ export default function Conversas(): JSX.Element {
                 key={chip.key}
                 type="button"
                 onClick={() => openDrawer(chip.key)}
-                className="flex cursor-pointer items-center gap-[5px] rounded-[6px] border-0 bg-light-accent-800 px-2.5 py-[3px] text-[11px] tracking-[.02em] text-light-accent-100"
+                disabled={!chipAllowed[chip.key]}
+                className="flex cursor-pointer disabled:cursor-default items-center gap-[5px] rounded-[6px] border-0 bg-light-accent-800 px-2.5 py-[3px] text-[11px] tracking-[.02em] text-light-accent-100"
               >
                 {chip.icon}
                 {chip.label}

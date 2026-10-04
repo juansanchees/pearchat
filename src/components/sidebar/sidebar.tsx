@@ -53,6 +53,8 @@ export function Sidebar() {
   const canAuto = can('automations.toggle')
   const canAddWa = can('spaces.manage')
   const canDisconnectWa = can('wa.manage')
+  const canCalendar = can('calendar.manage')
+  const canBilling = can('billing.view')
   const niceSub = (s: string) => (canAuto ? s : s.replace(/ · toque para .*/, ''))
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
@@ -95,7 +97,9 @@ export function Sidebar() {
         ? 'Nada marcado hoje'
         : `${agenda.hoje} hoje${agenda.proximo ? ` · próximo ${agenda.proximo}` : ''}`
       : agenda.state === 'desconectado'
-        ? 'Conectar Google Agenda'
+        ? canCalendar
+          ? 'Conectar Google Agenda'
+          : 'Ver a Agenda'
         : 'Carregando…'
 
   // Subtítulo do cartão de um WhatsApp: tipo de conexão e número, ou "Desconectado". O ativo usa o estado ao vivo.
@@ -448,7 +452,7 @@ export function Sidebar() {
         <div className="min-w-0 flex-1">
           <div className="truncate text-[12.5px] font-medium leading-[1.25]">{user.nome}</div>
           <div className="truncate text-[11px] text-dark-neutral-500">
-            {user.organizacao} · Plano {plano}
+            {user.organizacao}{canBilling ? ` · Plano ${plano}` : ''}
           </div>
         </div>
         <button

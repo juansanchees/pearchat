@@ -117,7 +117,7 @@ export function ConfigDrawer() {
 
       <Section label="Me avisar quando">
         <div className="flex flex-wrap gap-2">
-          {NOTIF_OPCOES.map((o) => (
+          {NOTIF_OPCOES.filter((o) => o !== 'Disparo concluído' || can('campaigns.manage')).map((o) => (
             <Pill
               key={o}
               variant="chip"
