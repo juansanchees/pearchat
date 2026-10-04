@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { CampaignError, resumeCampaign } from '@/server/campaigns/service'
 import { apiSession, fail, notFound, unauthorized } from '@/server/settings/http'
 
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
+  const deny = await denyUnless('campaigns.manage'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   try {

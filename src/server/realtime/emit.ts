@@ -1,5 +1,5 @@
 import type { Server } from 'socket.io'
-import { orgRoom, workspaceRoom } from './events'
+import { attentionRoom, orgRoom, userRoom, workspaceRoom } from './events'
 import type { ClientToServerEvents, ServerToClientEvents } from './events'
 
 export type PearIo = Server<ClientToServerEvents, ServerToClientEvents>
@@ -24,6 +24,30 @@ export function emitToWorkspace<E extends keyof ServerToClientEvents>(
     emit: (ev: string, ...a: unknown[]) => boolean
   }
   room.emit(event, ...args)
+}
+
+/** Aviso leve (space.attention) de um espaço para os ATENDENTES membros dele (Equipe). */
+export function emitToSpaceMembers<E extends keyof ServerToClientEvents>(
+  workspaceId: string,
+  event: E,
+  ...args: Parameters<ServerToClientEvents[E]>
+): void {
+  const io = holder.__pearchat_io
+  if (!io) return
+  const room = io.to(attentionRoom(workspaceId)) as unknown as { emit: (ev: string, ...a: unknown[]) => boolean }
+  room.emit(event, ...args)
+}
+
+/** Acesso da pessoa mudou: derruba todas as conexões dela (removida da equipe). */
+export function disconnectUser(userId: string): void {
+  holder.__pearchat_io?.in(userRoom(userId)).disconnectSockets(true)
+}
+
+/** Tira os sockets da pessoa das salas indicadas (espaço retirado do atendente, rebaixamento). */
+export function removeUserFromRooms(userId: string, rooms: string[]): void {
+  const io = holder.__pearchat_io
+  if (!io || rooms.length === 0) return
+  io.in(userRoom(userId)).socketsLeave(rooms)
 }
 
 /** Aviso leve para todos os espaços da organização (veja SpaceAttentionPayload). */

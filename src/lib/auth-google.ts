@@ -39,10 +39,15 @@ export async function authorizeGoogleSignIn(account: GoogleAccount, profile: Goo
     where: { provider_providerAccountId: { provider: 'google', providerAccountId: sub } },
     select: { id: true },
   })
-  if (linked) return true
+  if (linked) {
+    // Equipe: removido da equipe não entra (a sessão também cai em src/auth.ts).
+    const u = await db.account.findUnique({ where: { id: linked.id }, select: { user: { select: { desativadoEm: true } } } })
+    return !u?.user.desativadoEm
+  }
 
-  const user = await db.user.findUnique({ where: { email }, select: { id: true, image: true, emailVerified: true } })
+  const user = await db.user.findUnique({ where: { email }, select: { id: true, image: true, emailVerified: true, desativadoEm: true } })
   if (!user) return true
+  if (user.desativadoEm) return false
 
   // Tudo na mesma transação: vínculo + (se a conta nunca provou ser dona do e-mail) anti pre-hijacking.
   try {

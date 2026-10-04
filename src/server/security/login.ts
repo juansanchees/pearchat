@@ -19,6 +19,7 @@ const userSelect = {
   organizationId: true,
   passwordHash: true,
   totpEnabledAt: true,
+  desativadoEm: true, // Equipe: removido da equipe não entra (mesma resposta genérica de senha inválida)
 } as const
 
 export type LoginUser = {
@@ -63,7 +64,7 @@ export async function primaryLogin(rawEmail: string, password: string, ip: strin
 
   const user = await loadUser({ email })
   const ok = await bcrypt.compare(password, user?.passwordHash ?? dummy())
-  if (!user?.passwordHash || !ok) {
+  if (!user?.passwordHash || !ok || user.desativadoEm) {
     if (opts.delay !== false) await sleep(failureDelayMs(res.failures))
     return { kind: 'invalid' }
   }
@@ -83,7 +84,7 @@ export async function secondFactorLogin(challenge: string, code: string, ip: str
   const ch = readChallenge(challenge, now)
   if (!ch) return { kind: 'expired' }
   const user = await loadUser({ id: ch.u })
-  if (!user?.totpEnabledAt) return { kind: 'expired' }
+  if (!user?.totpEnabledAt || user.desativadoEm) return { kind: 'expired' }
 
   const res = await reserve('login', { email: user.email, ip }, now)
   if (res.blocked) return { kind: 'blocked', retryAfter: res.retryAfter }

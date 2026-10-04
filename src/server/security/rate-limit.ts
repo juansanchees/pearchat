@@ -16,6 +16,8 @@ export const RULES = {
   resetRequest: { emailMax: 3, ipMax: 10, windowMs: WINDOW_MS },
   /** Uso do link de redefinição: só por IP. */
   resetConfirm: { emailMax: Infinity, ipMax: 10, windowMs: WINDOW_MS },
+  /** Abrir/aceitar um convite da equipe: só por IP (cada consulta de token conta). */
+  inviteToken: { emailMax: Infinity, ipMax: 20, windowMs: WINDOW_MS },
 } as const
 export type LimitAction = keyof typeof RULES
 

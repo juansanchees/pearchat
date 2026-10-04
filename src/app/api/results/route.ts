@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
@@ -11,6 +12,7 @@ const querySchema = z.object({ period: z.enum(['7', '30', '90']).default('30') }
 
 /** GET /api/results?period=7|30|90 -> ResultsDto (sessão; só o espaço ativo; cache de 60 s no servidor). */
 export async function GET(req: NextRequest) {
+  const deny = await denyUnless('results.view'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   const parsed = querySchema.safeParse({ period: req.nextUrl.searchParams.get('period') ?? undefined })

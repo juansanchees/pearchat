@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { z } from 'zod'
 import { getApiSession } from '@/server/whatsapp/auth'
 import { db } from '@/lib/db'
@@ -15,6 +16,7 @@ const bodySchema = z.object({
 })
 
 export async function POST(req: Request) {
+  const deny = await denyUnless('wa.manage'); if (deny) return deny
   const session = await getApiSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))

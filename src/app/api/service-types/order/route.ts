@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { badRequest, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
@@ -11,6 +12,7 @@ const schema = z.object({ ids: z.array(z.string().min(1).max(64)).min(1).max(100
 
 /** PUT /api/service-types/order { ids } -> nova ordem (índice no array). Ignora ids de outros workspaces. */
 export async function PUT(req: Request) {
+  const deny = await denyUnless('servicetypes.manage'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   const parsed = schema.safeParse(await readJson(req))

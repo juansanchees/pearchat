@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { getApiSession } from '@/server/whatsapp/auth'
 import { startHistoryImport } from '@/server/whatsapp/history-import'
 
@@ -7,6 +8,7 @@ export const dynamic = 'force-dynamic'
 
 /** Inicia a importação do histórico em segundo plano. 409 se já estiver importando. */
 export async function POST() {
+  const deny = await denyUnless('wa.manage'); if (deny) return deny
   const session = await getApiSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   const state = await startHistoryImport(session.workspaceId)

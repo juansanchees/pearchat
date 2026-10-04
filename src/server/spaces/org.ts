@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client'
 import type { Plan } from '@prisma/client'
 import { db } from '@/lib/db'
+import { normalizePapel } from '@/server/auth/permissions'
+import type { Papel } from '@/server/auth/permissions'
 
 // Camada Organization: cada WhatsApp é um Workspace (espaço) e a Organization agrupa os espaços da conta,
 // sendo a dona do plano/assinatura. Colunas organizationId ficam NULÁVEIS no banco (migração segura com o
@@ -56,7 +58,8 @@ export function invalidateActiveSpace(userId?: string): void {
   else activeCache.clear()
 }
 
-export type ActiveSpace = { userId: string; workspaceId: string; organizationId: string; sessionVersion: number }
+/** papel = owner | admin | agent (relido do banco); blocked = usuário desativado ou atendente sem nenhum espaço liberado. */
+export type ActiveSpace = { userId: string; workspaceId: string; organizationId: string; sessionVersion: number; papel: Papel; blocked: boolean }
 
 /**
  * Espaço ativo do usuário, lido do BANCO (a fonte da verdade; o JWT pode estar desatualizado após uma troca).
@@ -74,9 +77,10 @@ export async function resolveActiveSpace(userId: string): Promise<ActiveSpace | 
 async function resolveActiveSpaceUncached(userId: string): Promise<ActiveSpace | null> {
   const u = await db.user.findUnique({
     where: { id: userId },
-    select: { workspaceId: true, organizationId: true, sessionVersion: true, workspace: { select: { organizationId: true, arquivadoEm: true } } },
+    select: { workspaceId: true, organizationId: true, sessionVersion: true, papel: true, desativadoEm: true, workspace: { select: { organizationId: true, arquivadoEm: true } } },
   })
   if (!u) return null
+  const papel = normalizePapel(u.papel)
 
   let orgId = u.organizationId ?? u.workspace.organizationId
   if (!orgId) {
@@ -89,18 +93,25 @@ async function resolveActiveSpaceUncached(userId: string): Promise<ActiveSpace |
     }
   }
 
+  const base = { userId, organizationId: orgId, sessionVersion: u.sessionVersion, papel }
+  // Equipe: removido da equipe = sem acesso. Atendente só enxerga os espaços em que é membro (SpaceMember).
+  if (u.desativadoEm) return { ...base, workspaceId: u.workspaceId, blocked: true }
+  const allowed = { organizationId: orgId, arquivadoEm: null, ...(papel === 'agent' ? { members: { some: { userId } } } : {}) }
+
   if (u.workspace.organizationId === orgId && !u.workspace.arquivadoEm) {
-    return { userId, workspaceId: u.workspaceId, organizationId: orgId, sessionVersion: u.sessionVersion }
+    if (papel !== 'agent' || (await db.workspace.count({ where: { id: u.workspaceId, ...allowed } })) > 0) {
+      return { ...base, workspaceId: u.workspaceId, blocked: false }
+    }
   }
   const fallback = await db.workspace.findFirst({
-    where: { organizationId: orgId, arquivadoEm: null },
+    where: allowed,
     orderBy: [{ ordem: 'asc' }, { createdAt: 'asc' }],
     select: { id: true },
   })
-  // Sem nenhum espaço válido na organização (inconsistência): mantém o que está gravado.
-  if (!fallback) return { userId, workspaceId: u.workspaceId, organizationId: orgId, sessionVersion: u.sessionVersion }
+  // Sem nenhum espaço válido: atendente = bloqueado (nunca cai num espaço não liberado); dono/admin = mantém o gravado.
+  if (!fallback) return { ...base, workspaceId: u.workspaceId, blocked: papel === 'agent' }
   await db.user.update({ where: { id: userId }, data: { workspaceId: fallback.id, organizationId: orgId } })
-  return { userId, workspaceId: fallback.id, organizationId: orgId, sessionVersion: u.sessionVersion }
+  return { ...base, workspaceId: fallback.id, blocked: false }
 }
 
 export type OrgScope = {

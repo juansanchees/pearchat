@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
@@ -31,6 +32,7 @@ async function load(workspaceId: string): Promise<BookingSettingsDto> {
 
 /** GET /api/booking/settings -> BookingSettingsDto (sessão; só o espaço ativo). */
 export async function GET() {
+  const deny = await denyUnless('booking.manage'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   return NextResponse.json(await load(workspaceId))
@@ -48,6 +50,7 @@ const bodySchema = z
 
 /** PUT /api/booking/settings  { ativo?, slug?, antecedenciaMin?, diasAFrente?, mensagem? } -> BookingSettingsDto | 409 SLUG_EM_USO. */
 export async function PUT(req: NextRequest) {
+  const deny = await denyUnless('booking.manage'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   const parsed = bodySchema.safeParse(await readJson(req))

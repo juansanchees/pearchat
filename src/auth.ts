@@ -69,8 +69,10 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
         if (active) {
           session.user.workspaceId = active.workspaceId
           session.user.organizationId = active.organizationId
+          session.user.papel = active.papel // Equipe: papel relido do banco a cada leitura (rebaixar vale na próxima requisição)
           // "Sair de todos os dispositivos", troca de senha e desativação do 2FA: versão diferente = sessão revogada.
-          if ((params.token.sessionVersion ?? 0) !== active.sessionVersion) {
+          // Equipe: usuário removido da equipe (ou atendente sem espaço liberado) também perde a sessão.
+          if ((params.token.sessionVersion ?? 0) !== active.sessionVersion || active.blocked) {
             session.user.userId = ''
             session.user.workspaceId = ''
             session.user.organizationId = null
