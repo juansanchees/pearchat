@@ -1,7 +1,7 @@
 // Envio de e-mail transacional via Resend (API HTTP). Sem dependências.
 // Nunca registra conteúdo nem destinatário completo.
-// MAIL_DRY_RUN=true (SOMENTE desenvolvimento): não chama a rede e registra o texto do e-mail no log
-// do servidor, para testar fluxos com código. É ignorado quando NODE_ENV=production.
+// MAIL_DRY_RUN=true (teste/desenvolvimento): NUNCA chama a rede, em qualquer modo (inclusive `--prod` local), e registra o
+// texto do e-mail no log do servidor, para testar fluxos com código. Em produção de verdade a variável não é definida.
 
 const RESEND_URL = 'https://api.resend.com/emails'
 const TIMEOUT_MS = 10_000
@@ -22,7 +22,7 @@ export type SendMailInput = { to: string; subject: string; html: string; text: s
 export type SendMailResult = { ok: true; id?: string; dryRun?: boolean } | { ok: false; error: MailError }
 
 const isProd = () => process.env.NODE_ENV === 'production'
-const dryRun = () => process.env.MAIL_DRY_RUN === 'true' && !isProd()
+const dryRun = () => process.env.MAIL_DRY_RUN === 'true'
 
 /** true quando há chave do Resend e remetente (MAIL_FROM) configurados. */
 export function mailConfigured(): boolean {
