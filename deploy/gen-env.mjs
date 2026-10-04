@@ -61,6 +61,16 @@ const env = {
   RESEND_API_KEY: src.RESEND_API_KEY || prev.RESEND_API_KEY || '',
   MAIL_FROM: src.MAIL_FROM || prev.MAIL_FROM || '',
   EMAIL_VERIFICATION_SINCE: src.EMAIL_VERIFICATION_SINCE || prev.EMAIL_VERIFICATION_SINCE || '',
+  // Pagamentos (Asaas). DESLIGADO por padrão: só ligue (BILLING_ENABLED=true) depois de configurar chave e webhook (docs/pagamentos.md).
+  BILLING_ENABLED: src.BILLING_ENABLED || prev.BILLING_ENABLED || 'false',
+  ASAAS_BASE_URL: src.ASAAS_BASE_URL || prev.ASAAS_BASE_URL || 'https://api-sandbox.asaas.com',
+  ASAAS_API_KEY: src.ASAAS_API_KEY || prev.ASAAS_API_KEY || '',
+  ASAAS_WEBHOOK_TOKEN: prev.ASAAS_WEBHOOK_TOKEN || randomBytes(32).toString('base64url'), // gerado 1x; cadastre o mesmo valor no painel do Asaas
+  TRIAL_DAYS: src.TRIAL_DAYS || prev.TRIAL_DAYS || '7',
+  BILLING_GRACE_DAYS: src.BILLING_GRACE_DAYS || prev.BILLING_GRACE_DAYS || '5',
+  PLAN_PRICE_ESSENCIAL: src.PLAN_PRICE_ESSENCIAL || prev.PLAN_PRICE_ESSENCIAL || '',
+  PLAN_PRICE_PRO: src.PLAN_PRICE_PRO || prev.PLAN_PRICE_PRO || '',
+  PLAN_PRICE_NEGOCIOS: src.PLAN_PRICE_NEGOCIOS || prev.PLAN_PRICE_NEGOCIOS || '',
 }
 // Chaves que este script não conhece (ex.: HEALTH_TOKEN, MONITOR_WEBHOOK_URL, MONITOR_EMAIL_TO, BACKUP_*, MEDIA_DIR) e que já
 // existem no arquivo gerado antes: preservadas como estão, em vez de descartadas a cada geração.

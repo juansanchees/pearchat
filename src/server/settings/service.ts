@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
+import { PLANS } from '@/lib/plans'
 import { spMonthKey } from '@/server/calendar/time'
 import { getOrgScope, PLAN_SPACE_LIMIT } from '@/server/spaces/org'
 import { PLAN_MEMBER_LIMIT } from '@/server/team/limits'
@@ -82,9 +83,9 @@ export async function updateSettings(userId: string, workspaceId: string, input:
 const PLANO_NOME = { ESSENCIAL: 'Essencial', PRO: 'Pro', NEGOCIOS: 'Negócios' } as const
 /** Limites por plano (spec 04). null = ilimitado. Limite de contatos do Essencial não consta na spec: valor provisório. */
 const LIMITES: Record<keyof typeof PLANO_NOME, BillingDTO['limites']> = {
-  ESSENCIAL: { respostasIa: 500, disparos: 1000, contatos: 1000 },
-  PRO: { respostasIa: 3000, disparos: 10000, contatos: 5000 },
-  NEGOCIOS: { respostasIa: null, disparos: null, contatos: null },
+  ESSENCIAL: { respostasIa: PLANS.ESSENCIAL.respostasIa, disparos: PLANS.ESSENCIAL.disparos, contatos: PLANS.ESSENCIAL.contatos },
+  PRO: { respostasIa: PLANS.PRO.respostasIa, disparos: PLANS.PRO.disparos, contatos: PLANS.PRO.contatos },
+  NEGOCIOS: { respostasIa: PLANS.NEGOCIOS.respostasIa, disparos: PLANS.NEGOCIOS.disparos, contatos: PLANS.NEGOCIOS.contatos },
 }
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 

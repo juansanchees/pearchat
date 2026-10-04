@@ -2,6 +2,7 @@ import { PrismaAdapter } from '@auth/prisma-adapter'
 import type { Adapter, AdapterAccount, AdapterUser } from 'next-auth/adapters'
 import type { User } from '@prisma/client'
 import { db } from '@/lib/db'
+import { newOrganizationBilling } from '@/server/billing/config'
 import { sendWelcome } from '@/server/mail/email-verification'
 import { createUserFromPendingInvite } from '@/server/team/service'
 
@@ -26,7 +27,7 @@ export function pearchatAdapter(): Adapter {
       if (invited) return toAdapterUser(invited)
       const user = await db.$transaction(async (tx) => {
         const nomeNegocio = `Negócio de ${nome.split(/\s+/)[0]}`
-        const org = await tx.organization.create({ data: { nome: nomeNegocio } })
+        const org = await tx.organization.create({ data: { nome: nomeNegocio, ...newOrganizationBilling() } })
         const workspace = await tx.workspace.create({ data: { nome: nomeNegocio, organizationId: org.id, plano: org.plano } })
         return tx.user.create({
           data: {

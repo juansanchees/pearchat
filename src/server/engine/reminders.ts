@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { automationAllowed } from '@/server/billing/entitlements'
 import { canSendFreeformTo } from './freeform'
 import { contactRef, ensureConversation, OutboundError, sendAndRecord } from './outbound'
 import type { OutboundContent } from './outbound'
@@ -67,6 +68,7 @@ export async function runDueReminders(): Promise<number> {
 
 async function remindWorkspace(conn: { workspaceId: string; lembretes: string[]; pedirConfirmacao: boolean }, now: Date): Promise<number> {
   let sent = 0
+  if (!(await automationAllowed(conn.workspaceId))) return 0 // modo restrito: sem lembretes automáticos
   {
     const kinds = conn.lembretes.filter((k) => k in OFFSETS_MIN).sort((a, b) => (OFFSETS_MIN[a] ?? 0) - (OFFSETS_MIN[b] ?? 0))
     if (kinds.length === 0) return 0

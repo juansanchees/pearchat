@@ -1,7 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { CreditCard, CrownSimple, DownloadSimple, MetaLogo } from '@phosphor-icons/react'
+import { ArrowSquareOut, CreditCard, CrownSimple, DownloadSimple, MetaLogo } from '@phosphor-icons/react'
+import { api } from './api'
+import { cobrancaLabels, faturaStatus, fmtDia, FORMAS, openInvoice } from './plano-cobranca'
+import type { Forma } from './plano-cobranca'
 import { useAppState } from '@/components/app/app-state'
 import { fmtNum } from '@/components/app/automations'
 import { Tag } from '@/components/pear'
@@ -13,8 +17,38 @@ import { fmtBRL } from './view'
 
 export function PlanoDrawer() {
   const { wa, toast, closeDrawer, spaces } = useAppState()
-  const { plano, billing } = useDrawerData()
+  const { plano, billing, loadDrawer } = useDrawerData()
   const loading = useDrawerLoad('plano')
+  // Cobrança (Asaas): só existe com BILLING_ENABLED=true; sem isso nada abaixo aparece e o drawer fica como era.
+  const cob = billing?.cobranca
+  const [forma, setForma] = useState<Forma>('PIX')
+  const [doc, setDoc] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const assinante = !!cob && (cob.status === 'ativa' || cob.status === 'atrasada')
+  const rotulos = cob ? cobrancaLabels(cob) : null
+  const precoDe = (nome: string, fallback: string) => (cob?.precos[nome] ? `R$ ${cob.precos[nome].toLocaleString('pt-BR')}/mês` : fallback)
+
+  const chamar = async (url: string, body: unknown, ok: (r: { invoiceUrl?: string | null; tipo?: string; plano?: string }) => void) => {
+    setBusy(true)
+    setErro(null)
+    try {
+      ok(await api(url, { method: 'POST', body }))
+      await loadDrawer('plano')
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Tente novamente em instantes.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const escolher = (nome: string) =>
+    chamar('/api/billing/checkout', { plano: nome, forma, cpfCnpj: doc || undefined }, (r) => {
+      if (r.tipo === 'downgrade') toast({ icon: <CrownSimple size={18} weight="fill" />, title: 'Mudança agendada', text: 'O novo plano vale a partir da próxima cobrança' })
+      else if (r.tipo === 'downgrade_cancelado') toast({ icon: <CrownSimple size={18} weight="fill" />, title: 'Mudança cancelada', text: 'Você continua no plano atual' })
+      else if (openInvoice(r.invoiceUrl)) toast({ icon: <CreditCard size={18} weight="fill" />, title: 'Fatura aberta em nova aba', text: 'O plano vale assim que o pagamento for confirmado' })
+      else toast({ icon: <CreditCard size={18} weight="fill" />, title: 'Fatura sendo gerada', text: 'Ela aparece em Pagamento em instantes' })
+    })
   const svcUsed = billing?.uso.mensagensAtendimento ?? 0
   const emBreve = (texto: string, icon: ReactNode = <CrownSimple size={18} weight="fill" />) => toast({ icon, title: 'Em breve', text: texto })
 
@@ -52,12 +86,15 @@ export function PlanoDrawer() {
       <div className="flex flex-col gap-[14px] rounded-lg border border-light-accent-700 bg-light-accent-900 p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-[11.5px] text-light-accent-300">Seu plano</div>
+            <div className="flex items-center gap-2 text-[11.5px] text-light-accent-300">
+              Seu plano
+              {rotulos && <Tag tone={cob?.status === 'ativa' || cob?.status === 'isenta' ? 'accent' : 'neutral'} className="!px-2 !text-[10px]">{rotulos.etiqueta}</Tag>}
+            </div>
             <div className="mt-[3px] text-[20px] font-medium leading-[1.2]">{atual.nome}</div>
           </div>
           <div className="text-right">
-            <div className="text-[16px] font-medium leading-[1.2]">{atual.preco}</div>
-            <div className="text-[11px] text-light-neutral-500">Renova em {renova}</div>
+            <div className="text-[16px] font-medium leading-[1.2]">{precoDe(atual.nome, atual.preco)}</div>
+            <div className="text-[11px] text-light-neutral-500">{rotulos ? rotulos.linha : `Renova em ${renova}`}</div>
           </div>
         </div>
 
@@ -110,26 +147,97 @@ export function PlanoDrawer() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="text-[14px] font-medium leading-[1.2]">{p.nome}</span>
-                  <span className="text-[12.5px] text-light-accent-300">{p.preco}</span>
+                  <span className="text-[12.5px] text-light-accent-300">{precoDe(p.nome, p.preco)}</span>
                 </div>
                 <div className="mt-1 text-[11.5px] text-light-neutral-500">{p.desc}</div>
               </div>
-              <button
-                type="button"
-                className={cn('pc-btn whitespace-nowrap !text-[12px]', cur ? 'pc-btn-ghost' : rank > curRank ? 'pc-btn-primary' : 'pc-btn-secondary')}
-                onClick={() => {
-                  if (cur) return
-                  emBreve('A troca de plano estará disponível em breve')
-                }}
-              >
-                {cur ? 'Plano atual' : rank > curRank ? 'Fazer upgrade' : 'Mudar'}
-              </button>
+              {cob && cob.status !== 'isenta' ? (
+                <button
+                  type="button"
+                  disabled={busy || cob.status === 'cancelada' && !!cob.proximaCobranca && new Date(cob.proximaCobranca) > new Date() || (assinante && cur && !cob.planoAgendado) || cob.planoAgendado === p.nome}
+                  className={cn('pc-btn whitespace-nowrap !text-[12px]', !assinante || rank > curRank ? 'pc-btn-primary' : cur ? 'pc-btn-ghost' : 'pc-btn-secondary')}
+                  onClick={() => void escolher(p.nome)}
+                >
+                  {cob.planoAgendado === p.nome ? 'Agendado' : !assinante ? (cob.planoPendente === p.nome ? 'Pagar' : 'Assinar') : cur ? (cob.planoAgendado ? 'Manter este' : 'Plano atual') : rank > curRank ? 'Fazer upgrade' : 'Mudar'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={cn('pc-btn whitespace-nowrap !text-[12px]', cur ? 'pc-btn-ghost' : rank > curRank ? 'pc-btn-primary' : 'pc-btn-secondary')}
+                  onClick={() => {
+                    if (cur) return
+                    emBreve(cob ? 'Sua conta é isenta de cobrança' : 'A troca de plano estará disponível em breve')
+                  }}
+                >
+                  {cur ? 'Plano atual' : rank > curRank ? 'Fazer upgrade' : 'Mudar'}
+                </button>
+              )}
             </div>
           )
         })}
       </Section>
 
       <Section label="Pagamento">
+        {cob && cob.status !== 'isenta' && (
+          <div className="flex flex-col gap-[10px]">
+            <div className="pc-seg" role="group" aria-label="Forma de pagamento">
+              {FORMAS.map((f) => (
+                <button key={f.id} type="button" className="pc-seg-opt" aria-pressed={forma === f.id} onClick={() => setForma(f.id)}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            {cob.documento ? (
+              <div className="text-[12px] text-light-neutral-500">Documento do pagador cadastrado: {cob.documento}</div>
+            ) : (
+              <input
+                className="pc-input"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="CPF ou CNPJ do pagador"
+                aria-label="CPF ou CNPJ do pagador"
+                value={doc}
+                onChange={(e) => setDoc(e.target.value.slice(0, 18))}
+              />
+            )}
+            <div className="text-[11.5px] text-light-neutral-500">O pagamento acontece na página segura do Asaas. O PearChat não recebe nem guarda dados de cartão.</div>
+            {erro && (
+              <div role="alert" className="text-[12px] text-amber-text">
+                {erro}
+              </div>
+            )}
+            {cob.status === 'cancelada' && cob.proximaCobranca && new Date(cob.proximaCobranca) > new Date() && (
+              <button type="button" disabled={busy} className="pc-btn pc-btn-primary self-start !text-[12px]" onClick={() => void chamar('/api/billing/reactivate', { forma }, () => toast({ icon: <CrownSimple size={18} weight="fill" />, title: 'Assinatura reativada', text: `Próxima cobrança em ${fmtDia(cob.proximaCobranca!)}` }))}>
+                Reativar assinatura
+              </button>
+            )}
+            {cob.temAssinatura &&
+              (confirmCancel ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-light-divider px-3 py-[10px] text-[12px]">
+                  <span className="flex-1">
+                    Cancelar a assinatura?
+                    {cob.proximaCobranca && new Date(cob.proximaCobranca) > new Date() ? ` Você mantém o acesso até ${fmtDia(cob.proximaCobranca)}.` : ''}
+                  </span>
+                  <button type="button" className="pc-btn pc-btn-ghost !text-[12px]" onClick={() => setConfirmCancel(false)}>
+                    Voltar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="pc-btn pc-btn-secondary !text-[12px]"
+                    onClick={() => void chamar('/api/billing/cancel', {}, () => { setConfirmCancel(false); toast({ icon: <CrownSimple size={18} weight="fill" />, title: 'Assinatura cancelada', text: 'Seus dados continuam guardados' }) })}
+                  >
+                    Confirmar cancelamento
+                  </button>
+                </div>
+              ) : (
+                <button type="button" className="pc-btn pc-btn-ghost self-start !text-[12px]" onClick={() => setConfirmCancel(true)}>
+                  Cancelar assinatura
+                </button>
+              ))}
+          </div>
+        )}
+        {!cob && (
         <div className="flex items-center gap-3 rounded-md border border-light-divider px-[14px] py-3">
           <CreditCard size={18} className="flex-none text-light-accent-300" />
           <span className="flex-1 text-[12.5px]">Nenhum cartão cadastrado</span>
@@ -141,6 +249,30 @@ export function PlanoDrawer() {
             Trocar
           </button>
         </div>
+        )}
+        {cob && (
+          <div className="overflow-hidden rounded-md border border-light-divider">
+            {cob.faturas.length === 0 && <div className="px-[14px] py-[12px] text-[12.5px] text-light-neutral-500">Nenhuma fatura ainda.</div>}
+            {cob.faturas.map((f, i) => (
+              <div key={f.id} className={cn('flex items-center gap-3 px-[14px] py-[10px] text-[12.5px]', i > 0 && 'border-t border-light-divider')}>
+                <span className="flex-1">{f.vencimento ? fmtDia(f.vencimento) : '—'}</span>
+                <span className="text-light-neutral-500">{fmtBRL(f.valor)}</span>
+                <Tag tone="neutral" className="!px-2 !text-[10px]">{faturaStatus(f.status)}</Tag>
+                <button
+                  type="button"
+                  title="Abrir fatura"
+                  aria-label="Abrir fatura"
+                  disabled={!f.invoiceUrl}
+                  className="pc-btn pc-btn-ghost h-7 w-7 !p-0"
+                  onClick={() => void openInvoice(f.invoiceUrl)}
+                >
+                  <ArrowSquareOut size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {!cob && (
         <div className="overflow-hidden rounded-md border border-light-divider">
           {faturas.length === 0 && <div className="px-[14px] py-[12px] text-[12.5px] text-light-neutral-500">Nenhuma fatura ainda.</div>}
           {faturas.map((f, i) => (
@@ -163,6 +295,7 @@ export function PlanoDrawer() {
             </div>
           ))}
         </div>
+        )}
       </Section>
     </DrawerShell>
   )

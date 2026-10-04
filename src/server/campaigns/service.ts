@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { Campaign, Template } from '@prisma/client'
 import { db } from '@/lib/db'
 import type { CampaignDTO, CampaignInterval, DisparosSettingsDTO, CampaignListId, CampaignStatusKind, TemplateDTO } from '@/lib/types'
+import { automationAllowed } from '@/server/billing/entitlements'
 import { silenceEnd } from '@/server/engine/util'
 import { countTemplateVars, templateUnsupportedReason } from '@/server/whatsapp/template-rules'
 import { listName, resolveRecipientIds } from './recipients'
@@ -172,6 +173,7 @@ export type CreateCampaignResult = {
 
 /** Valida e cria a campanha com os destinatários reais. NÃO envia nada. */
 export async function createCampaign(workspaceId: string, input: CampaignInput): Promise<CreateCampaignResult> {
+  if (!(await automationAllowed(workspaceId))) throw new CampaignError('Sua assinatura está inativa. Regularize em Plano e pagamento para enviar disparos.', 403)
   const wa = await db.whatsAppSession.findUnique({ where: { workspaceId }, select: { status: true, provider: true } })
   if (wa?.status !== 'CONECTADO') throw new CampaignError('Conecte o WhatsApp primeiro', 409)
 

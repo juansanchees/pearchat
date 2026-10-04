@@ -176,3 +176,41 @@ export function twoFactorChangedEmail({ ativada, nome }: { ativada: boolean; nom
     textFooter()
   return { subject: ativada ? 'Verificação em duas etapas ativada no PearChat' : 'Verificação em duas etapas desativada no PearChat', html, text }
 }
+
+// ---- Cobrança (Asaas). Sem dados de pagamento no e-mail: só plano, datas e o link da conta. ----
+
+type BillingMailKind = 'trial_acabando' | 'pagamento_confirmado' | 'pagamento_atrasado' | 'assinatura_cancelada'
+export function billingEmail(kind: BillingMailKind, d: { nome?: string; plano?: string; dias?: number; ate?: string; graca?: number }): MailContent {
+  const base = appBaseUrl()
+  const primeiro = d.nome?.trim().split(/\s+/)[0]
+  const oi = primeiro ? `Oi, ${primeiro}! ` : ''
+  const abrir = (label: string) => button(base, label)
+  let subject = ''
+  let titulo = ''
+  let corpo = ''
+  let texto = ''
+  if (kind === 'trial_acabando') {
+    const quando = d.dias === 1 ? 'amanhã' : `em ${d.dias ?? 3} dias`
+    subject = 'Seu período de teste do PearChat termina em breve'
+    titulo = 'Seu teste termina em breve'
+    corpo = `${oi}Seu período de teste termina <strong>${quando}</strong>. Para manter a IA, os follow-ups e os disparos funcionando, escolha um plano em <strong>Plano e pagamento</strong>.`
+    texto = `${oi}Seu período de teste termina ${quando}. Para manter a IA, os follow-ups e os disparos funcionando, escolha um plano em Plano e pagamento.`
+  } else if (kind === 'pagamento_confirmado') {
+    subject = 'Pagamento confirmado no PearChat'
+    titulo = 'Pagamento confirmado'
+    corpo = `${oi}Recebemos o pagamento do plano <strong>${escapeHtml(d.plano ?? '')}</strong>.${d.ate ? ` Seu acesso está garantido até <strong>${escapeHtml(d.ate)}</strong>.` : ''} Obrigado!`
+    texto = `${oi}Recebemos o pagamento do plano ${d.plano ?? ''}.${d.ate ? ` Seu acesso está garantido até ${d.ate}.` : ''} Obrigado!`
+  } else if (kind === 'pagamento_atrasado') {
+    subject = 'Pagamento em atraso no PearChat'
+    titulo = 'Pagamento em atraso'
+    corpo = `${oi}Não identificamos o pagamento da sua assinatura. Regularize em <strong>Plano e pagamento</strong>${d.graca ? ` em até <strong>${d.graca} dias</strong>` : ''} para manter a IA, os follow-ups e os disparos ligados. Suas conversas e dados continuam guardados e você segue recebendo e respondendo mensagens normalmente.`
+    texto = `${oi}Não identificamos o pagamento da sua assinatura. Regularize em Plano e pagamento${d.graca ? ` em até ${d.graca} dias` : ''} para manter a IA, os follow-ups e os disparos ligados. Suas conversas e dados continuam guardados.`
+  } else {
+    subject = 'Assinatura cancelada no PearChat'
+    titulo = 'Assinatura cancelada'
+    corpo = `${oi}Sua assinatura foi cancelada.${d.ate ? ` Você continua com acesso completo até <strong>${escapeHtml(d.ate)}</strong>.` : ''} Seus dados ficam guardados e você pode reativar quando quiser em <strong>Plano e pagamento</strong>.`
+    texto = `${oi}Sua assinatura foi cancelada.${d.ate ? ` Você continua com acesso completo até ${d.ate}.` : ''} Seus dados ficam guardados e você pode reativar quando quiser em Plano e pagamento.`
+  }
+  const html = layout(titulo, h1(titulo) + p(corpo) + abrir('Abrir o PearChat'))
+  return { subject, html, text: `${titulo}\n\n${texto}\n\nAbrir o PearChat: ${base}\n${textFooter()}` }
+}

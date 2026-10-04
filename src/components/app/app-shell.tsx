@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { Sidebar } from '@/components/sidebar'
 import { useRawSocketEvent } from '@/lib/socket-client'
 import { cn } from '@/lib/utils'
+import { BillingBanner } from './billing-banner'
 import { ShellCtx } from './shell-context'
 
 // Menu lateral fixo (>= 900 px) ou gaveta com overlay (< 900 px); fecha ao navegar ou com Esc.
@@ -62,6 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               Sem conexão. Tentando reconectar…
             </div>
           ) : null}
+          <BillingBanner />
           {children}
         </main>
       </div>

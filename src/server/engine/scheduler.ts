@@ -1,3 +1,4 @@
+import { runBillingDaily } from '@/server/billing/daily'
 import { runDueAiJobs, sweepPending } from './ai-reply'
 import { runCalendarSync } from './calendar-sync'
 import { runDueCampaigns } from './campaigns'
@@ -22,6 +23,7 @@ export type TickSummary = {
   agenda: { sincronizadas: number }
   historico: { importacoes: number }
   midia: { downloads: number; transcricoes: number }
+  cobranca: { avisos: number }
   ignoradas: string[]
 }
 
@@ -49,7 +51,7 @@ async function task<T>(name: string, fallback: T, fn: () => Promise<T>, skipped:
 /** Um ciclo completo. Também usado pela rota de desenvolvimento /api/dev/engine/tick. */
 export async function runTick(): Promise<TickSummary> {
   const ignoradas: string[] = []
-  const [ia, disparos, followup, lembretes, agenda, historico, midia] = await Promise.all([
+  const [ia, disparos, followup, lembretes, agenda, historico, midia, cobranca] = await Promise.all([
     task('ia', { varridas: 0, executadas: 0 }, async () => {
         // Primeiro responde o que já venceu; a varredura (mais lenta) não atrasa a resposta.
         const executadas = await runDueAiJobs()
@@ -69,9 +71,11 @@ export async function runTick(): Promise<TickSummary> {
     task('historico', { importacoes: 0 }, async () => ({ importacoes: await runDueHistoryImports() }), ignoradas),
     // Mídia: retoma downloads e transcrições que ficaram pendentes (servidor reiniciou no meio).
     task('midia', { downloads: 0, transcricoes: 0 }, async () => ({ downloads: await runDueMediaDownloads(), transcricoes: await runDueTranscriptions() }), ignoradas),
+    // Cobrança: verificação diária (aviso de fim do teste). No-op com BILLING_ENABLED=false.
+    task('cobranca', { avisos: 0 }, async () => ({ avisos: await runBillingDaily() }), ignoradas),
   ])
   ;(globalThis as unknown as { __pearchat_last_tick?: number }).__pearchat_last_tick = Date.now() // lido por /api/health
-  return { ia, disparos, followup, lembretes, agenda, historico, midia, ignoradas }
+  return { ia, disparos, followup, lembretes, agenda, historico, midia, cobranca, ignoradas }
 }
 
 /** Inicia o laço (uma vez por processo). Desligável com ENGINE_DISABLED=true. */

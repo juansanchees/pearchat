@@ -194,4 +194,23 @@ export interface BillingDTO {
   /** Equipe: pessoas ativas + convites pendentes e o máximo do plano. */
   pessoas?: { usados: number; limite: number }
   faturas: { id: string; mes: string; valor: number; status: string; pdfUrl: string | null }[]
+  /** Só existe com BILLING_ENABLED=true (rota /api/billing, dono). */
+  cobranca?: CobrancaInfo
+}
+
+export interface CobrancaInfo {
+  ativo: true
+  status: 'trial' | 'ativa' | 'pendente' | 'atrasada' | 'cancelada' | 'isenta'
+  restrito: boolean
+  motivo: string | null
+  trialDias: number | null
+  trialAte: string | null
+  proximaCobranca: string | null
+  canceladaEm: string | null
+  planoPendente: string | null
+  planoAgendado: string | null
+  temAssinatura: boolean
+  documento: string | null
+  precos: Record<string, number>
+  faturas: { id: string; valor: number; status: string; vencimento: string | null; pagoEm: string | null; invoiceUrl: string | null }[]
 }

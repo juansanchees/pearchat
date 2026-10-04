@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { automationAllowed } from '@/server/billing/entitlements'
 import { contactRef, ensureConversation, OutboundError, sendAndRecord } from './outbound'
 import type { OutboundContent } from './outbound'
 import { bumpUsage, getConnected, log, logError, personalize, shortError, silenceEnd, spNextHour, spStartOfDay, spStartOfNextDay, templateFirstName } from './util'
@@ -205,6 +206,7 @@ export async function runDueCampaigns(): Promise<number> {
   let sent = 0
   for (const c of due) {
     try {
+      if (!(await automationAllowed(c.workspaceId))) continue // modo restrito: disparos pausados (a fila é mantida)
       if (await processCampaign(c, now)) sent++
     } catch (e) {
       logError('campaigns', `campanha ${c.id} falhou`, e)

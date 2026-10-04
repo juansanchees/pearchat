@@ -6,6 +6,7 @@ import { ensureServiceTypes } from '@/server/calendar/service-types'
 import { getProvider } from '@/server/whatsapp'
 import { disableAutomations, setStatus } from '@/server/whatsapp/session'
 import { userCanAccessSpace } from '@/server/team/access'
+import { entitlements } from '@/server/billing/entitlements'
 import { invalidateActiveSpace, PLAN_NAME, PLAN_SPACE_LIMIT } from './org'
 
 export class SpaceError extends Error {
@@ -104,6 +105,8 @@ function serialize<T>(key: string, fn: () => Promise<T>): Promise<T> {
 
 /** Cria o espaço (Workspace + agente + follow-up + tipos de atendimento genéricos), respeitando o limite do plano. */
 export async function createSpace(organizationId: string, nome: string): Promise<{ id: string; nome: string }> {
+  // Cobrança ligada e conta em modo restrito (teste vencido / atraso além da carência): não cria espaço novo.
+  if (!(await entitlements(organizationId)).podeCriarEspaco) throw new SpaceError('Sua assinatura está inativa. Regularize em Plano e pagamento para adicionar WhatsApps.', 403, 'ASSINATURA_INATIVA')
   const created = await serialize(organizationId, () => createInTx(organizationId, nome))
   await ensureServiceTypes(created.id).catch(() => undefined)
   return created

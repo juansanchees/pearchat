@@ -9,6 +9,9 @@ export const HANDOFF_MODEL_NOTE = 'passagem pelo modelo'
 /** Limite mensal de respostas de IA do plano atingido. */
 export const HANDOFF_LIMIT_NOTE = 'limite de respostas de IA do plano'
 
+/** Assinatura inativa (modo restrito): a IA não responde. */
+export const HANDOFF_BILLING_NOTE = 'assinatura inativa: IA pausada'
+
 /** Observação de passagem por regra. */
 export const handoffRuleNote = (motivo: string): string => `${HANDOFF_RULE_PREFIX}${motivo}`
 
