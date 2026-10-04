@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import type { Plan } from '@prisma/client'
 import { db } from '@/lib/db'
+import { PLANS } from '@/lib/plans'
 import { normalizePapel } from '@/server/auth/permissions'
 import type { Papel } from '@/server/auth/permissions'
 
@@ -8,10 +9,10 @@ import type { Papel } from '@/server/auth/permissions'
 // sendo a dona do plano/assinatura. Colunas organizationId ficam NULÁVEIS no banco (migração segura com o
 // app antigo rodando): o código trata nulo criando a organização sob demanda (ensureOrganization).
 
-export const PLAN_NAME: Record<Plan, 'Essencial' | 'Pro' | 'Negócios'> = { ESSENCIAL: 'Essencial', PRO: 'Pro', NEGOCIOS: 'Negócios' }
+export const PLAN_NAME: Record<Plan, 'Essencial' | 'Pro' | 'Negócios'> = { ESSENCIAL: PLANS.ESSENCIAL.nome, PRO: PLANS.PRO.nome, NEGOCIOS: PLANS.NEGOCIOS.nome }
 
-/** Quantos WhatsApps (espaços não arquivados) cada plano permite. */
-export const PLAN_SPACE_LIMIT: Record<Plan, number> = { ESSENCIAL: 1, PRO: 3, NEGOCIOS: 5 }
+/** Quantos WhatsApps (espaços não arquivados) cada plano permite (fonte: src/lib/plans.ts). */
+export const PLAN_SPACE_LIMIT: Record<Plan, number> = { ESSENCIAL: PLANS.ESSENCIAL.espacos, PRO: PLANS.PRO.espacos, NEGOCIOS: PLANS.NEGOCIOS.espacos }
 
 const isUnique = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002'
 

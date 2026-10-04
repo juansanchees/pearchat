@@ -81,9 +81,55 @@ model Organization {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  workspaces Workspace[]
-  users      User[]
-  invites    Invite[]
+  // Cobrança (migration 0017). billingStatus: trial|ativa|pendente|atrasada|cancelada|isenta. Só vale com BILLING_ENABLED=true.
+  billingStatus       String    @default("isenta")
+  trialAte            DateTime?
+  planoPendente       Plan?
+  planoAgendado       Plan?
+  asaasCustomerId     String?   @unique
+  asaasSubscriptionId String?   @unique
+  proximaCobranca     DateTime?
+  canceladaEm         DateTime?
+  atrasadaDesde       DateTime?
+  cpfCnpj             String?
+  avisoTrialEm        DateTime?
+
+  workspaces      Workspace[]
+  users           User[]
+  invites         Invite[]
+  billingInvoices BillingInvoice[]
+}
+
+// Eventos do webhook do Asaas (idempotência pelo id do evento). O resumo não guarda dados pessoais.
+model BillingEvent {
+  id             String    @id @default(cuid())
+  asaasEventId   String    @unique
+  tipo           String
+  organizationId String?
+  resumo         Json?
+  iniciadoEm     DateTime  @default(now())
+  processadoEm   DateTime?
+  createdAt      DateTime  @default(now())
+}
+
+// Cobranças da assinatura (espelho do Asaas). Sem dados de cartão.
+model BillingInvoice {
+  id             String    @id @default(cuid())
+  asaasId        String    @unique
+  organizationId String
+  valor          Decimal   @db.Decimal(10, 2)
+  status         String
+  vencimento     DateTime?
+  pagoEm         DateTime?
+  invoiceUrl     String?
+  assinaturaId   String?
+  descricao      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, vencimento])
 }
 
 model Workspace {
