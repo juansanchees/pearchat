@@ -35,9 +35,23 @@ type Agente = { nome: string; tom: Tom; horario: Horario; prompt: string }
 type Fu = { espera: string; tentativas: string; msgs: string[] }
 
 const CAT: Record<TemplateDTO['category'], Template['cat']> = { MARKETING: 'Marketing', UTILIDADE: 'Utilidade' }
-const TPL_STATUS: Record<TemplateDTO['status'], Template['status']> = { APROVADO: 'Aprovado', EM_ANALISE: 'Em análise', REJEITADO: 'Rejeitado' }
+const TPL_STATUS: Record<TemplateDTO['status'], Template['status']> = { APROVADO: 'Aprovado', EM_ANALISE: 'Em análise', REJEITADO: 'Rejeitado', PAUSADO: 'Pausado', DESATIVADO: 'Desativado' }
 
-export const toTemplate = (t: TemplateDTO): Template => ({ id: t.id, nome: t.name, cat: CAT[t.category], status: TPL_STATUS[t.status], corpo: t.body })
+/** Modelo que um disparo consegue usar: aprovado na Meta, preenchível ({{1}} no máx.) e sem recursos que o PearChat não envia. */
+export const templateUsable = (t: Template): boolean => t.status === 'Aprovado' && !t.soLocal && !t.naoSuportado && (t.vars ?? 0) <= 1
+
+export const toTemplate = (t: TemplateDTO): Template => ({
+  id: t.id,
+  nome: t.name,
+  cat: CAT[t.category],
+  status: TPL_STATUS[t.status],
+  corpo: t.body,
+  motivo: t.rejectionReason ?? null,
+  soLocal: t.onlyLocal ?? false,
+  vars: t.vars ?? 0,
+  exemplos: t.examples ?? [],
+  naoSuportado: t.unsupported ?? null,
+})
 export const toKbItem = (k: KnowledgeItemDTO): KbItem => ({ id: k.id, p: k.pergunta, r: k.resposta })
 
 // Estado dos formulários dos drawers. Vive acima do DrawerHost porque a sidebar lê daqui (campanhas, plano).
@@ -144,7 +158,7 @@ export function DrawerDataProvider({
           setTemplates(tpls)
           // Mantém a seleção se ainda for um modelo aprovado; senão o padrão da spec ou o primeiro aprovado.
           setTplSel((cur) => {
-            const aprovados = tpls.filter((x) => x.status === 'Aprovado')
+            const aprovados = tpls.filter(templateUsable)
             return aprovados.find((x) => x.id === cur)?.id ?? aprovados.find((x) => x.nome === TPL_PADRAO)?.id ?? aprovados[0]?.id ?? ''
           })
         } else if (key === 'config') {

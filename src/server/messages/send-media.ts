@@ -5,7 +5,7 @@ import { spMonthKey } from '@/server/calendar/time'
 import { MAX_OUTBOUND_BYTES, MEDIA_LABEL, sanitizeFileName, validateMedia } from '@/server/media/mime'
 import { buildMediaKey, getMediaStore } from '@/server/media/store'
 import { emitToWorkspace } from '@/server/realtime/emit'
-import { getProvider, ProviderUnsupportedError } from '@/server/whatsapp'
+import { getProvider, ProviderUnsupportedError, WindowClosedError } from '@/server/whatsapp'
 import { cleanText } from './api'
 import { loadConversationItem, toMessageDTO } from './dto'
 import { SendError, withIdempotency } from './send'
@@ -89,8 +89,13 @@ async function sendOnce(input: { workspaceId: string; conversationId: string; fi
       await getMediaStore().delete(key)
       throw new SendError('NAO_SUPORTADO', 422, e.message)
     }
+    if (e instanceof WindowClosedError) {
+      await db.message.delete({ where: { id: pending.id } }).catch(() => {})
+      await getMediaStore().delete(key)
+      throw new SendError('FORA_DA_JANELA_24H', 422, 'Fora da janela de 24 h só modelos aprovados podem ser enviados')
+    }
     failure = e instanceof Error ? e.message : 'Erro desconhecido'
-    sent = await db.message.update({ where: { id: pending.id }, data: { status: 'FALHOU' } })
+    sent = await db.message.update({ where: { id: pending.id }, data: { status: 'FALHOU', failReason: failure.slice(0, 200) } })
   }
 
   if (failure) {

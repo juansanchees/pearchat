@@ -3,6 +3,7 @@ import type { Campaign, Template } from '@prisma/client'
 import { db } from '@/lib/db'
 import type { CampaignDTO, CampaignInterval, DisparosSettingsDTO, CampaignListId, CampaignStatusKind, TemplateDTO } from '@/lib/types'
 import { silenceEnd } from '@/server/engine/util'
+import { countTemplateVars, templateUnsupportedReason } from '@/server/whatsapp/template-rules'
 import { listName, resolveRecipientIds } from './recipients'
 
 export class CampaignError extends Error {
@@ -30,9 +31,25 @@ export const templateSchema = z.object({
     .optional(),
   category: z.enum(['MARKETING', 'UTILIDADE']).default('MARKETING'),
   body: z.string().trim().min(1, 'Escreva o texto do modelo').max(1024).refine((s) => !s.includes('\u0000'), 'Texto inválido'), // {{1}} é permitido
+  /** Modelo local já existente ("Só no PearChat") a enviar para a Meta. */
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
+  /** Exemplo de preenchimento de cada variável (obrigatório na Meta quando o corpo tem {{n}}). */
+  examples: z.array(z.string().max(200)).max(10).default([]),
 })
 
-const toTemplateDTO = (t: Template): TemplateDTO => ({ id: t.id, name: t.name, category: t.category, status: t.status, body: t.body })
+export const toTemplateDTO = (t: Template): TemplateDTO => ({
+  id: t.id,
+  name: t.name,
+  category: t.category,
+  status: t.status,
+  body: t.body,
+  language: t.language,
+  rejectionReason: t.rejectionReason,
+  onlyLocal: !t.metaId,
+  vars: countTemplateVars(t.body),
+  examples: t.exampleValues,
+  unsupported: templateUnsupportedReason(t.components),
+})
 
 export async function listTemplates(workspaceId: string): Promise<TemplateDTO[]> {
   const rows = await db.template.findMany({ where: { workspaceId }, orderBy: { createdAt: 'asc' } })
@@ -165,6 +182,9 @@ export async function createCampaign(workspaceId: string, input: CampaignInput):
     const tpl = await db.template.findFirst({ where: { id: input.templateId, workspaceId } })
     if (!tpl) throw new CampaignError('Modelo não encontrado', 404)
     if (tpl.status !== 'APROVADO') throw new CampaignError('Aguarde a aprovação da Meta para usar este modelo', 409)
+    if (!tpl.metaId) throw new CampaignError('Este modelo existe só no PearChat: envie-o para aprovação da Meta antes de usar', 409)
+    const unsupported = templateUnsupportedReason(tpl.components)
+    if (unsupported) throw new CampaignError(unsupported, 422)
     // O disparo só preenche {{1}} (primeiro nome): modelo com mais variáveis seria recusado pela Meta em cada envio.
     const maxVar = Math.max(0, ...Array.from(tpl.body.matchAll(/\{\{(\d+)\}\}/g)).map((m) => Number(m[1])))
     if (maxVar > 1) throw new CampaignError('Este modelo usa variáveis além de {{1}}; disparos só preenchem o primeiro nome', 422)

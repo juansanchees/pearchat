@@ -25,6 +25,7 @@ function mediaColumns(media: NormalizedMedia, opts: { imported: boolean; directi
   const tooLong = (media.durationSec ?? 0) > MAX_TRANSCRIBE_SECONDS || (media.size ?? 0) > MAX_TRANSCRIBE_BYTES
   return {
     mediaType: media.type,
+    providerMediaId: media.providerMediaId ?? null,
     mediaMime: media.mime ?? null,
     mediaSize: media.size !== undefined && media.size <= 2_147_483_647 ? media.size : null,
     mediaName: media.name ? sanitizeFileName(media.name) : null,
@@ -268,6 +269,8 @@ export async function updateMessageStatus(input: {
   workspaceId: string
   providerMessageId: string
   status: 'enviada' | 'entregue' | 'lida' | 'falhou'
+  /** Motivo da falha informado pelo provedor (só quando status = falhou). */
+  reason?: string
 }): Promise<void> {
   const { workspaceId, providerMessageId, status } = input
   const msg = await db.message.findFirst({
@@ -283,7 +286,7 @@ export async function updateMessageStatus(input: {
     if (STATUS_RANK[next] <= cur) return
   }
 
-  await db.message.update({ where: { id: msg.id }, data: { status: next } })
+  await db.message.update({ where: { id: msg.id }, data: { status: next, ...(next === 'FALHOU' && input.reason ? { failReason: input.reason.slice(0, 200) } : {}) } })
   emitToWorkspace(workspaceId, 'message.status', {
     workspaceId,
     conversationId: msg.conversationId,

@@ -96,7 +96,7 @@ async function download(messageId: string, inlineBase64?: string): Promise<void>
     for (let attempt = 0; attempt < RETRY_DELAYS_MS.length && !data; attempt++) {
       if (RETRY_DELAYS_MS[attempt]) await sleep(RETRY_DELAYS_MS[attempt]!)
       try {
-        const got = await provider.fetchMedia(workspaceId, { providerMessageId: m.providerMessageId ?? '', maxBytes: MAX_INBOUND_BYTES })
+        const got = await provider.fetchMedia(workspaceId, { providerMessageId: m.providerMessageId ?? '', providerMediaId: m.providerMediaId ?? undefined, maxBytes: MAX_INBOUND_BYTES })
         data = got.data
         mime = got.mime
         name = got.fileName

@@ -18,6 +18,8 @@ export type NormalizedMedia = {
   inlineBase64?: string
   /** JID do chat (ajuda a Evolution a achar a mensagem ao baixar). */
   remoteJid?: string
+  /** Id da mídia na Graph API da Meta (baixa-se com GET /{id}). */
+  providerMediaId?: string
 }
 
 export type NormalizedInbound = {
@@ -39,7 +41,7 @@ export type NormalizedOutbound = {
 }
 /** Status que vêm dos provedores; 'pendente' é só interno e nunca chega por webhook. */
 export type DeliveryStatus = Exclude<MessageStatusKind, 'pendente'>
-export type NormalizedStatus = { providerMessageId: string; status: DeliveryStatus }
+export type NormalizedStatus = { providerMessageId: string; status: DeliveryStatus; errorCode?: number; errorTitle?: string }
 
 const obj = z.object({}).passthrough()
 const str = z.string()
@@ -51,57 +53,57 @@ function secondsToDate(v: unknown): Date {
 
 // ---------------------------------------------------------------- Meta
 
-const metaMessage = z
-  .object({
-    id: str,
-    from: str.optional(),
-    from_user_id: str.optional(),
-    user_id: str.optional(),
-    timestamp: z.union([str, z.number()]).optional(),
-    type: str.optional(),
-    text: z.object({ body: str }).passthrough().optional(),
-  })
-  .passthrough()
-
-const metaStatus = z.object({ id: str, status: str }).passthrough()
-
-const metaValue = z
-  .object({
-    metadata: z.object({ phone_number_id: str }).passthrough(),
-    contacts: z
-      .array(
-        z
-          .object({
-            wa_id: str.optional(),
-            user_id: str.optional(),
-            profile: z.object({ name: str.optional() }).passthrough().optional(),
-          })
-          .passthrough(),
-      )
-      .optional(),
-    messages: z.array(obj).optional(),
-    statuses: z.array(obj).optional(),
-  })
-  .passthrough()
+export type MetaChange = { field: string; wabaId: string | null; value: Record<string, unknown> }
 
 const metaEnvelope = z
   .object({
-    entry: z.array(z.object({ changes: z.array(z.object({ value: obj }).passthrough()).optional() }).passthrough()),
+    entry: z.array(
+      z
+        .object({
+          id: z.union([str, z.number()]).optional(),
+          changes: z.array(z.object({ field: str.optional(), value: obj }).passthrough()).optional(),
+        })
+        .passthrough(),
+    ),
   })
   .passthrough()
 
-const META_PLACEHOLDER: Record<string, string> = {
-  image: '[Imagem]',
-  audio: '[Áudio]',
-  video: '[Vídeo]',
-  document: '[Documento]',
-  sticker: '[Figurinha]',
-  location: '[Localização]',
-  contacts: '[Contato]',
-  button: '[Resposta de botão]',
-  interactive: '[Resposta interativa]',
-  reaction: '[Reação]',
+/** Lista plana de mudanças de um webhook da Meta (campo, WABA da entrada e valor). Envelope inválido = lista vazia. */
+export function parseMetaChanges(json: unknown): MetaChange[] {
+  const env = metaEnvelope.safeParse(json)
+  if (!env.success) return []
+  const out: MetaChange[] = []
+  for (const entry of env.data.entry) {
+    for (const ch of entry.changes ?? []) {
+      out.push({
+        field: ch.field ?? '',
+        wabaId: entry.id === undefined ? null : String(entry.id),
+        value: ch.value as Record<string, unknown>,
+      })
+    }
+  }
+  return out
 }
+
+const metaContact = z
+  .object({
+    wa_id: str.optional(),
+    user_id: str.optional(),
+    profile: z.object({ name: str.optional(), username: str.optional() }).passthrough().optional(),
+  })
+  .passthrough()
+
+const metaMetadata = z.object({ phone_number_id: z.union([str, z.number()]), display_phone_number: str.optional() }).passthrough()
+
+const metaValue = z
+  .object({
+    metadata: metaMetadata,
+    contacts: z.array(metaContact).optional(),
+    messages: z.array(obj).optional(),
+    statuses: z.array(obj).optional(),
+    message_echoes: z.array(obj).optional(),
+  })
+  .passthrough()
 
 export function mapMetaStatus(s: string): DeliveryStatus | null {
   switch (s) {
@@ -110,6 +112,7 @@ export function mapMetaStatus(s: string): DeliveryStatus | null {
     case 'delivered':
       return 'entregue'
     case 'read':
+    case 'played':
       return 'lida'
     case 'failed':
       return 'falhou'
@@ -118,52 +121,188 @@ export function mapMetaStatus(s: string): DeliveryStatus | null {
   }
 }
 
-export type MetaBatch = { phoneNumberId: string; inbound: NormalizedInbound[]; statuses: NormalizedStatus[] }
+export type MetaBatch = {
+  phoneNumberId: string
+  displayPhone?: string
+  inbound: NormalizedInbound[]
+  statuses: NormalizedStatus[]
+  /** Mensagens que o dono enviou pelo app WhatsApp Business no celular (campo smb_message_echoes). */
+  echoes: NormalizedOutbound[]
+}
 
-/** Payload do webhook da Meta -> lotes por phone_number_id. Entradas inválidas são ignoradas. */
+const asStr = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : typeof v === 'number' ? String(v) : undefined)
+const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {})
+const MEDIA_TYPES: Record<string, MediaKind> = { image: 'image', audio: 'audio', video: 'video', document: 'document', sticker: 'sticker' }
+
+/** Corpo (texto/rótulo) e mídia de uma mensagem da Cloud API. `null` = não vira mensagem (ex.: reação). */
+export function metaMessageContent(msg: Record<string, unknown>): { body: string; media?: NormalizedMedia } | null {
+  const type = asStr(msg.type) ?? ''
+  if (type === 'reaction' || type === 'system' || type === 'revoke' || type === 'edit') return null
+  if (type === 'text') return { body: asStr(rec(msg.text).body) ?? '' }
+  const mediaKind = MEDIA_TYPES[type]
+  if (mediaKind) {
+    const m = rec(msg[type])
+    const caption = (asStr(m.caption) ?? '').trim()
+    const id = asStr(m.id)
+    const media: NormalizedMedia = {
+      type: mediaKind,
+      ...(asStr(m.mime_type) ? { mime: asStr(m.mime_type) } : {}),
+      ...(asStr(m.filename) ? { name: asStr(m.filename) } : {}),
+      ...(caption ? { caption } : {}),
+      ...(id ? { providerMediaId: id } : {}),
+    }
+    const label = LABEL_BY_KIND[mediaKind]
+    return { body: caption ? `${label} ${caption}` : label, media }
+  }
+  if (type === 'location') {
+    const l = rec(msg.location)
+    const where = [asStr(l.name), asStr(l.address)].filter(Boolean).join(', ')
+    const lat = typeof l.latitude === 'number' ? l.latitude : Number(l.latitude)
+    const lng = typeof l.longitude === 'number' ? l.longitude : Number(l.longitude)
+    const link = Number.isFinite(lat) && Number.isFinite(lng) ? `https://maps.google.com/?q=${lat},${lng}` : ''
+    return { body: ['[Localização]', where, link].filter(Boolean).join(' ') }
+  }
+  if (type === 'contacts') {
+    const list = Array.isArray(msg.contacts) ? msg.contacts : []
+    const names = list
+      .map((c) => {
+        const o = rec(c)
+        const name = asStr(rec(o.name).formatted_name)
+        const phone = asStr(rec(Array.isArray(o.phones) ? o.phones[0] : undefined).phone)
+        return [name, phone ? `(${phone})` : ''].filter(Boolean).join(' ')
+      })
+      .filter(Boolean)
+    return { body: names.length ? `[Contato] ${names.join('; ')}` : '[Contato]' }
+  }
+  if (type === 'interactive') {
+    const i = rec(msg.interactive)
+    const title = asStr(rec(i.button_reply).title) ?? asStr(rec(i.list_reply).title)
+    return { body: title ?? '[Resposta interativa]' }
+  }
+  if (type === 'button') return { body: asStr(rec(msg.button).text) ?? '[Resposta de botão]' }
+  if (type === 'order') return { body: '[Pedido]' }
+  return { body: '[Mensagem não suportada]' }
+}
+
+/** Payload do webhook da Meta (campos messages e smb_message_echoes) -> lotes por phone_number_id. Entradas inválidas são ignoradas. */
 export function normalizeMetaPayload(json: unknown): MetaBatch[] {
-  const env = metaEnvelope.safeParse(json)
-  if (!env.success) return []
   const batches: MetaBatch[] = []
-  for (const entry of env.data.entry) {
-    for (const change of entry.changes ?? []) {
-      const v = metaValue.safeParse(change.value)
-      if (!v.success) continue
-      const { metadata, contacts = [], messages = [], statuses = [] } = v.data
-      const inbound: NormalizedInbound[] = []
-      for (const raw of messages) {
-        const m = metaMessage.safeParse(raw)
-        if (!m.success) continue
-        const msg = m.data
-        // Contato correspondente: por wa_id (telefone) ou por user_id (BSUID).
-        const contact =
-          contacts.find((c) => (msg.from && c.wa_id === msg.from) || (msg.from_user_id && c.user_id === msg.from_user_id)) ??
-          (contacts.length === 1 ? contacts[0] : undefined)
-        const waUserId = contact?.user_id ?? msg.from_user_id ?? msg.user_id
-        const phoneRaw = contact?.wa_id ?? msg.from
-        const telefone = phoneRaw && onlyDigits(phoneRaw).length >= 8 ? toE164(phoneRaw) : undefined
-        if (!telefone && !waUserId) continue
-        const body = msg.type === 'text' || msg.text ? (msg.text?.body ?? '') : (META_PLACEHOLDER[msg.type ?? ''] ?? '[Mensagem não suportada]')
-        if (msg.type === 'reaction') continue
-        inbound.push({
-          from: { ...(waUserId ? { waUserId } : {}), ...(telefone ? { telefone } : {}) },
-          ...(contact?.profile?.name ? { nome: contact.profile.name } : {}),
-          body,
-          providerMessageId: msg.id,
-          timestamp: secondsToDate(msg.timestamp),
-        })
-      }
-      const st: NormalizedStatus[] = []
-      for (const raw of statuses) {
-        const s = metaStatus.safeParse(raw)
-        if (!s.success) continue
-        const status = mapMetaStatus(s.data.status)
-        if (status) st.push({ providerMessageId: s.data.id, status })
-      }
-      if (inbound.length || st.length) batches.push({ phoneNumberId: metadata.phone_number_id, inbound, statuses: st })
+  for (const change of parseMetaChanges(json)) {
+    if (change.field !== 'messages' && change.field !== 'smb_message_echoes') continue
+    const v = metaValue.safeParse(change.value)
+    if (!v.success) continue
+    const { metadata, contacts = [], messages = [], statuses = [], message_echoes = [] } = v.data
+    const inbound: NormalizedInbound[] = []
+    for (const msg of messages) {
+      const id = asStr(msg.id)
+      if (!id) continue
+      const from = asStr(msg.from)
+      const fromUserId = asStr(msg.from_user_id) ?? asStr(msg.user_id)
+      // Contato correspondente: por wa_id (telefone) ou por user_id (BSUID).
+      const contact =
+        contacts.find((c) => (from && c.wa_id === from) || (fromUserId && c.user_id === fromUserId)) ?? (contacts.length === 1 ? contacts[0] : undefined)
+      const waUserId = contact?.user_id ?? fromUserId
+      const phoneRaw = contact?.wa_id ?? from
+      const telefone = phoneRaw && onlyDigits(phoneRaw).length >= 8 ? toE164(phoneRaw) : undefined
+      if (!telefone && !waUserId) continue
+      const content = metaMessageContent(msg)
+      if (!content) continue
+      const nome = contact?.profile?.name ?? contact?.profile?.username
+      inbound.push({
+        from: { ...(waUserId ? { waUserId } : {}), ...(telefone ? { telefone } : {}) },
+        ...(nome ? { nome } : {}),
+        body: content.body,
+        providerMessageId: id,
+        timestamp: secondsToDate(msg.timestamp),
+        ...(content.media ? { media: content.media } : {}),
+      })
+    }
+    const st: NormalizedStatus[] = []
+    for (const s of statuses) {
+      const id = asStr(s.id)
+      const status = mapMetaStatus(asStr(s.status) ?? '')
+      if (!id || !status) continue
+      const e0 = Array.isArray(s.errors) ? rec(s.errors[0]) : {}
+      const code = typeof e0.code === 'number' ? e0.code : undefined
+      const title = asStr(e0.title) ?? asStr(e0.message)
+      st.push({ providerMessageId: id, status, ...(code !== undefined ? { errorCode: code } : {}), ...(title ? { errorTitle: title.slice(0, 200) } : {}) })
+    }
+    const echoes: NormalizedOutbound[] = []
+    for (const e of message_echoes) {
+      const id = asStr(e.id)
+      const toRaw = asStr(e.to)
+      if (!id || !toRaw) continue
+      const content = metaMessageContent(e)
+      if (!content) continue
+      const telefone = onlyDigits(toRaw).length >= 8 ? toE164(toRaw) : undefined
+      echoes.push({
+        to: telefone ? { telefone } : { waUserId: toRaw },
+        body: content.body,
+        providerMessageId: id,
+        timestamp: secondsToDate(e.timestamp),
+        ...(content.media ? { media: content.media } : {}),
+      })
+    }
+    if (inbound.length || st.length || echoes.length) {
+      batches.push({
+        phoneNumberId: String(metadata.phone_number_id),
+        ...(metadata.display_phone_number ? { displayPhone: metadata.display_phone_number } : {}),
+        inbound,
+        statuses: st,
+        echoes,
+      })
     }
   }
   return batches
+}
+
+/**
+ * Histórico da Coexistence (campo `history`): threads -> HistoryMessage (importador em lote). `declined` = o negócio recusou
+ * compartilhar (erro 2593109). `progress` ajuda o diagnóstico.
+ */
+export function parseMetaHistory(value: unknown): { phoneNumberId: string | null; messages: HistoryMessage[]; declined: boolean; progress: number | null } {
+  const v = rec(value)
+  const phoneNumberId = asStr(rec(v.metadata).phone_number_id) ?? null
+  const display = onlyDigits(asStr(rec(v.metadata).display_phone_number) ?? '')
+  const messages: HistoryMessage[] = []
+  let declined = false
+  let progress: number | null = null
+  for (const h of Array.isArray(v.history) ? v.history : []) {
+    const hr = rec(h)
+    if (Array.isArray(hr.errors) && hr.errors.some((e) => rec(e).code === 2593109)) declined = true
+    const p = rec(hr.metadata).progress
+    if (typeof p === 'number') progress = p
+    for (const t of Array.isArray(hr.threads) ? hr.threads : []) {
+      const tr = rec(t)
+      const threadId = asStr(tr.id)
+      if (!threadId) continue
+      const digits = onlyDigits(threadId)
+      const isPhone = digits.length >= 8 && digits === threadId.replace(/^\+/, '')
+      for (const raw of Array.isArray(tr.messages) ? tr.messages : []) {
+        const m = rec(raw)
+        const id = asStr(m.id)
+        const content = metaMessageContent(m)
+        if (!id || !content) continue
+        const from = onlyDigits(asStr(m.from) ?? '')
+        const fromMe = from !== '' && (display ? from === display : from !== digits)
+        const status = String(rec(m.history_context).status ?? '').toUpperCase()
+        // Só metadados: o histórico importado nunca baixa o arquivo (sem id de mídia).
+        const media: NormalizedMedia | undefined = content.media ? { ...content.media } : undefined
+        if (media) delete media.providerMediaId
+        messages.push({
+          remoteJid: isPhone ? `${digits}@s.whatsapp.net` : `${threadId}@lid`,
+          from: isPhone ? { telefone: toE164(digits) } : { waUserId: threadId },
+          fromMe,
+          body: content.body,
+          providerMessageId: id,
+          timestamp: secondsToDate(m.timestamp),
+          status: status === 'READ' || status === 'PLAYED' ? 'LIDA' : status === 'DELIVERED' ? 'ENTREGUE' : 'ENVIADA',
+          ...(media ? { media } : {}),
+        })
+      }
+    }
+  }
+  return { phoneNumberId, messages, declined, progress }
 }
 
 // ---------------------------------------------------------------- Evolution

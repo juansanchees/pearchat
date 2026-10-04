@@ -3,7 +3,7 @@ import { providerToKind } from '@/lib/mappers'
 import type { MessageDTO } from '@/lib/types'
 import { spMonthKey } from '@/server/calendar/time'
 import { emitToWorkspace } from '@/server/realtime/emit'
-import { getProvider } from '@/server/whatsapp'
+import { getProvider, WindowClosedError } from '@/server/whatsapp'
 import { loadConversationItem, toMessageDTO } from './dto'
 import { registerManualReply } from './takeover'
 
@@ -104,8 +104,13 @@ async function sendUserMessageOnce(input: {
       data: { providerMessageId, status: 'ENVIADA' },
     })
   } catch (e) {
+    if (e instanceof WindowClosedError) {
+      // A Meta recusou por janela de 24 h (a conta de tempo local divergiu): nada foi enviado, não deixa mensagem.
+      await db.message.delete({ where: { id: pending.id } }).catch(() => {})
+      throw new SendError('FORA_DA_JANELA_24H', 422, 'Fora da janela de 24 h só modelos aprovados podem ser enviados')
+    }
     failure = e instanceof Error ? e.message : 'Erro desconhecido'
-    sent = await db.message.update({ where: { id: pending.id }, data: { status: 'FALHOU' } })
+    sent = await db.message.update({ where: { id: pending.id }, data: { status: 'FALHOU', failReason: failure.slice(0, 200) } })
   }
 
   // Resposta manual = a pessoa assumiu (regra única em takeover.ts, a mesma usada para respostas dadas pelo celular).
