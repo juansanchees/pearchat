@@ -19,6 +19,7 @@ const securityHeaders = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false,
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },
