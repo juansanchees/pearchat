@@ -54,7 +54,7 @@ export function NumberMenu({ onImport, importing = false }: { onImport?: () => v
 
   const canArchive = !connected && wa.status !== 'conectando' && spaces.espacos.length > 1
   // Trocar de tipo de conexão: oficial só quando a Meta está configurada (ou no demo). Habilita sozinho com as variáveis.
-  const oficialOk = connectCfg.demo || connectCfg.metaConfigured
+  const oficialOk = connectCfg.demo || connectCfg.oficialAtivo
   const toOficial = wa.provider !== 'oficial'
   const switchEnabled = toOficial ? oficialOk : true
   const canImport = !!onImport && wa.provider === 'rapida' && connected
