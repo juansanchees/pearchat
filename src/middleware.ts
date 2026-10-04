@@ -14,6 +14,8 @@ export default auth((req) => {
   if (OPEN_PAGES.includes(pathname)) return NextResponse.next()
   // Link público de agendamento: página e API sem login (o cliente final não tem conta).
   if (pathname.startsWith('/a/') || pathname.startsWith('/api/public/')) return NextResponse.next()
+  // Convite da equipe: página pública (quem recebe ainda não tem conta; a página e o token fazem a conferência).
+  if (pathname.startsWith('/convite/')) return NextResponse.next()
   const isPublic = PUBLIC_PAGES.includes(pathname)
   const loggedIn = !!req.auth
 
