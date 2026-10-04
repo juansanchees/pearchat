@@ -61,6 +61,9 @@ enum TemplateStatus {
   APROVADO
   EM_ANALISE
   REJEITADO
+  // Meta oficial (migration 0014)
+  PAUSADO
+  DESATIVADO
 }
 
 enum Plan {
@@ -213,10 +216,18 @@ model WhatsAppSession {
   historyImportedAt DateTime?
   historyStats      Json?
   historyPasses     Int              @default(0) // passagens agendadas já feitas (1, 3, 10 e 30 min)
+  // Meta oficial (migration 0014)
+  metaBusinessId    String?
+  metaVerifiedName  String?
+  metaQuality       String? // GREEN | YELLOW | RED | UNKNOWN
+  metaCoexistence   Boolean          @default(false)
+  metaLastError     String?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([metaWabaId])
 }
 
 model Contact {
@@ -291,6 +302,10 @@ model Message {
   transcriptStatus  String?
   // Download/gravação do arquivo: pendente | ok | erro | expirada.
   mediaStatus       String?
+  // Id da mídia na Graph API da Meta (migration 0014): usado para baixar o arquivo de mensagens recebidas.
+  providerMediaId   String?
+  // Motivo curto da falha de envio (migration 0014), sem dados do cliente.
+  failReason        String?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -335,6 +350,13 @@ model Template {
   category    TemplateCategory
   status      TemplateStatus
   body        String
+  // Meta oficial (migration 0014): metaId vazio = modelo "Só no PearChat" (não existe na Meta).
+  metaId          String?
+  language        String    @default("pt_BR")
+  rejectionReason String?
+  components      Json?
+  syncedAt        DateTime?
+  exampleValues   String[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -597,4 +619,35 @@ model RecoveryCode {
 
   @@index([userId])
   @@index([codeHash])
+}
+
+
+// ---- Meta oficial (migration 0014) ----
+
+/// Nonce de uso único do cadastro incorporado: liga o retorno da Meta à sessão (usuário) e ao workspace que o iniciou.
+model MetaSignupState {
+  id          String    @id
+  workspaceId String
+  userId      String
+  mode        String // sdk | hosted
+  expiraEm    DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([expiraEm])
+  @@index([workspaceId])
+}
+
+/// Cadastro concluído no fluxo hospedado pela Meta (webhook account_update PARTNER_ADDED), esperando o workspace reivindicar.
+model MetaPartnerEvent {
+  id                 String    @id @default(cuid())
+  wabaId             String
+  businessId         String?
+  event              String
+  claimedByWorkspace String?
+  claimedAt          DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([wabaId])
+  @@index([createdAt])
 }

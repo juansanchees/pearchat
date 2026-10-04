@@ -22,6 +22,7 @@ export function toStatusDTO(row: WhatsAppSession | null, qr?: string): WhatsAppS
   }
   const q = qr ?? (status === 'aguardando_qr' ? (row.lastQr ?? undefined) : undefined)
   if (q) dto.qr = q
+  if (row.provider === 'OFICIAL' && row.metaCoexistence) dto.coexistence = true
   return dto
 }
 
@@ -132,6 +133,8 @@ export async function disableAutomations(workspaceId: string): Promise<void> {
 export type SessionData = {
   accessToken?: string
   importarHistorico?: boolean
+  /** PIN de verificação em duas etapas (6 dígitos) usado no registro do número na Cloud API. */
+  pin?: string
 }
 
 export async function readSessionData(workspaceId: string): Promise<SessionData> {

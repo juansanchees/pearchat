@@ -4,6 +4,7 @@ import { getApiSession } from '@/server/whatsapp/auth'
 import { connectConfig } from '@/server/whatsapp/config'
 import { getProvider, WhatsAppProviderError } from '@/server/whatsapp'
 import { instanceNameFor } from '@/server/whatsapp/evolution'
+import { assertOficialAllowed, ConnectError } from '@/server/whatsapp/meta-connect'
 import { onlyDigits } from '@/server/whatsapp/phone'
 import { setStatus, toStatusDTO } from '@/server/whatsapp/session'
 
@@ -30,9 +31,18 @@ export async function POST(req: Request) {
     if (!cfg.demo && !cfg.metaConfigured) {
       return NextResponse.json({ error: 'A conexão oficial estará disponível em breve. Use a conexão rápida por QR.' }, { status: 409 })
     }
+    // Beta fechado: fora do modo demo só e-mails da lista de teste (META_OFICIAL_BETA_EMAILS) conectam a API oficial.
+    if (!cfg.demo) {
+      try {
+        await assertOficialAllowed(session.userId)
+      } catch (e) {
+        if (e instanceof ConnectError) return NextResponse.json({ error: e.message }, { status: e.status })
+        throw e
+      }
+    }
   }
 
-  if (provider === 'oficial' && (!numero || onlyDigits(numero).length < 10)) {
+  if (provider === 'oficial' && connectConfig().demo && (!numero || onlyDigits(numero).length < 10)) {
     return NextResponse.json({ error: 'Digite o número com DDD' }, { status: 400 })
   }
 

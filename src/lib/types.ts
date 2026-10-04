@@ -59,6 +59,8 @@ export interface WhatsAppStatusDTO {
   numero: string | null
   /** QR (data URL ou string do código) quando status = aguardando_qr */
   qr?: string
+  /** API oficial: número que continua no app WhatsApp Business (Coexistence). */
+  coexistence?: boolean
 }
 
 // ---- Drawers (agente de IA, follow-up, disparos, configurações, plano) ----
@@ -121,8 +123,20 @@ export interface TemplateDTO {
   id: string
   name: string
   category: 'MARKETING' | 'UTILIDADE'
-  status: 'APROVADO' | 'EM_ANALISE' | 'REJEITADO'
+  status: 'APROVADO' | 'EM_ANALISE' | 'REJEITADO' | 'PAUSADO' | 'DESATIVADO'
   body: string
+  /** Idioma na Meta (padrão pt_BR). */
+  language?: string
+  /** Motivo informado pela Meta quando o modelo não foi aprovado. */
+  rejectionReason?: string | null
+  /** true = só existe no PearChat (ainda não foi enviado para a Meta). */
+  onlyLocal?: boolean
+  /** Quantidade de variáveis {{n}} do corpo. */
+  vars?: number
+  /** Exemplos enviados à Meta, um por variável. */
+  examples?: string[]
+  /** Motivo pelo qual o PearChat não consegue usar este modelo em disparos (cabeçalho com mídia, botão com variável...). */
+  unsupported?: string | null
 }
 
 export interface CampaignDTO {
