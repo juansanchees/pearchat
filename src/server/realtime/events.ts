@@ -88,3 +88,7 @@ export interface ClientToServerEvents {
 
 export const workspaceRoom = (workspaceId: string) => `workspace:${workspaceId}`
 export const orgRoom = (organizationId: string) => `org:${organizationId}`
+/** Sala de uma pessoa (todas as abas dela): usada para derrubar/ajustar sockets quando o acesso muda. */
+export const userRoom = (userId: string) => `user:${userId}`
+/** Aviso leve de um espaço para os atendentes que são membros dele (dono/admin recebem pela sala da organização). */
+export const attentionRoom = (workspaceId: string) => `attn:${workspaceId}`

@@ -1,16 +1,19 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { followUpSchema, getFollowUp, updateFollowUp } from '@/server/followup/service'
 import { apiSession, parseBody, unauthorized } from '@/server/settings/http'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
+  const deny = await denyUnless('followup.manage'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   return NextResponse.json(await getFollowUp(s.workspaceId))
 }
 
 export async function PUT(req: Request) {
+  const deny = await denyUnless('followup.manage'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   const body = await parseBody(req, followUpSchema)

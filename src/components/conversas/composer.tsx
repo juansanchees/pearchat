@@ -1,10 +1,12 @@
 'use client'
 
-import { FileText, MusicNote, PaperPlaneRight, Paperclip, VideoCamera, WarningCircle, X } from '@phosphor-icons/react'
-import { createElement, useEffect, useMemo, useRef, useState } from 'react'
-import type { ClipboardEvent, KeyboardEvent } from 'react'
+import { FileText, GearSix, Lightning, MusicNote, PaperPlaneRight, Paperclip, VideoCamera, WarningCircle, X } from '@phosphor-icons/react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent, ClipboardEvent, KeyboardEvent } from 'react'
 import { useAppState } from '@/components/app/app-state'
 import { Spinner } from '@/components/pear'
+import { expandQuickReply, filterQuickReplies } from '@/lib/quick-replies'
+import type { QuickReplyDTO, QuickReplyList } from '@/lib/quick-replies'
 import { MAX_OUTBOUND_BYTES } from '@/server/media/mime'
 import { formatBytes } from './format'
 
@@ -23,22 +25,107 @@ function fileProblem(f: File): string | null {
   return null
 }
 
+const qrItemClass =
+  'flex w-full items-center gap-2 rounded-md border-0 bg-transparent px-[10px] py-[8px] text-left text-[12.5px] text-light-text'
+
 export function Composer({
   iaAnswering,
+  contact,
   onSend,
   onSendMedia,
   incomingFile,
   onIncomingConsumed,
 }: {
   iaAnswering: boolean
+  /** Dados do contato da conversa aberta, para as variáveis das respostas rápidas. */
+  contact?: { nome: string; telefone: string | null }
   onSend: (text: string) => Promise<boolean>
   onSendMedia: (file: File, caption: string, onProgress: (pct: number) => void) => Promise<boolean>
   /** Arquivo arrastado para a área da conversa. */
   incomingFile?: File | null
   onIncomingConsumed?: () => void
 }) {
-  const { toast } = useAppState()
+  const { toast, openDrawer } = useAppState()
   const [draft, setDraft] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // ---- Respostas rápidas ("/" no campo ou botão do raio) ----
+  const [qrList, setQrList] = useState<QuickReplyList | null>(null)
+  const [qrOpen, setQrOpen] = useState(false)
+  const [qrQuery, setQrQuery] = useState('')
+  // Início da "/consulta" no texto (-1 = aberta pelo botão, sem barra).
+  const [qrFrom, setQrFrom] = useState(-1)
+  const [qrActive, setQrActive] = useState(0)
+  const qrItems = useMemo(() => filterQuickReplies(qrList?.items ?? [], qrQuery), [qrList, qrQuery])
+  // Último índice = "Gerenciar respostas rápidas".
+  const manageIdx = qrItems.length
+  const listId = 'qr-listbox'
+
+  const loadQr = useCallback(() => {
+    fetch('/api/quick-replies', { cache: 'no-store' })
+      .then((r) => (r.ok ? (r.json() as Promise<QuickReplyList>) : null))
+      .then((d) => {
+        if (d) setQrList(d)
+      })
+      .catch(() => {})
+  }, [])
+
+  function closeQr() {
+    setQrOpen(false)
+    setQrFrom(-1)
+    setQrQuery('')
+  }
+
+  function openQr(from: number, query: string) {
+    if (!qrOpen) loadQr()
+    setQrOpen(true)
+    setQrFrom(from)
+    setQrQuery(query)
+    setQrActive(0)
+  }
+
+  function insertQr(it: QuickReplyDTO) {
+    if (!qrList) return
+    const { text, select } = expandQuickReply(it.texto, { nome: contact?.nome, telefone: contact?.telefone, empresa: qrList.vars.empresa, horario: qrList.vars.horario })
+    const el = inputRef.current
+    const caret = el?.selectionStart ?? draft.length
+    // Troca a "/consulta" pelo texto; aberta pelo botão, insere no cursor.
+    const start = qrFrom >= 0 ? qrFrom : caret
+    const end = caret
+    const limit = file ? 1024 : 4096
+    const next = (draft.slice(0, start) + text + draft.slice(end)).slice(0, limit)
+    setDraft(next)
+    closeQr()
+    const sel: [number, number] = select ? [start + select[0], start + select[1]] : [start + text.length, start + text.length]
+    requestAnimationFrame(() => {
+      const i = inputRef.current
+      if (!i) return
+      i.focus()
+      const a = Math.min(sel[0], next.length)
+      const b = Math.min(sel[1], next.length)
+      i.setSelectionRange(a, b)
+      // Para o cursor/seleção ficar visível quando o texto é maior que o campo.
+      if (a === b) i.scrollLeft = i.scrollWidth
+    })
+    void fetch(`/api/quick-replies/${it.id}/used`, { method: 'POST' }).catch(() => {})
+  }
+
+  function manageQr() {
+    closeQr()
+    // A seção "Respostas rápidas" do drawer lê esta marca ao carregar e rola até ela (ver quick-replies-section.tsx).
+    ;(window as unknown as { __pcScrollQr?: number }).__pcScrollQr = Date.now()
+    openDrawer('config')
+  }
+
+  function onDraftChange(e: ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value
+    setDraft(value)
+    // "/" no início ou depois de espaço, até o cursor, sem espaço no meio.
+    const caret = e.target.selectionStart ?? value.length
+    const m = /(^|\s)\/([a-zA-Z0-9-]*)$/.exec(value.slice(0, caret))
+    if (m) openQr(caret - m[2]!.length - 1, m[2]!)
+    else if (qrOpen && qrFrom >= 0) closeQr()
+  }
   const [file, setFile] = useState<File | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -103,6 +190,26 @@ export function Composer({
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (qrOpen) {
+      const total = qrItems.length + 1
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeQr()
+        return
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        setQrActive((i) => (e.key === 'ArrowDown' ? (i + 1) % total : (i - 1 + total) % total))
+        return
+      }
+      // Sem nenhuma resposta casando, Enter segue o caminho normal (enviar o que foi digitado).
+      if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && (qrItems.length > 0 || qrFrom < 0)) {
+        e.preventDefault()
+        if (qrActive === manageIdx) manageQr()
+        else if (qrItems[qrActive]) insertQr(qrItems[qrActive]!)
+        return
+      }
+    }
     if (e.key === 'Enter') {
       e.preventDefault()
       void submit()
@@ -162,7 +269,53 @@ export function Composer({
           </button>
         </div>
       ) : null}
-      <div className="flex items-center gap-2.5 px-4 py-3">
+      <div className="relative flex items-center gap-2.5 px-4 py-3">
+        {qrOpen ? (
+          <div
+            id={listId}
+            role="listbox"
+            aria-label="Respostas rápidas"
+            onMouseDown={(e) => e.preventDefault()}
+            className="absolute bottom-full left-4 right-4 z-30 mb-1 max-h-[280px] overflow-y-auto rounded-lg border border-solid border-light-divider bg-light-surface p-[6px] shadow-[0_12px_32px_rgba(0,0,0,.28)] sm:right-auto sm:w-[420px]"
+          >
+            {!qrList ? (
+              <div className="flex items-center gap-2 px-[10px] py-[8px] text-[12px] text-light-neutral-500">
+                <Spinner size={12} /> Carregando…
+              </div>
+            ) : (
+              <>
+                {qrItems.length === 0 ? <div className="px-[10px] py-[8px] text-[12px] text-light-neutral-500">Nenhuma resposta com esse atalho.</div> : null}
+                {qrItems.map((it, i) => (
+                  <div
+                    key={it.id}
+                    id={`qr-opt-${it.id}`}
+                    role="option"
+                    aria-selected={i === qrActive}
+                    onMouseEnter={() => setQrActive(i)}
+                    onClick={() => insertQr(it)}
+                    className={`${qrItemClass} cursor-pointer ${i === qrActive ? 'bg-[rgba(29,33,23,.07)]' : ''}`}
+                  >
+                    <span className="flex-none font-mono text-[12px] text-light-accent-300">/{it.atalho}</span>
+                    <span className="min-w-0 flex-1 truncate text-light-neutral-500">
+                      {expandQuickReply(it.texto, { nome: contact?.nome, telefone: contact?.telefone, empresa: qrList.vars.empresa, horario: qrList.vars.horario }).text.replace(/\s+/g, ' ')}
+                    </span>
+                  </div>
+                ))}
+                <div
+                  id="qr-opt-manage"
+                  role="option"
+                  aria-selected={qrActive === manageIdx}
+                  onMouseEnter={() => setQrActive(manageIdx)}
+                  onClick={manageQr}
+                  className={`${qrItemClass} cursor-pointer border-0 ${qrItems.length > 0 ? 'mt-1 border-t border-solid border-light-divider pt-[10px]' : ''} ${qrActive === manageIdx ? 'bg-[rgba(29,33,23,.07)]' : ''}`}
+                >
+                  <GearSix size={14} className="flex-none text-light-neutral-500" />
+                  <span className="flex-1">Gerenciar respostas rápidas</span>
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
         <input
           ref={fileInput}
           type="file"
@@ -184,9 +337,36 @@ export function Composer({
         >
           <Paperclip size={17} />
         </button>
+        <button
+          type="button"
+          title="Respostas rápidas"
+          aria-label="Respostas rápidas"
+          aria-haspopup="listbox"
+          aria-expanded={qrOpen}
+          aria-controls={qrOpen ? listId : undefined}
+          disabled={sending || isAudio}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (qrOpen) closeQr()
+            else {
+              inputRef.current?.focus()
+              openQr(-1, '')
+            }
+          }}
+          className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-md p-0 text-light-accent-500 hover:bg-[rgba(46,154,72,.10)] disabled:opacity-50"
+        >
+          <Lightning size={17} />
+        </button>
         <input
+          ref={inputRef}
+          role="combobox"
+          aria-expanded={qrOpen}
+          aria-controls={qrOpen ? listId : undefined}
+          aria-autocomplete="list"
+          aria-activedescendant={qrOpen ? (qrActive === manageIdx ? 'qr-opt-manage' : qrItems[qrActive] ? `qr-opt-${qrItems[qrActive]!.id}` : undefined) : undefined}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={onDraftChange}
+          onBlur={() => qrOpen && closeQr()}
           onKeyDown={onKeyDown}
           maxLength={file ? 1024 : 4096}
           disabled={sending || isAudio}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Camera, GoogleLogo, WhatsappLogo } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
 import { useDisconnect } from '@/components/app/use-disconnect'
+import { usePermissions } from '@/components/app/use-permissions'
 import { usePhotoPicker } from '@/components/app/use-photo-picker'
 import { Avatar, Pill } from '@/components/pear'
 import type { SettingsDTO } from '@/lib/types'
@@ -12,7 +13,9 @@ import type { CalendarStateDto } from '@/server/calendar/types'
 import { api } from './api'
 import { useDrawerData, useDrawerLoad } from './drawer-data'
 import { NOTIF_OPCOES } from './mock-data'
+import { QuickRepliesSection } from './quick-replies-section'
 import { SegurancaSection } from './seguranca-section'
+import { TeamSection } from './team-section'
 import { DrawerShell, Field, SaveFooter, Section } from './parts'
 
 const connRow = 'flex items-center gap-3 rounded-md border border-light-divider px-[14px] py-3'
@@ -22,6 +25,7 @@ export function ConfigDrawer() {
   const { horarioAtendimento, setHorarioAtendimento, notifs, setNotifs } = useDrawerData()
   const loading = useDrawerLoad('config')
   const photo = usePhotoPicker()
+  const { can } = usePermissions() // Equipe: atendente não vê "Este WhatsApp", "Conexões" nem "Equipe"
   const disconnect = useDisconnect()
   const router = useRouter()
   // Estado real da Google Agenda (a gaveta mostrava sempre "Não conectado").
@@ -39,7 +43,7 @@ export function ConfigDrawer() {
     }
   }, [])
 
-  // A foto não é gravada aqui: ainda não há storage de arquivos (TODO: subir a imagem e salvar User.fotoUrl).
+  // A foto é enviada na hora pelo usePhotoPicker (POST /api/me/avatar); aqui só nome, e-mail, negócio e avisos.
   const salvar = async () => {
     const saved = await api<SettingsDTO>('/api/settings', {
       method: 'PUT',
@@ -60,10 +64,15 @@ export function ConfigDrawer() {
           <button type="button" title="Trocar foto" aria-label="Trocar foto" onClick={photo.open} className="rounded-pill p-0">
             <Avatar name={user.nome} size={56} src={user.fotoUrl} className="text-[17px]" />
           </button>
-          <button type="button" className="pc-btn pc-btn-secondary !text-[12px]" onClick={photo.open}>
+          <button type="button" className="pc-btn pc-btn-secondary !text-[12px]" disabled={photo.uploading} onClick={photo.open}>
             <Camera size={14} />
-            Trocar foto
+            {photo.uploading ? 'Enviando…' : 'Trocar foto'}
           </button>
+          {photo.hasOwn && (
+            <button type="button" className="pc-btn pc-btn-ghost !text-[12px]" disabled={photo.uploading} onClick={() => void photo.remove()}>
+              Remover foto
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap gap-3">
           <Field label="Seu nome" className="min-w-0 flex-[1_1_180px]">
@@ -75,6 +84,7 @@ export function ConfigDrawer() {
         </div>
       </Section>
 
+      {can('settings.workspace') && (
       <Section label="Este WhatsApp" gap="gap-3">
         <div className="flex flex-wrap gap-3">
           <Field label="Nome do negócio" className="min-w-0 flex-[1_1_180px]">
@@ -86,6 +96,7 @@ export function ConfigDrawer() {
         </div>
         <div className="-mt-1 text-[11.5px] text-light-neutral-500">A IA usa esse horário quando a opção &quot;Fora do expediente&quot; estiver marcada.</div>
       </Section>
+      )}
 
       <Section label="Me avisar quando">
         <div className="flex flex-wrap gap-2">
@@ -102,6 +113,7 @@ export function ConfigDrawer() {
         </div>
       </Section>
 
+      {can('wa.manage') && (
       <Section label="Conexões">
         <div className={connRow}>
           <WhatsappLogo size={18} className="flex-none text-light-accent-300" />
@@ -135,6 +147,11 @@ export function ConfigDrawer() {
           </button>
         </div>
       </Section>
+      )}
+
+      {can('team.manage') && <TeamSection />}
+
+      <QuickRepliesSection />
 
       <SegurancaSection />
     </DrawerShell>

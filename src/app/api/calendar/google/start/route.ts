@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import type { NextRequest } from 'next/server'
 import { sessionWorkspaceId, unauthorized } from '@/server/messages/api'
 import { apiError, logGoogleFailure } from '@/server/calendar/service'
@@ -13,6 +14,7 @@ export const dynamic = 'force-dynamic'
  * 500 ERRO_INTERNO (ex.: AUTH_SECRET ausente).
  */
 export async function GET(req: NextRequest) {
+  const deny = await denyUnless('calendar.manage'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   if (!googleConfigured()) {

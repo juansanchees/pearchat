@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
@@ -35,6 +36,7 @@ const postSchema = z
 
 /** POST /api/service-types { nome, duracaoMin, cor? } -> 201 { tipo } | 400 | 409 nome repetido. */
 export async function POST(req: Request) {
+  const deny = await denyUnless('servicetypes.manage'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   const parsed = postSchema.safeParse(await readJson(req))

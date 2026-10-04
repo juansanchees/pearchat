@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import {
   Check,
   CheckCircle,
@@ -14,8 +14,6 @@ import {
 import { useAppState } from '@/components/app/app-state'
 import { cn } from '@/lib/utils'
 import { errMessage, waApi } from './api'
-import { startEmbeddedSignup } from './meta-signup'
-import type { EmbeddedSignupHandle } from './meta-signup'
 import { BackLink, btnPrimary, btnSecondary, inputCls, kicker, NumberedSteps, pageShell, QrBox, QrStatusLine, Tag } from './ui'
 import { useLater } from './use-later'
 
@@ -67,47 +65,14 @@ function prettyPhone(raw: string): string {
 const h2 = 'text-[26px] font-medium leading-[1.15] tracking-[-.02em]'
 
 export function OficialFlow({ onBack }: { onBack: () => void }) {
-  const { setWa, toast, connectCfg } = useAppState()
-  // A simulação (QR desenhado, "Simular leitura") só existe no modo demo; o resto exige a Meta configurada.
-  const META_APP_ID = connectCfg.metaAppId
-  const META_CONFIG_ID = connectCfg.metaConfigId
-  const SIMULATED = connectCfg.demo
+  const { setWa, toast } = useAppState()
+  // Este componente é SÓ o fluxo simulado do modo demo (WA_MOCK=true). A conexão real está em oficial-real-flow.tsx.
   const later = useLater()
   const [step, setStep] = useState<Step>('numero')
   const [numero, setNumero] = useState('+55 11 98765-4321')
   const [hist, setHist] = useState(true)
   const [reading, setReading] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [metaError, setMetaError] = useState<string | null>(null)
-  const signup = useRef<EmbeddedSignupHandle | null>(null)
-
-  // Ao desmontar (inclui "Trocar tipo de conexão") cancela o listener do popup da Meta.
-  useEffect(() => () => signup.current?.cancel(), [])
-
-  const openMeta = () => {
-    if (!META_APP_ID || !META_CONFIG_ID) {
-      setMetaError('NEXT_PUBLIC_META_APP_ID e NEXT_PUBLIC_META_CONFIG_ID não estão configurados.')
-      return
-    }
-    setMetaError(null)
-    signup.current?.cancel()
-    const handle = startEmbeddedSignup(META_APP_ID, META_CONFIG_ID)
-    signup.current = handle
-    setReading(false)
-    handle.promise
-      .then(async (result) => {
-        if (signup.current !== handle) return
-        setReading(true)
-        await waApi.embeddedSignup(result)
-        setReading(false)
-        setStep('hist')
-      })
-      .catch((e: unknown) => {
-        if (signup.current !== handle) return
-        setReading(false)
-        setMetaError(errMessage(e))
-      })
-  }
 
   const continuar = async () => {
     if (numero.replace(/\D/g, '').length < 10) {
@@ -125,7 +90,6 @@ export function OficialFlow({ onBack }: { onBack: () => void }) {
     setBusy(false)
     setStep('qr')
     toast({ icon: <DeviceMobile size={18} weight="fill" />, title: 'Mensagem enviada', text: 'Abra o WhatsApp Business no celular' })
-    if (!SIMULATED) openMeta()
   }
 
   const lerQr = () => {
@@ -141,7 +105,7 @@ export function OficialFlow({ onBack }: { onBack: () => void }) {
     setBusy(true)
     try {
       // Fluxo simulado: a "leitura" só vira conexão real aqui, para a tela de conversas não abrir antes do passo 3.
-      if (SIMULATED) await waApi.mockScan()
+      await waApi.mockScan()
       const dto = await waApi.finish(hist)
       setWa(dto)
       toast({
@@ -224,35 +188,12 @@ export function OficialFlow({ onBack }: { onBack: () => void }) {
               />
             </div>
             <div className="flex flex-none flex-col gap-3">
-              {SIMULATED ? (
-                <>
-                  <QrBox overlay={reading ? 'Confirmando com a Meta…' : null} />
-                  <QrStatusLine>O código expira em 2 minutos</QrStatusLine>
-                  <button type="button" className={cn(btnSecondary, 'w-full')} onClick={lerQr} disabled={reading}>
-                    <DeviceMobileCamera size={16} />
-                    Simular leitura do QR
-                  </button>
-                </>
-              ) : (
-                <div className="flex h-[280px] w-[280px] flex-col items-center justify-center gap-3 rounded-lg border border-light-divider bg-light-surface p-6 text-center">
-                  {metaError ? (
-                    <>
-                      <p className="text-[13px] text-light-neutral-400">{metaError}</p>
-                      <button type="button" className={btnSecondary} onClick={openMeta}>
-                        <MetaLogo size={16} />
-                        Abrir a Meta de novo
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="inline-block h-[30px] w-[30px] animate-zfSpin rounded-full border-2 border-light-accent-400 border-t-transparent" />
-                      <span className="text-[13px] font-medium leading-snug">
-                        {reading ? 'Confirmando com a Meta…' : 'Siga as instruções na janela da Meta'}
-                      </span>
-                    </>
-                  )}
-                </div>
-              )}
+              <QrBox overlay={reading ? 'Confirmando com a Meta…' : null} />
+              <QrStatusLine>O código expira em 2 minutos</QrStatusLine>
+              <button type="button" className={cn(btnSecondary, 'w-full')} onClick={lerQr} disabled={reading}>
+                <DeviceMobileCamera size={16} />
+                Simular leitura do QR
+              </button>
             </div>
           </div>
         )}

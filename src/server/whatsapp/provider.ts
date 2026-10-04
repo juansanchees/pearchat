@@ -37,7 +37,10 @@ export interface WhatsAppProvider {
   /** Opcional: envia áudio como mensagem de voz. */
   sendAudio?(workspaceId: string, to: ContactRef, media: OutboundMedia): Promise<{ providerMessageId: string }>
   /** Opcional: baixa a mídia de uma mensagem recebida, SÓ pelo provedor configurado (nunca por URL vinda do webhook). */
-  fetchMedia?(workspaceId: string, ref: { providerMessageId: string; remoteJid?: string; maxBytes: number }): Promise<FetchedMedia>
+  fetchMedia?(
+    workspaceId: string,
+    ref: { providerMessageId: string; remoteJid?: string; providerMediaId?: string; maxBytes: number },
+  ): Promise<FetchedMedia>
 }
 
 /** O provedor ainda não envia esse recurso (ex.: mídia na API oficial). */
@@ -57,5 +60,13 @@ export class WhatsAppProviderError extends Error {
   ) {
     super(message)
     this.name = 'WhatsAppProviderError'
+  }
+}
+
+/** API oficial: mais de 24 h desde a última mensagem do cliente (erro 131047 da Meta). Só um modelo aprovado pode ser enviado. */
+export class WindowClosedError extends WhatsAppProviderError {
+  constructor(body: unknown = null) {
+    super('Fora da janela de 24 h só modelos aprovados podem ser enviados', 400, body)
+    this.name = 'WindowClosedError'
   }
 }

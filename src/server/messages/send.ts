@@ -3,8 +3,8 @@ import { providerToKind } from '@/lib/mappers'
 import type { MessageDTO } from '@/lib/types'
 import { spMonthKey } from '@/server/calendar/time'
 import { emitToWorkspace } from '@/server/realtime/emit'
-import { getProvider } from '@/server/whatsapp'
-import { loadConversationItem, toMessageDTO } from './dto'
+import { getProvider, WindowClosedError } from '@/server/whatsapp'
+import { loadConversationItem, senderFirstNames, toMessageDTO } from './dto'
 import { registerManualReply } from './takeover'
 
 export type SendErrorCode =
@@ -39,6 +39,8 @@ export function sendUserMessage(input: {
   conversationId: string
   body: string
   clientId?: string
+  /** Equipe: quem está enviando (autoria da mensagem e atribuição automática da conversa). */
+  userId?: string
 }): Promise<MessageDTO> {
   const { clientId, ...rest } = input
   return withIdempotency(input.workspaceId, input.conversationId, clientId, () => sendUserMessageOnce(rest))
@@ -67,8 +69,9 @@ async function sendUserMessageOnce(input: {
   workspaceId: string
   conversationId: string
   body: string
+  userId?: string
 }): Promise<MessageDTO> {
-  const { workspaceId, conversationId, body } = input
+  const { workspaceId, conversationId, body, userId } = input
 
   const conversation = await db.conversation.findFirst({
     where: { id: conversationId, workspaceId },
@@ -92,7 +95,7 @@ async function sendUserMessageOnce(input: {
 
   const now = new Date()
   const pending = await db.message.create({
-    data: { conversationId, direction: 'OUT', author: 'USER', body, status: 'PENDENTE', createdAt: now },
+    data: { conversationId, direction: 'OUT', author: 'USER', body, status: 'PENDENTE', createdAt: now, senderUserId: userId ?? null },
   })
 
   let sent
@@ -104,15 +107,20 @@ async function sendUserMessageOnce(input: {
       data: { providerMessageId, status: 'ENVIADA' },
     })
   } catch (e) {
+    if (e instanceof WindowClosedError) {
+      // A Meta recusou por janela de 24 h (a conta de tempo local divergiu): nada foi enviado, não deixa mensagem.
+      await db.message.delete({ where: { id: pending.id } }).catch(() => {})
+      throw new SendError('FORA_DA_JANELA_24H', 422, 'Fora da janela de 24 h só modelos aprovados podem ser enviados')
+    }
     failure = e instanceof Error ? e.message : 'Erro desconhecido'
-    sent = await db.message.update({ where: { id: pending.id }, data: { status: 'FALHOU' } })
+    sent = await db.message.update({ where: { id: pending.id }, data: { status: 'FALHOU', failReason: failure.slice(0, 200) } })
   }
 
   // Resposta manual = a pessoa assumiu (regra única em takeover.ts, a mesma usada para respostas dadas pelo celular).
   if (failure) {
     await db.conversation.update({ where: { id: conversationId }, data: { unread: 0, lastMessageAt: now } })
   } else {
-    await registerManualReply({ conversationId, currentMode: conversation.mode, at: now })
+    await registerManualReply({ conversationId, currentMode: conversation.mode, at: now, userId })
   }
 
   if (!failure && session.provider === 'OFICIAL') {
@@ -127,6 +135,9 @@ async function sendUserMessageOnce(input: {
   const item = await loadConversationItem(workspaceId, conversationId)
   if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })
 
+  // Equipe: as outras pessoas com a conversa aberta veem a mensagem na hora (o cliente de quem enviou deduplica por id).
+  const dto = toMessageDTO(sent, (await senderFirstNames([sent])).get(userId ?? ''))
+  if (!failure) emitToWorkspace(workspaceId, 'message.received', { workspaceId, conversationId, message: dto })
   if (failure) throw new SendError('ENVIO_FALHOU', 502, failure)
-  return toMessageDTO(sent)
+  return dto
 }

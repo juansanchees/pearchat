@@ -11,6 +11,8 @@ import { listCampaigns } from '@/server/campaigns/service'
 import { countFollowUpQueue } from '@/server/followup/service'
 import { providerToKind, statusToKind } from '@/lib/mappers'
 import { requireSession } from '@/lib/session'
+import { normalizePapel } from '@/server/auth/permissions'
+import { allowedWorkspaceIds } from '@/server/team/access'
 import { ensureOrganization } from '@/server/spaces/org'
 import { listSpaces } from '@/server/spaces/service'
 import { connectConfig } from '@/server/whatsapp/config'
@@ -36,7 +38,9 @@ const PLANOS: Record<Plan, PlanoNome> = { ESSENCIAL: 'Essencial', PRO: 'Pro', NE
 
 // Shell do app (AppShell): sidebar escura de 288px (gaveta abaixo de 900px) + área principal clara; drawers e toasts ficam por cima.
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const { userId, workspaceId, organizationId: sessionOrgId } = await requireSession()
+  const { userId, workspaceId, organizationId: sessionOrgId, papel: sessionPapel } = await requireSession()
+  const papel = normalizePapel(sessionPapel)
+  const manager = papel !== 'agent' // Equipe: atendente não carrega disparos/follow-up; só o estado das automações
   // Contas novas sem e-mail confirmado (com e-mail configurado) vão para a confirmação; contas antigas não são afetadas.
   if (await needsEmailVerification(userId)) redirect('/verificar-email')
 
@@ -63,12 +67,13 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     db.user.findUniqueOrThrow({ where: { id: userId }, select: { nome: true, email: true, fotoUrl: true, image: true } }),
     db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true, plano: true, horarioAtendimento: true, disparosAtivos: true } }),
     db.contact.count({ where: { workspaceId } }),
-    listCampaigns(workspaceId),
-    countFollowUpQueue(workspaceId),
+    manager ? listCampaigns(workspaceId) : Promise.resolve([]),
+    manager ? countFollowUpQueue(workspaceId) : Promise.resolve(0),
     db.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { nome: true, plano: true } }),
-    listSpaces(organizationId, workspaceId),
+    listSpaces(organizationId, workspaceId, await allowedWorkspaceIds(userId, papel)),
   ])
 
+  const equipe = await db.user.count({ where: { organizationId, desativadoEm: null } })
   const connected = wa.status === 'CONECTADO'
 
   return (
@@ -76,12 +81,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       initial={{
         wa: { provider: wa.provider ? providerToKind(wa.provider) : null, status: statusToKind(wa.status), numero: wa.numero },
         automations: { ia: connected && agent.enabled, followup: connected && followUp.enabled, disparos: connected && workspace.disparosAtivos },
-        user: { nome: user.nome, email: user.email, empresa: workspace.nome, organizacao: org.nome, fotoUrl: user.fotoUrl ?? user.image },
+        user: { nome: user.nome, email: user.email, empresa: workspace.nome, organizacao: org.nome, fotoUrl: user.fotoUrl ?? user.image, papel, id: userId, equipe },
         agentName: agent.nome,
         fuQueueCount,
         spaces,
         workspaceId,
-        connectCfg: connectConfig(),
+        connectCfg: connectConfig(user.email),
       }}
     >
       <DrawerDataProvider

@@ -75,7 +75,7 @@ const ok = <Check size={14} className="text-light-accent-300" />
 export function Chooser({ onPick }: { onPick: (p: ProviderKind) => void }) {
   const { connectCfg } = useAppState()
   // Oficial só existe de verdade com a Meta configurada (ou no modo demo, que simula).
-  const oficialOk = connectCfg.demo || connectCfg.metaConfigured
+  const oficialOk = connectCfg.demo || connectCfg.oficialAtivo
   return (
     <div className={pageShell}>
       <div className="flex w-[min(860px,100%)] animate-zfIn flex-col gap-[22px]">

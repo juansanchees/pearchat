@@ -1,14 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarCheck, CheckCircle, Clock, PaperPlaneTilt, Plus, UploadSimple } from '@phosphor-icons/react'
+import { CalendarCheck, PaperPlaneTilt, UploadSimple } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
 import { fmtNum } from '@/components/app/automations'
 import { PearSwitch, Tag } from '@/components/pear'
-import { cn } from '@/lib/utils'
-import type { CampaignDTO, DisparosSettingsDTO, TemplateDTO } from '@/lib/types'
+import type { CampaignDTO, DisparosSettingsDTO } from '@/lib/types'
 import { api } from './api'
-import { toTemplate, useDrawerData, useDrawerLoad } from './drawer-data'
+import { templateUsable, useDrawerData, useDrawerLoad } from './drawer-data'
+import { OficialTemplates } from './disparos-templates'
 import { INTERVALOS, INTERVALO_API } from './mock-data'
 import { toCampanha, formatDt } from './view'
 import { ChatBubble, DrawerShell, Field, ProgressBar, RadioCard, Section, Seg } from './parts'
@@ -30,20 +30,8 @@ export function DisparosDrawer() {
   const previewRapida = disp.msg.trim()
     ? disp.msg.replaceAll('{primeiro_nome}', 'Ana').replaceAll('{nome}', 'Ana Paula Ribeiro')
     : 'Escreva a mensagem acima'
-  const previewOficial = tpl ? tpl.corpo.replace('{{1}}', 'Ana') : ''
 
   const addVar = (v: string) => setDisp((d) => ({ ...d, msg: d.msg + (d.msg.endsWith(' ') || d.msg === '' ? '' : ' ') + v }))
-
-  const criarModelo = async () => {
-    const corpo = disp.msg.replaceAll('{primeiro_nome}', '{{1}}').replaceAll('{nome}', '{{1}}')
-    try {
-      const novo = await api<TemplateDTO>('/api/templates', { method: 'POST', body: { category: 'MARKETING', body: corpo } })
-      setTemplates((l) => [...l, toTemplate(novo)])
-      toast({ icon: <Clock size={18} weight="fill" />, title: 'Modelo enviado para a Meta', text: `${novo.name} · em análise` })
-    } catch (e) {
-      failToast('Não foi possível criar o modelo', e)
-    }
-  }
 
   const HORAS = Array.from({ length: 24 }, (_, h) => h)
   const hh = (h: number) => `${String(h).padStart(2, '0')}:00`
@@ -67,7 +55,10 @@ export function DisparosDrawer() {
   const iniciar = async () => {
     if (sending) return
     if (!oficial && !disp.msg.trim()) return
-    if (oficial && !tpl) return
+    if (oficial && (!tpl || !templateUsable(tpl))) {
+      toast({ icon: <PaperPlaneTilt size={18} weight="fill" />, title: 'Escolha um modelo aprovado', text: 'Disparos oficiais só usam modelos aprovados pela Meta' })
+      return
+    }
     if (!connected) {
       toast({
         icon: <PaperPlaneTilt size={18} weight="fill" />,
@@ -168,58 +159,7 @@ export function DisparosDrawer() {
           </div>
         </Section>
       ) : (
-        <Section
-          label="Modelo aprovado"
-          gap="gap-3"
-          aside={
-            <button type="button" className={linkBtn} onClick={() => void criarModelo()}>
-              <Plus size={13} />
-              Criar modelo
-            </button>
-          }
-        >
-          <div className="text-[12px] text-light-neutral-400">
-            No WhatsApp oficial, disparos usam modelos aprovados pela Meta. A aprovação costuma levar alguns minutos.
-          </div>
-          {templates.map((t) => {
-            const analise = t.status !== 'Aprovado'
-            return (
-              <RadioCard
-                key={t.id}
-                selected={tplSel === t.id}
-                disabled={analise}
-                className="items-start"
-                onClick={() => {
-                  if (analise) {
-                    toast({
-                      icon: <Clock size={18} weight="fill" />,
-                      title: t.status === 'Rejeitado' ? 'Modelo rejeitado' : 'Modelo em análise',
-                      text: t.status === 'Rejeitado' ? 'A Meta não aprovou este modelo' : 'Aguarde a aprovação da Meta para usar',
-                    })
-                    return
-                  }
-                  setTplSel(t.id)
-                }}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-[6px]">
-                    <span className="font-mono text-[12.5px] font-medium">{t.nome}</span>
-                    <Tag tone="outline" className="!px-[5px] !py-px !text-[9.5px]">{t.cat}</Tag>
-                  </span>
-                  <span className="mt-1 block text-[12px] text-light-neutral-500">{t.corpo}</span>
-                </span>
-                <span className={cn('inline-flex flex-none items-center gap-1 text-[11px]', analise ? 'text-[#b0872f]' : 'text-light-accent-300')}>
-                  {analise ? <Clock size={12} weight="fill" /> : <CheckCircle size={12} weight="fill" />}
-                  {t.status}
-                </span>
-              </RadioCard>
-            )
-          })}
-          <div className="rounded-md border border-light-divider bg-light-bg p-[14px]">
-            <div className="mb-2 text-[11px] text-light-neutral-500">Prévia para Ana Paula Ribeiro</div>
-            <ChatBubble>{previewOficial}</ChatBubble>
-          </div>
-        </Section>
+        <OficialTemplates templates={templates} setTemplates={setTemplates} tplSel={tplSel} setTplSel={setTplSel} />
       )}
 
       <Section label="Envio" gap="gap-3">

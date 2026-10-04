@@ -14,6 +14,7 @@ import { ConversationList } from './conversation-list'
 import { MessageThread } from './message-thread'
 import { useConversations } from './use-conversations'
 import { useHistoryImport } from './use-history-import'
+import { WindowNotice } from './window-notice'
 import { NumberMenu } from '@/components/whatsapp/number-menu'
 
 const FALLBACK_SUBTITLE = 'Atendimento por WhatsApp'
@@ -147,9 +148,11 @@ export default function Conversas(): JSX.Element {
                 agentName={agentName}
                 onRetryMedia={(id) => void c.retryMedia(id)}
               />
+              <WindowNotice conversationId={c.active.id} refreshKey={c.messages[c.messages.length - 1]?.id ?? ''} />
               <Composer
                 key={c.active.id}
                 iaAnswering={iaAnswering}
+                contact={{ nome: c.active.nome, telefone: c.active.telefone }}
                 onSend={c.send}
                 onSendMedia={c.sendMedia}
                 incomingFile={dropped}

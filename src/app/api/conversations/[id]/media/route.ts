@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { isValidId, notFound, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { isValidId, notFound, sessionIds, unauthorized } from '@/server/messages/api'
 import { MAX_OUTBOUND_BYTES } from '@/server/media/mime'
 import { SendError } from '@/server/messages/send'
 import { sendUserMedia } from '@/server/messages/send-media'
@@ -35,8 +35,9 @@ const fail = (status: number, error: string, code?: string) => NextResponse.json
 
 // Envio de mídia pelo atendente (multipart: file, caption?, clientId?). Limite de 16 MB aplicado antes de montar o arquivo na memória.
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const workspaceId = await sessionWorkspaceId()
-  if (!workspaceId) return unauthorized()
+  const ids = await sessionIds()
+  if (!ids) return unauthorized()
+  const { workspaceId, userId } = ids
   if (!isValidId(params.id)) return notFound()
 
   const contentType = req.headers.get('content-type') ?? ''
@@ -64,6 +65,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       file: { data: Buffer.from(await file.arrayBuffer()), name: file.name, mime: file.type },
       caption: typeof caption === 'string' ? caption : undefined,
       clientId,
+      userId,
     })
     return NextResponse.json(message, { status: 201 })
   } catch (e) {

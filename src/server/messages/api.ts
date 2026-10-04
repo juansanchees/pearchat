@@ -7,6 +7,14 @@ export async function sessionWorkspaceId(): Promise<string | null> {
   return session?.user?.workspaceId ?? null
 }
 
+// Equipe: usuário + workspace da sessão (autoria das mensagens, filtro "Minhas", atribuição), ou null (401).
+export async function sessionIds(): Promise<{ userId: string; workspaceId: string; organizationId: string | null } | null> {
+  const session = await auth()
+  const userId = session?.user?.userId
+  const workspaceId = session?.user?.workspaceId
+  return userId && workspaceId ? { userId, workspaceId, organizationId: session?.user?.organizationId ?? null } : null
+}
+
 export const unauthorized = () => NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 export const notFound = () => NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 })
 export const badRequest = (message: string) => NextResponse.json({ error: message }, { status: 400 })

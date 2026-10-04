@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { z } from 'zod'
 import { getApiSession } from '@/server/whatsapp/auth'
+import { applyHistoryChoice } from '@/server/whatsapp/meta-connect'
 import { getSession, mergeSessionData, toStatusDTO } from '@/server/whatsapp/session'
 import { db } from '@/lib/db'
 
@@ -11,6 +13,7 @@ const bodySchema = z.object({ importarHistorico: z.boolean() })
 
 // Passo 3 do fluxo oficial: guarda a preferência de importar o histórico.
 export async function POST(req: Request) {
+  const deny = await denyUnless('wa.manage'); if (deny) return deny
   const session = await getApiSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
@@ -22,6 +25,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'O WhatsApp ainda não está conectado' }, { status: 409 })
   }
   try {
+    // API oficial real: grava a escolha e, na Coexistence, pede o histórico/contatos à Meta.
+    if (row.provider === 'OFICIAL' && process.env.WA_MOCK !== 'true') {
+      await applyHistoryChoice(workspaceId, parsed.data.importarHistorico)
+      return NextResponse.json(toStatusDTO(await getSession(workspaceId)))
+    }
     const sessionData = await mergeSessionData(workspaceId, { importarHistorico: parsed.data.importarHistorico })
     const updated = await db.whatsAppSession.update({ where: { workspaceId }, data: { sessionData } })
     return NextResponse.json(toStatusDTO(updated))

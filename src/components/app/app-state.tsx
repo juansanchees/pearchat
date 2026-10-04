@@ -23,7 +23,8 @@ export type ToastInput = {
   action?: { label: string; onClick: () => void }
 }
 // empresa = nome do negócio do WhatsApp (espaço) ativo; organizacao = nome da conta (mostrado no rodapé do menu).
-export type AppUser = { nome: string; email: string; empresa: string; organizacao: string; fotoUrl: string | null }
+// papel (Equipe) = owner | admin | agent; alimenta o usePermissions() (a interface só acompanha, o servidor decide).
+export type AppUser = { nome: string; email: string; empresa: string; organizacao: string; fotoUrl: string | null; papel?: string; id?: string; /** pessoas ativas na organização (>1 mostra quem enviou em cada mensagem) */ equipe?: number }
 export type ToastItem = ToastInput & { id: number }
 
 export type AppState = {

@@ -15,13 +15,17 @@ export async function registerManualReply(input: {
   currentMode: ConversationMode | null
   /** Instante da mensagem enviada. */
   at: Date
+  /** Equipe: quem respondeu pelo app. Conversa sem responsável passa a ser dessa pessoa. */
+  userId?: string
 }): Promise<{ tookOver: boolean }> {
-  const { conversationId, currentMode, at } = input
+  const { conversationId, currentMode, at, userId } = input
   const tookOver = currentMode !== 'HUMANO'
   await db.conversation.update({
     where: { id: conversationId },
     data: { unread: 0, typing: false, ...(tookOver ? { mode: 'HUMANO' as const } : {}) },
   })
+  // Equipe: só atribui se ainda não há responsável (atômico: quem já tem dono não muda de mãos por responder).
+  if (userId) await db.conversation.updateMany({ where: { id: conversationId, assigneeId: null }, data: { assigneeId: userId, assignedAt: at } })
   // lastMessageAt nunca regride (um webhook atrasado não pode fazer a conversa "voltar no tempo").
   await db.conversation.updateMany({
     where: { id: conversationId, OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: at } }] },

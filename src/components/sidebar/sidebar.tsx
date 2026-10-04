@@ -34,6 +34,7 @@ import { useDisconnect } from '@/components/app/use-disconnect'
 import { useSpaceActions } from '@/components/app/use-spaces'
 import { Logo } from '@/components/brand/logo'
 import { useLogout } from '@/components/app/use-logout'
+import { usePermissions } from '@/components/app/use-permissions'
 import { usePhotoPicker } from '@/components/app/use-photo-picker'
 import { useDrawerData } from '@/components/drawers/drawer-data'
 import { PearSwitch, Tag, initials } from '@/components/pear'
@@ -47,6 +48,12 @@ export function Sidebar() {
   const pathname = usePathname()
   const { wa, connected, automations, setAutomation, openDrawer, closeDrawer, drawer, user, agentName, fuQueueCount, spaces, workspaceId } = useAppState()
   const { switchTo, create, limitReached, busy: spaceBusy } = useSpaceActions()
+  // Equipe: o atendente vê só o estado das automações; sem Resultados, Plano, "+ Adicionar WhatsApp" nem desconectar.
+  const { can } = usePermissions()
+  const canAuto = can('automations.toggle')
+  const canAddWa = can('spaces.manage')
+  const canDisconnectWa = can('wa.manage')
+  const niceSub = (s: string) => (canAuto ? s : s.replace(/ · toque para .*/, ''))
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const newNameRef = useRef<HTMLInputElement>(null)
@@ -180,7 +187,7 @@ export function Sidebar() {
           )
         })}
 
-        {adding ? (
+        {canAddWa && (adding ? (
           <form
             className="flex flex-col gap-2 rounded-lg border border-dashed border-dark-neutral-700 p-[11px]"
             onSubmit={(e) => {
@@ -245,7 +252,7 @@ export function Sidebar() {
               </span>
             </span>
           </button>
-        )}
+        ))}
       </div>
 
       {/* 3. Cabeçalho Automações */}
@@ -271,8 +278,9 @@ export function Sidebar() {
               <button
                 type="button"
                 onClick={() => openDrawerKey(key)}
-                title={DRAWER_DESCRIPTIONS[key]}
-                className="flex min-w-0 flex-1 items-center gap-[11px] bg-transparent p-0 text-left text-dark-text"
+                disabled={!canAuto}
+                title={canAuto ? DRAWER_DESCRIPTIONS[key] : undefined}
+                className="flex min-w-0 flex-1 items-center gap-[11px] bg-transparent p-0 text-left text-dark-text disabled:cursor-default"
               >
                 <span
                   className={cn(
@@ -288,11 +296,13 @@ export function Sidebar() {
                     {key === 'followup' && <Tag tone="outline" theme="dark" className="flex-none !px-[5px] !py-px !text-[9px]">Novo</Tag>}
                   </span>
                   <span className={cn('mt-[3px] block truncate text-[11px]', on ? 'text-dark-accent-300' : 'text-dark-neutral-500')}>
-                    {subtitle(key, on)}
+                    {niceSub(subtitle(key, on))}
                   </span>
                 </span>
               </button>
-              {connected ? (
+              {!canAuto ? (
+                <span className="flex-none rounded-pill border border-dark-divider px-[8px] py-[2px] text-[10.5px] text-dark-neutral-400">{on ? 'Ligada' : 'Desligada'}</span>
+              ) : connected ? (
                 <PearSwitch size="sm" tone="dark" checked={on} label={title} onChange={(next) => void setAutomation(key, next)} />
               ) : (
                 <button
@@ -311,7 +321,7 @@ export function Sidebar() {
       </div>
 
       {/* 5. Aviso de bloqueio */}
-      {!connected && (
+      {!connected && canAuto && (
         <div className="flex gap-[7px] px-5 pt-3 text-[11.5px] text-dark-neutral-500 [text-wrap:pretty]">
           <LockSimple size={13} className="mt-px flex-none" />
           <span>Você já pode ver e configurar. Para ligar, conecte o WhatsApp.</span>
@@ -389,7 +399,9 @@ export function Sidebar() {
             { key: 'config', label: 'Configurações', Ico: GearSix, tag: null },
             { key: 'plano', label: 'Plano e pagamento', Ico: CrownSimple, tag: plano },
           ] as const
-        ).map(({ key, label, Ico, tag }) => (
+        )
+          .filter(({ key }) => (key === 'resultados' ? can('results.view') : key === 'plano' ? can('billing.view') : true))
+          .map(({ key, label, Ico, tag }) => (
           <button
             key={key}
             type="button"
@@ -414,7 +426,11 @@ export function Sidebar() {
           title="Trocar foto"
           aria-label="Trocar foto"
           onClick={photo.open}
-          className="relative grid h-9 w-9 flex-none place-items-center rounded-pill border border-dark-accent-700 bg-dark-accent-800 p-0 text-[12px] font-medium leading-none text-dark-accent-200 hover:border-dark-accent-400"
+          aria-busy={photo.uploading}
+          className={cn(
+            'relative grid h-9 w-9 flex-none place-items-center rounded-pill border border-dark-accent-700 bg-dark-accent-800 p-0 text-[12px] font-medium leading-none text-dark-accent-200 hover:border-dark-accent-400',
+            photo.uploading && 'animate-pulse opacity-60',
+          )}
         >
           {user.fotoUrl ? (
             <span className="block h-full w-full rounded-pill bg-cover bg-center" style={{ backgroundImage: `url(${user.fotoUrl})` }} />
@@ -441,7 +457,7 @@ export function Sidebar() {
         >
           <Power size={15} />
         </button>
-        {connected && (
+        {connected && canDisconnectWa && (
           <button
             type="button"
             title="Desconectar WhatsApp"

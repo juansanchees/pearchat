@@ -80,8 +80,9 @@ const upsert = (list: ConversationItem[], item: ConversationItem) =>
 
 /** preferredId: conversa a abrir ao carregar (vinda de ?c=); senão abre a primeira. */
 export function useConversations(preferredId: string | null = null) {
-  const { automations, agentName, toast } = useAppState()
+  const { automations, agentName, toast, user } = useAppState()
   const iaOn = automations.ia
+  const myId = user.id // Equipe: filtro "Minhas"
 
   const [items, setItems] = useState<ConversationItem[]>([])
   const [loadingList, setLoadingList] = useState(true)
@@ -141,6 +142,7 @@ export function useConversations(preferredId: string | null = null) {
     const matches = (c: ConversationItem) => {
       if (filter === 'nao_lidas' && c.unread <= 0) return false
       if (filter === 'com_ia' && c.mode !== 'ia') return false
+      if (filter === 'minhas' && (!myId || c.assignee?.id !== myId)) return false
       if (!q) return true
       if (c.nome.toLowerCase().includes(q)) return true
       return qDigits.length >= 3 && /^[\d\s()+-]+$/.test(q) && (c.telefone ?? '').replace(/\D/g, '').includes(qDigits)
@@ -156,7 +158,7 @@ export function useConversations(preferredId: string | null = null) {
     }
     for (const c of local) merged.set(c.id, c)
     return Array.from(merged.values()).sort(byRecent)
-  }, [items, filter, searchText, remote])
+  }, [items, filter, searchText, remote, myId])
 
   const markRead = useCallback((id: string) => {
     setItems((l) => l.map((c) => (c.id === id && c.unread > 0 ? { ...c, unread: 0 } : c)))
@@ -305,6 +307,19 @@ export function useConversations(preferredId: string | null = null) {
       return upsert(l, { ...item, lastMessageAuthor: item.lastMessageAuthor ?? prev?.lastMessageAuthor ?? null })
     })
   })
+
+  // Equipe: o seletor de responsável (chat-header) avisa a lista pelo window, sem depender só do socket.
+  useEffect(() => {
+    const onAssigned = (e: Event) => {
+      const item = (e as CustomEvent<ConversationItem>).detail
+      setItems((l) => {
+        const prev = l.find((c) => c.id === item.id)
+        return upsert(l, { ...item, lastMessageAuthor: item.lastMessageAuthor ?? prev?.lastMessageAuthor ?? null })
+      })
+    }
+    window.addEventListener('pearchat:conversation-updated', onAssigned)
+    return () => window.removeEventListener('pearchat:conversation-updated', onAssigned)
+  }, [])
 
   useSocketEvent('message.received', ({ conversationId, message }) => {
     if (conversationId !== activeIdRef.current) return

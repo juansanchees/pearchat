@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Archive, ArrowsLeftRight, ClockClockwise, DotsThree, PencilSimple, Plugs } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
 import { useDisconnect } from '@/components/app/use-disconnect'
+import { usePermissions } from '@/components/app/use-permissions'
 import { Tag } from '@/components/pear'
 import { redirectIfUnauthorized } from '@/lib/auth-redirect'
 
@@ -19,6 +20,7 @@ const item =
 export function NumberMenu({ onImport, importing = false }: { onImport?: () => void; importing?: boolean }) {
   const { user, setUser, connected, wa, spaces, workspaceId, refreshSpaces, toast, connectCfg } = useAppState()
   const disconnect = useDisconnect()
+  const { can } = usePermissions() // Equipe: o atendente não renomeia, desconecta, troca nem arquiva o número
   const [open, setOpen] = useState(false)
   const [mode, setMode] = useState<Mode>('menu')
   const [name, setName] = useState('')
@@ -54,7 +56,7 @@ export function NumberMenu({ onImport, importing = false }: { onImport?: () => v
 
   const canArchive = !connected && wa.status !== 'conectando' && spaces.espacos.length > 1
   // Trocar de tipo de conexão: oficial só quando a Meta está configurada (ou no demo). Habilita sozinho com as variáveis.
-  const oficialOk = connectCfg.demo || connectCfg.metaConfigured
+  const oficialOk = connectCfg.demo || connectCfg.oficialAtivo
   const toOficial = wa.provider !== 'oficial'
   const switchEnabled = toOficial ? oficialOk : true
   const canImport = !!onImport && wa.provider === 'rapida' && connected
@@ -102,6 +104,8 @@ export function NumberMenu({ onImport, importing = false }: { onImport?: () => v
       setBusy(false)
     }
   }
+
+  if (!can('wa.manage')) return null
 
   return (
     <div ref={root} className="relative flex-none">

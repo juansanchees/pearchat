@@ -413,7 +413,8 @@ export function queueHistoryMessages(workspaceId: string, messages: HistoryMessa
   gq.__pearchat_history_queue = prev
     .then(async () => {
       const session = await db.whatsAppSession.findUnique({ where: { workspaceId }, select: { numero: true, provider: true } })
-      if (!session || session.provider !== 'RAPIDA') return
+      // Histórico chega pelo webhook da Evolution (conexão rápida) ou da Coexistence da Meta (oficial).
+      if (!session || !session.provider) return
       const own = ownDigitsOf(session.numero)
       const cutoff = new Date(Date.now() - cfg.maxAgeDays * 86_400_000)
       const groups = new Map<string, HistoryMessage[]>()

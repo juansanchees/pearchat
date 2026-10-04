@@ -1,13 +1,19 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { ingestInboundMessage, updateMessageStatus } from '@/server/messages/ingest'
-import { normalizeMetaPayload } from '@/server/whatsapp/normalize'
+import { enqueueMetaPayload } from '@/server/whatsapp/meta-webhook'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Desafio de verificação do webhook (configurado no painel do app na Meta).
+const MAX_BODY_BYTES = 8 * 1024 * 1024
+
+function safeEqual(a: string, b: string): boolean {
+  const ha = createHmac('sha256', 'cmp').update(a).digest()
+  const hb = createHmac('sha256', 'cmp').update(b).digest()
+  return timingSafeEqual(ha, hb)
+}
+
+// Desafio de verificação do webhook (configurado no painel do app na Meta: hub.mode, hub.verify_token, hub.challenge).
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const token = process.env.META_VERIFY_TOKEN
@@ -18,23 +24,20 @@ export async function GET(req: Request) {
   return new NextResponse(null, { status: 403 })
 }
 
-function safeEqual(a: string, b: string): boolean {
-  const ha = createHmac('sha256', 'cmp').update(a).digest()
-  const hb = createHmac('sha256', 'cmp').update(b).digest()
-  return timingSafeEqual(ha, hb)
-}
-
+/** X-Hub-Signature-256 = "sha256=" + HMAC-SHA256(corpo cru, segredo do app). Qualquer formato estranho é recusado sem lançar. */
 function validSignature(raw: string, header: string | null): boolean {
   const secret = process.env.META_APP_SECRET
-  if (!secret || !header?.startsWith('sha256=')) return false
+  if (!secret || !header || !/^sha256=[0-9a-fA-F]{64}$/.test(header)) return false
   const expected = createHmac('sha256', secret).update(raw, 'utf8').digest()
   const got = Buffer.from(header.slice('sha256='.length), 'hex')
   return got.length === expected.length && timingSafeEqual(got, expected)
 }
 
 export async function POST(req: Request) {
+  const declared = Number(req.headers.get('content-length') ?? 0)
+  if (declared > MAX_BODY_BYTES) return new NextResponse(null, { status: 413 })
   const raw = await req.text()
-  if (!validSignature(raw, req.headers.get('x-hub-signature-256'))) {
+  if (raw.length > MAX_BODY_BYTES || !validSignature(raw, req.headers.get('x-hub-signature-256'))) {
     return new NextResponse(null, { status: 401 })
   }
   let json: unknown
@@ -43,32 +46,8 @@ export async function POST(req: Request) {
   } catch {
     return new NextResponse(null, { status: 400 })
   }
-
-  // Sempre 200 depois da assinatura válida: a Meta reenvia em caso de erro e não queremos tempestade de retentativas.
-  for (const batch of normalizeMetaPayload(json)) {
-    try {
-      const session = await db.whatsAppSession.findFirst({
-        where: { metaPhoneNumberId: batch.phoneNumberId },
-        select: { workspaceId: true },
-      })
-      if (!session) continue
-      const { workspaceId } = session
-      for (const m of batch.inbound) {
-        await ingestInboundMessage({
-          workspaceId,
-          from: m.from,
-          nome: m.nome,
-          body: m.body,
-          providerMessageId: m.providerMessageId,
-          timestamp: m.timestamp,
-        })
-      }
-      for (const s of batch.statuses) {
-        await updateMessageStatus({ workspaceId, providerMessageId: s.providerMessageId, status: s.status })
-      }
-    } catch (e) {
-      console.error('[wa/meta] falha ao processar lote:', e instanceof Error ? e.message : 'erro')
-    }
-  }
+  // Responde 200 já: a Meta reenvia por até 7 dias se demorar ou falhar. O processamento segue em fila (ordem preservada)
+  // e as duplicatas são absorvidas por idempotência (id da mensagem).
+  void enqueueMetaPayload(json)
   return new NextResponse(null, { status: 200 })
 }

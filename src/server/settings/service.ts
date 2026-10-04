@@ -3,6 +3,17 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { spMonthKey } from '@/server/calendar/time'
 import { getOrgScope, PLAN_SPACE_LIMIT } from '@/server/spaces/org'
+import { PLAN_MEMBER_LIMIT } from '@/server/team/limits'
+
+/** Equipe: pessoas ativas + convites pendentes (o que conta para o limite de pessoas do plano). */
+async function teamSeatsUsed(organizationId: string | null): Promise<number> {
+  if (!organizationId) return 1
+  const [users, pend] = await Promise.all([
+    db.user.count({ where: { organizationId, desativadoEm: null } }),
+    db.invite.count({ where: { organizationId, aceitoEm: null, revogadoEm: null, expiraEm: { gt: new Date() } } }),
+  ])
+  return users + pend
+}
 import type { BillingDTO, SettingsDTO } from '@/lib/types'
 
 export const NOTIF_OPCOES = ['Conversa sem resposta há 10 min', 'IA passou uma conversa para mim', 'Disparo concluído', 'Novo agendamento'] as const
@@ -31,9 +42,7 @@ export const settingsSchema = z.object({
 export type SettingsInput = z.infer<typeof settingsSchema>
 
 /**
- * Perfil + empresa + avisos. A foto de perfil fica fora daqui.
- * TODO(foto): ainda não há storage de arquivos; a foto continua só no navegador (use-photo-picker) e
- * User.fotoUrl não é gravado. Quando houver storage (S3/Supabase Storage), subir o arquivo e salvar a URL aqui.
+ * Perfil + empresa + avisos. A foto de perfil fica fora daqui (POST/DELETE /api/me/avatar).
  */
 export async function getSettings(userId: string, workspaceId: string): Promise<SettingsDTO> {
   const [user, ws] = await Promise.all([
@@ -117,6 +126,7 @@ export async function getBilling(workspaceId: string): Promise<BillingDTO> {
     },
     limites: LIMITES[scope.plano],
     espacos: { usados: espacos, limite: PLAN_SPACE_LIMIT[scope.plano] },
+    pessoas: { usados: await teamSeatsUsed(scope.organizationId), limite: PLAN_MEMBER_LIMIT[scope.plano] },
     faturas: invoices.map((i) => ({
       id: i.id,
       mes: `${MESES[i.emitidaEm.getMonth()]} ${i.emitidaEm.getFullYear()}`,

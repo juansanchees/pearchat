@@ -26,6 +26,8 @@ export interface ConversationListItem {
   lastMessagePreview: string | null
   /** ISO 8601 */
   lastMessageAt: string | null
+  /** Equipe: responsável pela conversa; null/ausente = sem responsável. */
+  assignee?: { id: string; nome: string; fotoUrl: string | null } | null
 }
 
 export type MediaTypeKind = 'image' | 'audio' | 'video' | 'document' | 'sticker'
@@ -43,6 +45,9 @@ export interface MessageDTO {
   status: MessageStatusKind
   /** ISO 8601 */
   createdAt: string
+  /** Equipe: quem enviou pelo app (primeiro nome em senderNome). */
+  senderUserId?: string | null
+  senderNome?: string | null
   mediaType?: MediaTypeKind | null
   mediaMime?: string | null
   mediaSize?: number | null
@@ -59,6 +64,8 @@ export interface WhatsAppStatusDTO {
   numero: string | null
   /** QR (data URL ou string do código) quando status = aguardando_qr */
   qr?: string
+  /** API oficial: número que continua no app WhatsApp Business (Coexistence). */
+  coexistence?: boolean
 }
 
 // ---- Drawers (agente de IA, follow-up, disparos, configurações, plano) ----
@@ -121,8 +128,20 @@ export interface TemplateDTO {
   id: string
   name: string
   category: 'MARKETING' | 'UTILIDADE'
-  status: 'APROVADO' | 'EM_ANALISE' | 'REJEITADO'
+  status: 'APROVADO' | 'EM_ANALISE' | 'REJEITADO' | 'PAUSADO' | 'DESATIVADO'
   body: string
+  /** Idioma na Meta (padrão pt_BR). */
+  language?: string
+  /** Motivo informado pela Meta quando o modelo não foi aprovado. */
+  rejectionReason?: string | null
+  /** true = só existe no PearChat (ainda não foi enviado para a Meta). */
+  onlyLocal?: boolean
+  /** Quantidade de variáveis {{n}} do corpo. */
+  vars?: number
+  /** Exemplos enviados à Meta, um por variável. */
+  examples?: string[]
+  /** Motivo pelo qual o PearChat não consegue usar este modelo em disparos (cabeçalho com mídia, botão com variável...). */
+  unsupported?: string | null
 }
 
 export interface CampaignDTO {
@@ -172,5 +191,7 @@ export interface BillingDTO {
   limites: { respostasIa: number | null; disparos: number | null; contatos: number | null }
   /** WhatsApps (espaços) em uso e o máximo do plano. */
   espacos: { usados: number; limite: number }
+  /** Equipe: pessoas ativas + convites pendentes e o máximo do plano. */
+  pessoas?: { usados: number; limite: number }
   faturas: { id: string; mes: string; valor: number; status: string; pdfUrl: string | null }[]
 }

@@ -7,4 +7,4 @@ export type ConversationItem = ConversationListItem & {
   lastMessageMedia?: { type: MediaTypeKind; durationSec: number | null } | null
 }
 
-export type ConversationFilter = 'todas' | 'nao_lidas' | 'com_ia'
+export type ConversationFilter = 'todas' | 'nao_lidas' | 'com_ia' | 'minhas'

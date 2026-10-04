@@ -48,6 +48,13 @@ const env = {
   META_APP_ID: prev.META_APP_ID ?? '', META_APP_SECRET: prev.META_APP_SECRET ?? '', META_CONFIG_ID: prev.META_CONFIG_ID ?? '',
   META_VERIFY_TOKEN: prev.META_VERIFY_TOKEN ?? '', META_SYSTEM_USER_TOKEN: prev.META_SYSTEM_USER_TOKEN ?? '',
   NEXT_PUBLIC_META_APP_ID: prev.NEXT_PUBLIC_META_APP_ID ?? '', NEXT_PUBLIC_META_CONFIG_ID: prev.NEXT_PUBLIC_META_CONFIG_ID ?? '',
+  // Conexão oficial (Cloud API): versão da Graph, modo do cadastro e beta fechado. src (.env local) vale se definido; senão o que já existe.
+  META_GRAPH_VERSION: src.META_GRAPH_VERSION || prev.META_GRAPH_VERSION || 'v25.0',
+  META_SIGNUP_MODE: src.META_SIGNUP_MODE || prev.META_SIGNUP_MODE || 'sdk',
+  META_OFICIAL_BETA: src.META_OFICIAL_BETA || prev.META_OFICIAL_BETA || 'false',
+  META_OFICIAL_BETA_EMAILS: src.META_OFICIAL_BETA_EMAILS || prev.META_OFICIAL_BETA_EMAILS || '',
+  META_FEATURE_TYPE: src.META_FEATURE_TYPE || prev.META_FEATURE_TYPE || '',
+  META_SESSION_INFO_VERSION: src.META_SESSION_INFO_VERSION || prev.META_SESSION_INFO_VERSION || '3',
   GOOGLE_CLIENT_ID: prev.GOOGLE_CLIENT_ID ?? '', GOOGLE_CLIENT_SECRET: prev.GOOGLE_CLIENT_SECRET ?? '', GOOGLE_REDIRECT_URI: prev.GOOGLE_REDIRECT_URI ?? '',
   CAMPAIGN_DAILY_LIMIT: src.CAMPAIGN_DAILY_LIMIT ?? '200',
   // E-mail transacional (Resend): copia do .env local quando existir; senão preserva o valor já gerado.

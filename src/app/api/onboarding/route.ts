@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { apiSession, fail, parseBody, unauthorized } from '@/server/settings/http'
@@ -23,6 +24,7 @@ const schema = z.object({
  * agente ainda estiver vazio, um parágrafo inicial com segmento e objetivos. Tamanho da equipe não tem coluna.
  */
 export async function POST(req: Request) {
+  const deny = await denyUnless('settings.workspace'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   const body = await parseBody(req, schema)
