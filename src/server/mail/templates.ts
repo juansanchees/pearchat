@@ -132,3 +132,26 @@ export function welcomeEmail({ nome }: { nome?: string }): MailContent {
     textFooter()
   return { subject: 'Bem-vindo ao PearChat', html, text }
 }
+
+/** Aviso de segurança: verificação em duas etapas ativada ou desativada. */
+export function twoFactorChangedEmail({ ativada, nome }: { ativada: boolean; nome?: string }): MailContent {
+  const primeiro = nome?.trim().split(/\s+/)[0]
+  const oi = primeiro ? `Oi, ${escapeHtml(primeiro)}! ` : ''
+  const titulo = ativada ? 'Verificação em duas etapas ativada' : 'Verificação em duas etapas desativada'
+  const corpo = ativada
+    ? 'A verificação em duas etapas foi <strong>ativada</strong> na sua conta. A partir de agora, além da senha, pediremos um código do seu aplicativo autenticador ao entrar.'
+    : 'A verificação em duas etapas foi <strong>desativada</strong> na sua conta e todos os dispositivos foram desconectados. Agora basta a senha para entrar.'
+  const html = layout(
+    `${titulo} na sua conta do PearChat.`,
+    h1(titulo) +
+      p(`${oi}${corpo}`) +
+      `<hr style="border:0;border-top:1px solid #eef0e3;margin:20px 0 14px;">` +
+      muted('Não foi você? Redefina a sua senha agora em <strong>Esqueci minha senha</strong> e fale com o suporte indicado na política de privacidade.'),
+  )
+  const plano = corpo.replace(/<\/?strong>/g, '')
+  const text =
+    `${titulo}\n\n${primeiro ? `Oi, ${primeiro}! ` : ''}${plano}\n\n` +
+    `Não foi você? Redefina a sua senha em "Esqueci minha senha" e fale com o suporte indicado na política de privacidade.\n` +
+    textFooter()
+  return { subject: ativada ? 'Verificação em duas etapas ativada no PearChat' : 'Verificação em duas etapas desativada no PearChat', html, text }
+}

@@ -56,7 +56,7 @@ export function invalidateActiveSpace(userId?: string): void {
   else activeCache.clear()
 }
 
-export type ActiveSpace = { userId: string; workspaceId: string; organizationId: string }
+export type ActiveSpace = { userId: string; workspaceId: string; organizationId: string; sessionVersion: number }
 
 /**
  * Espaço ativo do usuário, lido do BANCO (a fonte da verdade; o JWT pode estar desatualizado após uma troca).
@@ -74,7 +74,7 @@ export async function resolveActiveSpace(userId: string): Promise<ActiveSpace | 
 async function resolveActiveSpaceUncached(userId: string): Promise<ActiveSpace | null> {
   const u = await db.user.findUnique({
     where: { id: userId },
-    select: { workspaceId: true, organizationId: true, workspace: { select: { organizationId: true, arquivadoEm: true } } },
+    select: { workspaceId: true, organizationId: true, sessionVersion: true, workspace: { select: { organizationId: true, arquivadoEm: true } } },
   })
   if (!u) return null
 
@@ -90,7 +90,7 @@ async function resolveActiveSpaceUncached(userId: string): Promise<ActiveSpace |
   }
 
   if (u.workspace.organizationId === orgId && !u.workspace.arquivadoEm) {
-    return { userId, workspaceId: u.workspaceId, organizationId: orgId }
+    return { userId, workspaceId: u.workspaceId, organizationId: orgId, sessionVersion: u.sessionVersion }
   }
   const fallback = await db.workspace.findFirst({
     where: { organizationId: orgId, arquivadoEm: null },
@@ -98,9 +98,9 @@ async function resolveActiveSpaceUncached(userId: string): Promise<ActiveSpace |
     select: { id: true },
   })
   // Sem nenhum espaço válido na organização (inconsistência): mantém o que está gravado.
-  if (!fallback) return { userId, workspaceId: u.workspaceId, organizationId: orgId }
+  if (!fallback) return { userId, workspaceId: u.workspaceId, organizationId: orgId, sessionVersion: u.sessionVersion }
   await db.user.update({ where: { id: userId }, data: { workspaceId: fallback.id, organizationId: orgId } })
-  return { userId, workspaceId: fallback.id, organizationId: orgId }
+  return { userId, workspaceId: fallback.id, organizationId: orgId, sessionVersion: u.sessionVersion }
 }
 
 export type OrgScope = {

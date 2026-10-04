@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { sendMail } from '@/server/mail/send'
 import { passwordResetEmail } from '@/server/mail/templates'
-import { RESET_TTL_MS, clientIp, hashToken, newToken, resetIdentifier, tooMany } from '../_lib/shared'
+import { BLOCKED_MESSAGE, consume } from '@/server/security/rate-limit'
+import { RESET_TTL_MS, clientIp, hashToken, newToken, resetIdentifier } from '../_lib/shared'
 
 export const runtime = 'nodejs'
 
@@ -17,8 +18,9 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: 'Digite um e-mail válido.' }, { status: 400 })
   const { email } = parsed.data
 
-  if (tooMany(`req:ip:${clientIp(req)}`, 10, 15 * 60_000) || tooMany(`req:mail:${email}`, 3, 15 * 60_000)) {
-    return NextResponse.json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' }, { status: 429 })
+  // Cada pedido conta (exista a conta ou não): 3 por e-mail e 10 por IP a cada 15 min.
+  if ((await consume('resetRequest', { email, ip: clientIp(req) })).blocked) {
+    return NextResponse.json({ error: BLOCKED_MESSAGE }, { status: 429 })
   }
 
   const user = await db.user.findUnique({ where: { email }, select: { id: true } })

@@ -142,11 +142,17 @@ model User {
   image         String? // compat Auth.js
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  // Segurança do login (migração 0011): 2FA por TOTP e versão de sessão (invalida JWTs antigos).
+  totpSecret     String? // criptografado (AES-GCM, src/server/whatsapp/crypto.ts)
+  totpEnabledAt  DateTime?
+  totpLastStep   Int? // último passo de 30 s aceito (anti-reuso)
+  sessionVersion Int       @default(0)
 
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   accounts     Account[]
   sessions     Session[]
+  recoveryCodes RecoveryCode[]
 
   @@index([workspaceId])
   @@index([organizationId])
@@ -562,4 +568,33 @@ model BookingAttempt {
   @@index([workspaceId, ipHash, createdAt])
   @@index([workspaceId, telefoneHash, createdAt])
   @@index([createdAt])
+}
+
+// ---- Segurança do login (migração 0011) ----
+
+// Tentativas de login/redefinição, só com HMAC do e-mail e do IP (nunca o valor). Base dos limites; sobrevive a reinício.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  emailHash String
+  ipHash    String
+  sucesso   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([emailHash, createdAt])
+  @@index([ipHash, createdAt])
+  @@index([createdAt])
+}
+
+// Códigos de recuperação do 2FA: só o HMAC fica guardado; uso único (usedAt).
+model RecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([codeHash])
 }

@@ -2,7 +2,8 @@ import bcrypt from 'bcryptjs'
 import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { RESET_PREFIX, clientIp, hashToken, tooMany } from '../_lib/shared'
+import { BLOCKED_MESSAGE, consume } from '@/server/security/rate-limit'
+import { RESET_PREFIX, clientIp, hashToken } from '../_lib/shared'
 
 export const runtime = 'nodejs'
 
@@ -14,8 +15,8 @@ const bodySchema = z.object({
 const INVALID = { error: 'Este link é inválido ou expirou. Peça um novo.' }
 
 export async function POST(req: NextRequest) {
-  if (tooMany(`reset:ip:${clientIp(req)}`, 10, 15 * 60_000)) {
-    return NextResponse.json({ error: 'Muitas tentativas. Tente de novo em alguns minutos.' }, { status: 429 })
+  if ((await consume('resetConfirm', { ip: clientIp(req) })).blocked) {
+    return NextResponse.json({ error: BLOCKED_MESSAGE }, { status: 429 })
   }
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
 
   const email = row.identifier.slice(RESET_PREFIX.length)
   const passwordHash = await bcrypt.hash(password, 10)
-  const updated = await db.user.updateMany({ where: { email }, data: { passwordHash } })
+  const updated = await db.user.updateMany({ where: { email }, data: { passwordHash, sessionVersion: { increment: 1 } } })
   if (updated.count === 0) return NextResponse.json(INVALID, { status: 400 })
 
   await db.verificationToken.deleteMany({ where: { identifier: row.identifier } })

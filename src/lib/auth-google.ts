@@ -5,6 +5,22 @@ import { resetIdentifier } from '@/app/api/auth/password/_lib/shared'
 type GoogleAccount = { provider?: string; type?: string; providerAccountId?: string | null }
 type GoogleProfile = { email?: string | null; email_verified?: boolean | null; picture?: string | null } | undefined
 
+/** A conta que está entrando pelo Google (vinculada ou pelo e-mail) tem verificação em duas etapas ativa? */
+export async function googleAccountHasTwoFactor(account: GoogleAccount, profile: GoogleProfile): Promise<boolean> {
+  const sub = account.providerAccountId
+  const linked = sub
+    ? await db.account.findUnique({
+        where: { provider_providerAccountId: { provider: 'google', providerAccountId: sub } },
+        select: { user: { select: { totpEnabledAt: true } } },
+      })
+    : null
+  if (linked) return !!linked.user.totpEnabledAt
+  const email = profile?.email?.trim().toLowerCase()
+  if (!email) return false
+  const user = await db.user.findUnique({ where: { email }, select: { totpEnabledAt: true } })
+  return !!user?.totpEnabledAt
+}
+
 /**
  * Chamado no callback `signIn` do Auth.js, ANTES de o usuário ser localizado/criado.
  *
