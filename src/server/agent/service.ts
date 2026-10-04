@@ -6,6 +6,7 @@ import { generateReply, hasLlmKey, simulateReply } from './llm'
 import { detectHandoffRule, formatAgora, genericHandoffMessage } from '@/server/engine/rules'
 import { serviceTypesForPrompt } from '@/server/calendar/service-types'
 import { buildSystemPrompt, HANDOFF_MARKER } from './prompt'
+import { detectReplyLanguage, FIXED, IDIOMA_CONFIG_VALUES, parseIdiomaConfig, resolveReplyLanguage } from './i18n'
 import { createToolRunner, miniCalendar } from './tools'
 
 // Valores no banco (slugs) <-> rótulos da interface.
@@ -27,6 +28,7 @@ export const agentUpdateSchema = z.object({
   horario: z.enum(['Sempre', 'Fora do expediente', 'Só fins de semana']),
   handoffRules: z.array(z.string().trim().min(1).max(120)).max(20),
   canSchedule: z.boolean().optional(),
+  idioma: z.enum(IDIOMA_CONFIG_VALUES).optional(),
 })
 export type AgentUpdate = z.infer<typeof agentUpdateSchema>
 
@@ -43,9 +45,10 @@ export const agentTestSchema = z.object({
   prompt: z.string().max(4000).optional(),
   handoffRules: z.array(z.string().max(120)).max(20).optional(),
   canSchedule: z.boolean().optional(),
+  idioma: z.enum(IDIOMA_CONFIG_VALUES).optional(),
 })
 
-function toAgentDTO(a: { nome: string; tom: string; prompt: string; horario: string; handoffRules: string[]; canSchedule: boolean }): AgentDTO {
+function toAgentDTO(a: { nome: string; tom: string; prompt: string; horario: string; handoffRules: string[]; canSchedule: boolean; idioma: string }): AgentDTO {
   return {
     nome: a.nome,
     tom: TOM_FROM_DB[a.tom] ?? 'Amigável',
@@ -53,6 +56,7 @@ function toAgentDTO(a: { nome: string; tom: string; prompt: string; horario: str
     horario: HORARIO_FROM_DB[a.horario] ?? 'Sempre',
     handoffRules: a.handoffRules,
     canSchedule: a.canSchedule,
+    idioma: parseIdiomaConfig(a.idioma),
   }
 }
 
@@ -87,6 +91,7 @@ export async function updateAgent(workspaceId: string, input: AgentUpdate): Prom
     horario: HORARIO_DB[input.horario],
     handoffRules: input.handoffRules,
     ...(input.canSchedule === undefined ? {} : { canSchedule: input.canSchedule }),
+    ...(input.idioma === undefined ? {} : { idioma: input.idioma }),
   }
   const agent = await db.aiAgent.upsert({ where: { workspaceId }, create: { workspaceId, ...data }, update: data })
   return toAgentDTO(agent)
@@ -140,11 +145,15 @@ export async function testAgent(
   const tom = input.tom ?? agent.tom
   const prompt = input.prompt ?? agent.prompt
   const handoffRules = input.handoffRules ?? agent.handoffRules
-  const responsavel = responsavelNome.trim().split(/\s+/)[0] || 'o responsável'
+  const idioma = input.idioma ?? agent.idioma
+  // Mesma regra do motor real: idioma fixo ou (em auto) o da mensagem do cliente; o texto fixo de passagem segue o idioma.
+  const historico = [{ role: 'user', content: input.mensagem }]
+  const lang = resolveReplyLanguage(idioma, historico)
+  const responsavel = responsavelNome.trim().split(/\s+/)[0] || FIXED[lang].responsavel
 
   // Mesma detecção do motor real (rules.ts): desconto, reclamação, atendente e valor acima de R$ N.
   const hit = detectHandoffRule(input.mensagem, handoffRules)
-  if (hit) return { resposta: hit.mensagem(responsavel), handoff: true, simulado: !hasLlmKey() }
+  if (hit) return { resposta: hit.mensagem(responsavel, lang), handoff: true, simulado: !hasLlmKey() }
 
   const servicos = await serviceTypesForPrompt(workspaceId)
   // Com o agendamento ligado as ferramentas de LEITURA valem; as de escrita só simulam (dryRun) e não criam nada.
@@ -157,6 +166,8 @@ export async function testAgent(
     servicos,
     horarioAtendimento: ws.horarioAtendimento,
     agora: formatAgora(new Date()),
+    idioma,
+    idiomaDetectado: idioma === 'auto' ? detectReplyLanguage(historico) : null,
     agenda: runner ? { calendario: miniCalendar(new Date()), clienteNome: 'Cliente de teste' } : undefined,
   })
   const r = await generateReply({
@@ -166,7 +177,7 @@ export async function testAgent(
     tools: runner ?? undefined,
   })
   if (r.texto.includes(HANDOFF_MARKER)) {
-    return { resposta: genericHandoffMessage(responsavel), handoff: true, simulado: r.simulado }
+    return { resposta: genericHandoffMessage(responsavel, lang), handoff: true, simulado: r.simulado }
   }
   // Escritas na agenda só são simuladas no teste: deixa isso explícito para o dono.
   const nota = runner && runner.simulated.length > 0 ? `

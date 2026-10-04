@@ -8,11 +8,17 @@ import type { AgentDTO, AgentTestResultDTO, KnowledgeItemDTO } from '@/lib/types
 import { api } from './api'
 import { toKbItem, useDrawerData, useDrawerLoad } from './drawer-data'
 import { HANDOFF_OPCOES } from './mock-data'
-import type { Horario, KbItem, Tom } from './mock-data'
+import type { Horario, Idioma, KbItem, Tom } from './mock-data'
 import { DrawerShell, Field, SaveFooter, Section, Seg } from './parts'
 
 const TONS: Tom[] = ['Amigável', 'Profissional', 'Direto']
 const HORARIOS: Horario[] = ['Sempre', 'Fora do expediente', 'Só fins de semana']
+const IDIOMAS: { id: Idioma; label: string }[] = [
+  { id: 'auto', label: 'Automático' },
+  { id: 'pt', label: 'Português' },
+  { id: 'en', label: 'Inglês' },
+  { id: 'es', label: 'Espanhol' },
+]
 
 export function IaDrawer() {
   const { setAgentName } = useAppState()
@@ -66,7 +72,7 @@ export function IaDrawer() {
       // Envia o que está na tela (ainda não salvo) para o teste refletir as edições.
       const r = await api<AgentTestResultDTO>('/api/agent/test', {
         method: 'POST',
-        body: { mensagem, nome: agente.nome.trim() || undefined, tom: agente.tom, prompt: agente.prompt, handoffRules: handoff, canSchedule: agente.canSchedule },
+        body: { mensagem, nome: agente.nome.trim() || undefined, tom: agente.tom, prompt: agente.prompt, handoffRules: handoff, canSchedule: agente.canSchedule, idioma: agente.idioma },
       })
       setTestA(r.resposta)
     } catch (e) {
@@ -79,7 +85,7 @@ export function IaDrawer() {
   const salvar = async () => {
     const saved = await api<AgentDTO>('/api/agent', {
       method: 'PUT',
-      body: { nome: agente.nome, tom: agente.tom, prompt: agente.prompt, horario: agente.horario, handoffRules: handoff, canSchedule: agente.canSchedule },
+      body: { nome: agente.nome, tom: agente.tom, prompt: agente.prompt, horario: agente.horario, handoffRules: handoff, canSchedule: agente.canSchedule, idioma: agente.idioma },
     })
     setAgentName(saved.nome)
   }
@@ -99,6 +105,16 @@ export function IaDrawer() {
             <Seg options={TONS} value={agente.tom} onChange={(v) => edit({ tom: v })} label="Tom de voz" />
           </Field>
         </div>
+      </Section>
+
+      <Section label="Idioma das respostas" gap="gap-3">
+        <Seg
+          options={IDIOMAS.map((i) => i.label)}
+          value={IDIOMAS.find((i) => i.id === agente.idioma)?.label ?? 'Automático'}
+          onChange={(v) => edit({ idioma: IDIOMAS.find((i) => i.label === v)?.id ?? 'auto' })}
+          label="Idioma das respostas"
+        />
+        <div className="text-[12px] text-light-neutral-400">Automático — responde no idioma do cliente. Escolha um idioma para o agente responder sempre nele.</div>
       </Section>
 
       <Section label="Instruções" gap="gap-3">

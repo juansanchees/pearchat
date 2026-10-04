@@ -2,6 +2,7 @@ import type { AiAgent, AiJob, Contact, Conversation, Message } from '@prisma/cli
 import { db } from '@/lib/db'
 import { generateReply, LlmError } from '@/server/agent/llm'
 import type { ChatMessage } from '@/server/agent/llm'
+import { detectReplyLanguage, FIXED, LIMITE_TODOS, parseIdiomaConfig, resolveReplyLanguage } from '@/server/agent/i18n'
 import { buildSystemPrompt, HANDOFF_MARKER } from '@/server/agent/prompt'
 import { createToolRunner, miniCalendar } from '@/server/agent/tools'
 import { remarcarContext } from '@/server/calendar/confirmation'
@@ -41,7 +42,6 @@ const VISION_MAX_BYTES = 4 * 1024 * 1024
 const VISION_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 const RUN_BUDGET_MS = 30_000 // tempo máximo de uma passada do runDueAiJobs
 
-const LIMIT_NOTICE = 'Vou chamar alguém da nossa equipe para continuar seu atendimento.'
 const NOT_FAILED_OUT = { NOT: { direction: 'OUT' as const, status: 'FALHOU' as const } }
 
 // Notas de jobs cancelados que não significam "cliente atendido" (ver enqueuePendingForWorkspace).
@@ -318,6 +318,9 @@ async function execute(job: AiJob): Promise<JobResult> {
   const to = contactRef(conv.contact)
   const responsavel = await responsavelNome(workspaceId)
   const { agent } = el
+  // Idioma da resposta: o configurado, ou (em auto) o da última mensagem do cliente. Também escolhe os textos fixos abaixo.
+  const idioma = parseIdiomaConfig(agent.idioma)
+  const lang = resolveReplyLanguage(idioma, history)
 
   // Modo restrito (teste vencido / pagamento atrasado além da carência / assinatura cancelada e vencida): a IA não
   // responde; a conversa vai para uma pessoa em silêncio (nada é dito ao cliente) e o dono é avisado como em qualquer passagem.
@@ -330,15 +333,15 @@ async function execute(job: AiJob): Promise<JobResult> {
   const quota = await getAiQuota(workspaceId)
   if (quota.limite !== null && quota.usadas >= quota.limite) {
     // Avisa o cliente UMA vez (sem falar de plano/limite) antes de passar para a equipe.
-    const jaAvisou = await db.message.findFirst({ where: { conversationId, author: 'IA', body: LIMIT_NOTICE }, select: { id: true } })
-    await handoff({ session, conv, motivo: 'limite do plano', message: jaAvisou ? null : LIMIT_NOTICE })
+    const jaAvisou = await db.message.findFirst({ where: { conversationId, author: 'IA', body: { in: LIMITE_TODOS } }, select: { id: true } })
+    await handoff({ session, conv, motivo: 'limite do plano', message: jaAvisou ? null : FIXED[lang].limite })
     return { kind: 'done', note: HANDOFF_LIMIT_NOTE }
   }
 
   // Regras de passagem por palavra-chave: antes de chamar o modelo.
   const hit = detectHandoffRule(customerText, agent.handoffRules)
   if (hit) {
-    await handoff({ session, conv, motivo: hit.motivo, message: hit.mensagem(responsavel) })
+    await handoff({ session, conv, motivo: hit.motivo, message: hit.mensagem(responsavel, lang) })
     return { kind: 'done', note: handoffRuleNote(hit.motivo) }
   }
 
@@ -372,6 +375,8 @@ async function execute(job: AiJob): Promise<JobResult> {
     agora: formatAgora(new Date()),
     midia: { audio: transcriptionAvailable(), imagem: visionOn },
     agenda: agendaCtx,
+    idioma,
+    idiomaDetectado: idioma === 'auto' ? detectReplyLanguage(history) : null,
   })
 
   // Visão: a imagem da ÚLTIMA mensagem do cliente (até 4 MB, formato aceito pelos modelos) segue junto da legenda.
@@ -394,7 +399,7 @@ async function execute(job: AiJob): Promise<JobResult> {
         messages: history,
         tools: runner ?? undefined,
       })
-      texto = ungroundedMoney(r2.texto, corpus).length > 0 ? 'Esse valor eu preciso confirmar com a equipe e já te retorno, tá?' : r2.texto
+      texto = ungroundedMoney(r2.texto, corpus).length > 0 ? FIXED[lang].valorSeguro : r2.texto
     }
   } catch (e) {
     await saveToolLog(job, runner)
@@ -413,7 +418,7 @@ async function execute(job: AiJob): Promise<JobResult> {
   if (newest?.id !== last.id) return { kind: 'done', note: 'superado: chegou mensagem nova durante a geração' }
 
   if (texto.includes(HANDOFF_MARKER)) {
-    await handoff({ session, conv, motivo: 'regra de passagem (decisão da IA)', message: genericHandoffMessage(responsavel) })
+    await handoff({ session, conv, motivo: 'regra de passagem (decisão da IA)', message: genericHandoffMessage(responsavel, lang) })
     return { kind: 'done', note: HANDOFF_MODEL_NOTE }
   }
 
@@ -444,7 +449,7 @@ async function execute(job: AiJob): Promise<JobResult> {
  */
 export function stripRepeatedGreeting(texto: string, history: ChatMessage[]): string {
   if (!history.some((m) => m.role === 'assistant')) return texto
-  const rest = texto.replace(/^\s*(?:oi|ol[aá])\s*[!.]+\s*/i, '')
+  const rest = texto.replace(/^\s*(?:oi|ol[aá]|hola|hi|hello|hey)\s*[!.]+\s*/i, '')
   if (rest === texto || rest.trim().length < 3) return texto
   return rest.charAt(0).toUpperCase() + rest.slice(1)
 }

@@ -72,6 +72,8 @@ export interface WhatsAppStatusDTO {
 
 export type AgentTom = 'Amigável' | 'Profissional' | 'Direto'
 export type AgentHorario = 'Sempre' | 'Fora do expediente' | 'Só fins de semana'
+/** Idioma das respostas da IA: auto = o idioma do cliente. */
+export type AgentIdioma = 'auto' | 'pt' | 'en' | 'es'
 
 export interface AgentDTO {
   nome: string
@@ -80,6 +82,7 @@ export interface AgentDTO {
   horario: AgentHorario
   handoffRules: string[]
   canSchedule: boolean
+  idioma: AgentIdioma
 }
 
 export interface KnowledgeItemDTO {

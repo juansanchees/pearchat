@@ -388,6 +388,7 @@ model AiAgent {
   horario      String   @default("sempre")
   handoffRules String[]
   canSchedule  Boolean  @default(false)
+  idioma       String   @default("auto") // idioma das respostas: auto | pt | en | es
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

@@ -4,6 +4,7 @@
 
 export type Tom = 'Amigável' | 'Profissional' | 'Direto'
 export type Horario = 'Sempre' | 'Fora do expediente' | 'Só fins de semana'
+export type Idioma = 'auto' | 'pt' | 'en' | 'es'
 export type KbItem = { id: string; p: string; r: string }
 
 export const AGENTE_INICIAL = {
@@ -11,6 +12,7 @@ export const AGENTE_INICIAL = {
   nome: 'Luna',
   tom: 'Amigável' as Tom,
   horario: 'Sempre' as Horario,
+  idioma: 'auto' as Idioma,
   prompt: '',
 }
 

@@ -1,8 +1,9 @@
+import { FIXED, type Idioma } from '@/server/agent/i18n'
 import { norm, spParts } from './util'
 
 // ---- Regras de passagem para humano ----
 
-export type HandoffHit = { motivo: string; mensagem: (responsavel: string) => string }
+export type HandoffHit = { motivo: string; mensagem: (responsavel: string, lang?: Idioma) => string }
 
 /**
  * Normaliza o texto do cliente para a detecção: sem acento, minúsculo e com as abreviações mais comuns
@@ -184,19 +185,19 @@ export function detectHandoffRule(customerText: string, rules: string[]): Handof
     if (r.includes('desconto') && anyMatch(q, RE_DESCONTO, { negation: true })) {
       return {
         motivo: rule,
-        mensagem: (resp) => `Vou chamar ${resp} para falar sobre condições especiais com você. Já já responde por aqui.`,
+        mensagem: (resp, lang = 'pt') => FIXED[lang].handoffDesconto(resp),
       }
     }
     if ((r.includes('reclama') || r.includes('problema')) && anyMatch(q, RE_RECLAMACAO, { negation: true, hypothetical: true })) {
-      return { motivo: rule, mensagem: (resp) => `Sinto muito por isso. Vou passar sua conversa para ${resp}, que vai resolver com você o quanto antes.` }
+      return { motivo: rule, mensagem: (resp, lang = 'pt') => FIXED[lang].handoffReclamacao(resp) }
     }
     if ((r.includes('atendente') || r.includes('pessoa') || r.includes('humano')) && anyMatch(q, RE_ATENDENTE, { negation: false })) {
-      return { motivo: rule, mensagem: (resp) => `Claro, já estou passando sua conversa para ${resp}.` }
+      return { motivo: rule, mensagem: (resp, lang = 'pt') => FIXED[lang].handoff(resp) }
     }
     if ((r.includes('acima de') || r.includes('r$')) && /\d/.test(r)) {
       const valor = maxMoney(customerText)
       if (valor !== null && valor > limitOf(rule)) {
-        return { motivo: rule, mensagem: (resp) => `Para um pedido desse valor prefiro chamar ${resp} para fechar os detalhes com você. Já já responde por aqui.` }
+        return { motivo: rule, mensagem: (resp, lang = 'pt') => FIXED[lang].handoffValorAlto(resp) }
       }
     }
   }
@@ -212,7 +213,7 @@ export function formatAgora(d: Date): string {
   return `${DIAS_SEMANA[p.dow]}, ${day}/${m}/${y}, ${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
 }
 
-export const genericHandoffMessage = (responsavel: string) => `Claro, já estou passando sua conversa para ${responsavel}.`
+export const genericHandoffMessage = (responsavel: string, lang: Idioma = 'pt') => FIXED[lang].handoff(responsavel)
 
 // ---- Horário do agente ("Quando responder") ----
 

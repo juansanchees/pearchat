@@ -1,0 +1,1 @@
+ALTER TABLE "AiAgent" ADD COLUMN "idioma" TEXT NOT NULL DEFAULT 'auto';
