@@ -10,6 +10,7 @@ import { toKbItem, useDrawerData, useDrawerLoad } from './drawer-data'
 import { HANDOFF_OPCOES } from './mock-data'
 import type { Horario, KbItem, Tom } from './mock-data'
 import { DrawerShell, Field, SaveFooter, Section, Seg } from './parts'
+import { PendingAiSection } from './pending-ai-section'
 
 const TONS: Tom[] = ['Amigável', 'Profissional', 'Direto']
 const HORARIOS: Horario[] = ['Sempre', 'Fora do expediente', 'Só fins de semana']
@@ -86,6 +87,7 @@ export function IaDrawer() {
 
   return (
     <DrawerShell id="ia" loading={loading} footer={<SaveFooter titulo="Agentes de IA" onSave={salvar} />}>
+      <PendingAiSection />
       <Section label="Identidade" gap="gap-3">
         <div className="flex flex-wrap gap-3">
           <Field label="Nome do agente" className="min-w-0 flex-[1_1_160px]">

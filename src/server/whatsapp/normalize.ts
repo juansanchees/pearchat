@@ -3,6 +3,7 @@ import type { ConnectionStatusKind, MessageStatusKind } from '@/lib/types'
 import { onlyDigits, toE164 } from './phone'
 import { MEDIA_LABEL as LABEL_BY_KIND, type MediaKind } from '@/server/media/mime'
 import type { ContactRef } from './provider'
+import { CALL_LABEL, EVENT_LABEL, GROUP_INVITE_LABEL, POLL_LABEL, UNSUPPORTED_LABEL } from './labels'
 
 // Normalização dos webhooks (Meta e Evolution) em tipos comuns. Funções puras: sem I/O.
 
@@ -181,7 +182,7 @@ export function metaMessageContent(msg: Record<string, unknown>): { body: string
   }
   if (type === 'button') return { body: asStr(rec(msg.button).text) ?? '[Resposta de botão]' }
   if (type === 'order') return { body: '[Pedido]' }
-  return { body: '[Mensagem não suportada]' }
+  return { body: UNSUPPORTED_LABEL }
 }
 
 /** Payload do webhook da Meta (campos messages e smb_message_echoes) -> lotes por phone_number_id. Entradas inválidas são ignoradas. */
@@ -413,7 +414,7 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
         continue
       }
       const media = extractEvolutionMedia(m.data.message, m.data.key.remoteJid)
-      const body = media ? (media.caption || LABEL_BY_KIND[media.type]) : (m.data.message?.conversation ?? m.data.message?.extendedTextMessage?.text)
+      const body = media ? (media.caption || LABEL_BY_KIND[media.type]) : (m.data.message?.conversation ?? m.data.message?.extendedTextMessage?.text ?? plainTextOf(m.data.message))
       if (!body) continue
       const from = jidToRef(m.data.key.remoteJid, m.data.key.remoteJidAlt ?? m.data.key.senderPn)
       if (!from) continue
@@ -484,7 +485,7 @@ export function isIndividualJid(jid: string): boolean {
   return false
 }
 
-const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage']
+const WRAPPERS = ['ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage', 'deviceSentMessage']
 
 const MEDIA_LABEL: [string, string][] = [
   ['imageMessage', '[Imagem]'],
@@ -497,7 +498,23 @@ const MEDIA_LABEL: [string, string][] = [
   ['liveLocationMessage', '[Localização]'],
   ['contactMessage', '[Contato]'],
   ['contactsArrayMessage', '[Contato]'],
+  ['lottieStickerMessage', '[Figurinha]'],
+  ['orderMessage', '[Pedido]'],
+  ['productMessage', '[Produto]'],
+  ['callLogMesssage', CALL_LABEL], // (sic) o campo do protocolo tem três "s"
+  ['call', CALL_LABEL],
+  ['groupInviteMessage', GROUP_INVITE_LABEL],
+  ['eventMessage', EVENT_LABEL],
 ]
+
+/** Respostas a botão/lista: o texto que o cliente escolheu. */
+const REPLY_FIELDS: [string, string][] = [
+  ['buttonsResponseMessage', 'selectedDisplayText'],
+  ['listResponseMessage', 'title'],
+  ['templateButtonReplyMessage', 'selectedDisplayText'],
+]
+/** Criação de enquete. Os votos (pollUpdateMessage) continuam ignorados. */
+const POLL_FIELDS = ['pollCreationMessage', 'pollCreationMessageV2', 'pollCreationMessageV3']
 
 const SKIP_KEYS = new Set([
   'messageContextInfo',
@@ -507,6 +524,7 @@ const SKIP_KEYS = new Set([
   'pollUpdateMessage',
   'keepInChatMessage',
   'encReactionMessage',
+  'albumMessage', // cabeçalho do álbum: as fotos chegam como mensagens de imagem à parte
 ])
 
 /** Texto da mensagem da Evolution/Baileys; mídia vira "[Imagem]" etc. null = não é conteúdo de conversa. */
@@ -530,8 +548,28 @@ export function extractEvolutionBody(message: unknown): string | null {
       return caption ? `${label} ${caption}` : label
     }
   }
+  for (const [key, field] of REPLY_FIELDS) {
+    const r = m[key]
+    if (!isObj(r)) continue
+    const text = typeof r[field] === 'string' ? (r[field] as string).trim() : ''
+    return text || '[Resposta interativa]'
+  }
+  if (isObj(m.interactiveResponseMessage)) return '[Resposta interativa]'
+  for (const key of POLL_FIELDS) {
+    const poll = m[key]
+    if (isObj(poll)) return typeof poll.name === 'string' && poll.name.trim() ? `${POLL_LABEL} ${poll.name.trim()}` : POLL_LABEL
+  }
   if (Object.keys(m).every((k) => SKIP_KEYS.has(k))) return null
-  return '[Mensagem não suportada]'
+  return UNSUPPORTED_LABEL
+}
+
+/** Texto simples de uma mensagem ao vivo, também dentro de "mensagem temporária"/"ver uma vez". */
+function plainTextOf(message: unknown): string | undefined {
+  const u = unwrapMessage(message)
+  if (!u) return undefined
+  if (typeof u.inner.conversation === 'string' && u.inner.conversation) return u.inner.conversation
+  const ext = u.inner.extendedTextMessage
+  return isObj(ext) && typeof ext.text === 'string' && ext.text ? ext.text : undefined
 }
 
 const MEDIA_FIELDS: [string, MediaKind][] = [

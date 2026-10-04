@@ -15,6 +15,7 @@ export function ChatHeader({
   agentName,
   onMode,
   onBack,
+  aiReply,
 }: {
   conversation: ConversationItem
   iaOn: boolean
@@ -24,6 +25,8 @@ export function ChatHeader({
   onMode: (mode: ConversationModeKind) => void
   /** Volta para a lista (só aparece abaixo de 900 px). */
   onBack?: () => void
+  /** Conversa esperando resposta: ação "Responder com a IA" (some quando não há o que responder). */
+  aiReply?: { pendente: boolean; respondendo: boolean; onClick: () => void }
 }) {
   const isIaMode = iaOn && conversation.mode === 'ia'
 
@@ -78,6 +81,17 @@ export function ChatHeader({
         {pill.text}
       </span>
       <AssigneePicker conversation={conversation} />
+      {aiReply && (aiReply.pendente || aiReply.respondendo) ? (
+        <button
+          type="button"
+          onClick={aiReply.onClick}
+          disabled={aiReply.respondendo}
+          className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-solid border-light-accent-500 px-[13px] py-1.5 text-xs font-medium leading-tight text-light-accent-300 hover:bg-[rgba(46,154,72,.12)] active:bg-[rgba(46,154,72,.22)] disabled:cursor-default disabled:opacity-70"
+        >
+          <Sparkle size={14} weight={aiReply.respondendo ? 'fill' : 'regular'} className={aiReply.respondendo ? 'animate-pulse' : undefined} />
+          {aiReply.respondendo ? `${agentName} respondendo…` : 'Responder com a IA'}
+        </button>
+      ) : null}
       {isIaMode ? (
         <button
           type="button"

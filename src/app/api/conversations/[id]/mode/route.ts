@@ -5,6 +5,8 @@ import { db } from '@/lib/db'
 import { badRequest, isValidId, notFound, readJson, sessionIds, unauthorized } from '@/server/messages/api'
 import { loadConversationItem } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
+import { DEVOLVER_JANELA_MS, requestAiReply } from '@/server/engine/pending'
+import { logError } from '@/server/engine/util'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,6 +43,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // Equipe: "Assumir conversa" sem responsável atribui a quem assumiu.
   if (parsed.data.mode === 'humano') {
     await db.conversation.updateMany({ where: { id: conv.id, assigneeId: null }, data: { assigneeId: userId, assignedAt: new Date() } })
+  }
+  // "Devolver para a IA": se o cliente ficou sem resposta há menos de 24 h, a IA responde em seguida (mesmo caminho do
+  // "Responder com a IA"; mais antiga que isso, só devolve). Falha aqui nunca desfaz a devolução.
+  if (parsed.data.mode === 'ia') {
+    await requestAiReply(workspaceId, conv.id, { maxAgeMs: DEVOLVER_JANELA_MS }).catch((e) => logError('mode', 'resposta ao devolver para a IA', e))
   }
   const item = await loadConversationItem(workspaceId, conv.id)
   if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })

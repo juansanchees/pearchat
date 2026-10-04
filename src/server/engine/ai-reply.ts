@@ -18,6 +18,8 @@ import { automationAllowed } from '@/server/billing/entitlements'
 import { HANDOFF_BILLING_NOTE, HANDOFF_LIMIT_NOTE, HANDOFF_MODEL_NOTE, handoffRuleNote } from './handoff-reasons'
 import { contactRef, OutboundError, sendAndRecord } from './outbound'
 import { cancelPendingFollowUps } from './followup'
+import { isManualNote, keepManual, plainNote } from './ai-job-notes'
+import { isNonReplyableBody } from '@/server/whatsapp/labels'
 import { agentMayReplyAt, detectHandoffRule, formatAgora, genericHandoffMessage, isStopRequest, ungroundedMoney } from './rules'
 import { bumpUsage, displayName, engineDisabled, getConnected, log, logError, shortError } from './util'
 
@@ -51,13 +53,14 @@ export const AI_JOB = { pendente: 'pendente', executando: 'executando', feito: '
 
 type Eligibility = { ok: true; agent: AiAgent; horarioAtendimento: string | null } | { ok: false; reason: string }
 
-async function loadAgentFor(workspaceId: string, at: Date): Promise<Eligibility> {
+async function loadAgentFor(workspaceId: string, at: Date, opts: { ignoreSchedule?: boolean } = {}): Promise<Eligibility> {
   const [agent, ws] = await Promise.all([
     db.aiAgent.findUnique({ where: { workspaceId } }),
     db.workspace.findUnique({ where: { id: workspaceId }, select: { horarioAtendimento: true } }),
   ])
   if (!agent?.enabled) return { ok: false, reason: 'IA desligada' }
-  if (!agentMayReplyAt(agent.horario, ws?.horarioAtendimento ?? null, at)) return { ok: false, reason: 'fora do horário do agente' }
+  // Pedido de uma pessoa ("Responder com a IA"): ela decidiu agora, o horário do agente não a segura.
+  if (!opts.ignoreSchedule && !agentMayReplyAt(agent.horario, ws?.horarioAtendimento ?? null, at)) return { ok: false, reason: 'fora do horário do agente' }
   return { ok: true, agent, horarioAtendimento: ws?.horarioAtendimento ?? null }
 }
 
@@ -116,6 +119,7 @@ export async function enqueuePendingForWorkspace(workspaceId: string): Promise<n
       !!last &&
       last.direction === 'IN' &&
       !last.imported &&
+      (!!last.mediaType || !isNonReplyableBody(last.body)) &&
       now.getTime() - last.createdAt.getTime() >= 6_000 &&
       now.getTime() - last.createdAt.getTime() < SWEEP_LOOKBACK_MS &&
       agentMayReplyAt(el.agent.horario, el.horarioAtendimento, last.createdAt)
@@ -276,7 +280,8 @@ async function execute(job: AiJob): Promise<JobResult> {
   if (!conv) return { kind: 'done', note: 'cancelado: conversa não existe' }
   if (conv.mode === 'HUMANO') return { kind: 'done', note: 'cancelado: conversa em modo humano' }
   if (conv.contact.optOut) return { kind: 'done', note: 'cancelado: contato pediu para parar' }
-  const el = await loadAgentFor(workspaceId, new Date())
+  const manual = isManualNote(job.error) // criado por pedido (ver ai-job-notes.ts)
+  const el = await loadAgentFor(workspaceId, new Date(), { ignoreSchedule: manual })
   if (!el.ok) return { kind: 'done', note: `cancelado: ${el.reason}` }
   const session = await getConnected(workspaceId)
   if (!session) return { kind: 'done', note: 'cancelado: WhatsApp desconectado' }
@@ -285,8 +290,10 @@ async function execute(job: AiJob): Promise<JobResult> {
   const recent = await db.message.findMany({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: { createdAt: 'desc' }, take: HISTORY_LIMIT })
   const last = recent[0]
   if (!last || last.direction !== 'IN') return { kind: 'done', note: 'nada a responder (já respondida)' }
-  // Histórico importado do WhatsApp nunca gera resposta.
-  if (last.imported) return { kind: 'done', note: 'nada a responder (mensagem importada)' }
+  // Histórico importado do WhatsApp não gera resposta sozinho; só um pedido de uma pessoa ("Responder com a IA") o responde.
+  if (last.imported && !manual) return { kind: 'done', note: 'nada a responder (mensagem importada)' }
+  // Chamada, enquete, convite ou tipo desconhecido não é o cliente falando.
+  if (!last.mediaType && isNonReplyableBody(last.body)) return { kind: 'done', note: 'nada a responder (evento do sistema)' }
   // Tudo que o cliente mandou desde a nossa última mensagem.
   const unansweredMsgs: Message[] = []
   for (const m of recent) {
@@ -300,7 +307,7 @@ async function execute(job: AiJob): Promise<JobResult> {
     (m) => !m.imported && ((m.mediaType === 'audio' && m.transcriptStatus === 'pendente') || (visionOn && m.id === last.id && m.mediaType === 'image' && m.mediaStatus === 'pendente')),
   )
   if (waiting) {
-    const done = Number(new RegExp(`^${MEDIA_WAIT_NOTE}(\\d+)`).exec(job.error ?? '')?.[1] ?? 0)
+    const done = Number(new RegExp(`^${MEDIA_WAIT_NOTE}(\\d+)`).exec(plainNote(job.error))?.[1] ?? 0)
     if (done < MEDIA_WAIT_MAX) return { kind: 'wait', note: `${MEDIA_WAIT_NOTE}${done + 1}` }
   }
 
@@ -405,7 +412,7 @@ async function execute(job: AiJob): Promise<JobResult> {
   // Revalida: a conversa pode ter virado HUMANO, a IA ter sido desligada, ou chegado mais mensagens.
   const [conv2, el2, newest] = await Promise.all([
     db.conversation.findFirst({ where: { id: conversationId, workspaceId }, select: { mode: true } }),
-    loadAgentFor(workspaceId, new Date()),
+    loadAgentFor(workspaceId, new Date(), { ignoreSchedule: manual }),
     db.message.findFirst({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: { createdAt: 'desc' }, select: { id: true } }),
   ])
   if (!conv2 || conv2.mode === 'HUMANO') return { kind: 'done', note: 'cancelado: virou modo humano durante a geração' }
@@ -477,13 +484,13 @@ async function runJob(job: AiJob): Promise<boolean> {
       await finish(job, 'feito', result.note)
     } else if (result.kind === 'wait') {
       // Espera por mídia não gasta tentativa: devolve a contagem e reagenda.
-      await db.aiJob.update({ where: { id: job.id }, data: { status: AI_JOB.pendente, attempts: job.attempts, runAt: new Date(Date.now() + MEDIA_WAIT_MS), error: result.note } })
+      await db.aiJob.update({ where: { id: job.id }, data: { status: AI_JOB.pendente, attempts: job.attempts, runAt: new Date(Date.now() + MEDIA_WAIT_MS), error: keepManual(job.error, result.note) } })
       log('ai', `job ${job.id} aguardando mídia (${result.note})`)
     } else if (attempts < MAX_ATTEMPTS) {
       const wait = RETRY_DELAYS_MS[attempts - 1] ?? 45_000
       await db.aiJob.update({
         where: { id: job.id },
-        data: { status: AI_JOB.pendente, runAt: new Date(Date.now() + wait), error: result.error },
+        data: { status: AI_JOB.pendente, runAt: new Date(Date.now() + wait), error: keepManual(job.error, result.error) },
       })
       log('ai', `job ${job.id} falhou (tentativa ${attempts}/${MAX_ATTEMPTS}); nova tentativa em ${wait / 1000}s`)
     } else {
@@ -511,7 +518,7 @@ async function runJob(job: AiJob): Promise<boolean> {
 async function recoverStaleJobs(now: Date): Promise<void> {
   const stale = await db.aiJob.findMany({
     where: { status: AI_JOB.executando, runAt: { lt: new Date(now.getTime() - STALE_RUNNING_MS) } },
-    select: { id: true, attempts: true, workspaceId: true, conversationId: true },
+    select: { id: true, attempts: true, workspaceId: true, conversationId: true, error: true },
   })
   for (const j of stale) {
     const exhausted = j.attempts >= MAX_ATTEMPTS
@@ -519,7 +526,7 @@ async function recoverStaleJobs(now: Date): Promise<void> {
       where: { id: j.id, status: AI_JOB.executando },
       data: exhausted
         ? { status: AI_JOB.erro, error: 'Interrompido: o servidor reiniciou durante a execução' }
-        : { status: AI_JOB.pendente, runAt: now, error: 'Retomado após interrupção do servidor' },
+        : { status: AI_JOB.pendente, runAt: now, error: keepManual(j.error, 'Retomado após interrupção do servidor') },
     })
     if (res.count !== 1) continue
     log('ai', `job ${j.id} estava preso em executando; ${exhausted ? 'marcado como erro' : 'retomado'}`)

@@ -263,6 +263,36 @@ export function AppStateProvider({
     }
   })
 
+  // Ao LIGAR a IA: se há conversas das últimas 24 h esperando resposta (as que a varredura automática não pega, como as do
+  // histórico importado), avisa com uma ação que abre o bloco "Conversas esperando resposta". Não responde sozinho.
+  // Espera a varredura do motor (5 s) passar, para contar só o que continua parado. Só dono/administrador (o servidor decide).
+  const offerPendingReplies = useCallback(() => {
+    window.setTimeout(() => {
+      fetch('/api/conversations/pending-ai?janela=24h', { cache: 'no-store' })
+        .then(async (res) => (res.ok ? ((await res.json()) as { total: number }) : null))
+        .then((r) => {
+          if (!r || r.total <= 0) return
+          toast({
+            icon: <Sparkle size={18} weight="fill" />,
+            title: `${r.total} ${r.total === 1 ? 'conversa esperando' : 'conversas esperando'} resposta`,
+            text: 'Clientes que escreveram e ninguém respondeu',
+            action: {
+              label: 'Responder com a IA',
+              onClick: () => {
+                try {
+                  sessionStorage.setItem('pearchat:focus-pending', '1')
+                } catch {
+                  /* sem sessionStorage */
+                }
+                setDrawer('ia')
+              },
+            },
+          })
+        })
+        .catch(() => {})
+    }, 6500)
+  }, [toast])
+
   const setAutomation = useCallback(
     async (key: AutomationKey, on: boolean) => {
       if (on && !connected) {
@@ -298,6 +328,7 @@ export function AppStateProvider({
             ? { icon: <Sparkle size={18} weight="fill" />, title: 'Agente de IA ligado', text: `${agentName} vai responder as próximas conversas` }
             : { icon: <PauseCircle size={18} weight="fill" />, title: 'Agente de IA desligado', text: 'Novas conversas ficam com você' },
         )
+        if (on) offerPendingReplies()
       } else if (key === 'disparos') {
         toast(
           on
@@ -312,7 +343,7 @@ export function AppStateProvider({
         )
       }
     },
-    [automations, connected, toast, agentName, fuQueueCount],
+    [automations, connected, toast, agentName, fuQueueCount, offerPendingReplies],
   )
 
   const closeDrawer = useCallback(() => setDrawer(null), [])
