@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic'
 
 /** GET /api/calendar -> CalendarStateDto (sem conexão: conectado=false e padrões da spec). */
 export async function GET() {
+  const deny = await denyUnless('agenda.use'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   return NextResponse.json(await getCalendarState(workspaceId))

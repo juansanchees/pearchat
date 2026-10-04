@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowClockwise, CalendarCheck, Warning } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
+import { usePermissions } from '@/components/app/use-permissions'
 import { emitAgendaChanged } from '@/components/app/events'
 import { Spinner } from '@/components/pear'
 import type { CalendarStateDto } from '@/server/calendar/types'
@@ -32,6 +33,7 @@ export function Agenda() {
   const sp = useSearchParams()
   const router = useRouter()
   const { toast, agentName } = useAppState()
+  const { can } = usePermissions()
   const { cal, setCal, loading, error, reload } = useCalendarState()
   const [step, setStep] = useState<ConnectStep>(null)
   const [realMode, setRealMode] = useState(false)
@@ -109,7 +111,7 @@ export function Agenda() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-light-bg text-light-text">
-      <AgendaTopBar subtitle={subtitle} showIa={!!cal} iaOn={!!cal?.iaPodeAgendar} onIa={() => void toggleIa()} />
+      <AgendaTopBar subtitle={subtitle} showIa={!!cal && can('calendar.manage')} iaOn={!!cal?.iaPodeAgendar} onIa={() => void toggleIa()} />
 
       {loading && !cal && (
         <div className="grid flex-1 place-items-center">

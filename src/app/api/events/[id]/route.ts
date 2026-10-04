@@ -1,3 +1,4 @@
+import { denyUnless } from '@/server/auth/guard'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import type { Prisma } from '@prisma/client'
@@ -58,6 +59,7 @@ const patchSchema = z
  * 200 EventWriteResponse | 400 | 401 | 404 | 409 CONFLITO | 422 CONTATO_INVALIDO.
  */
 export async function PATCH(req: NextRequest, { params }: Ctx) {
+  const deny = await denyUnless('agenda.use'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   if (!isValidId(params.id)) return notFound()
@@ -161,6 +163,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
  * Eventos lidos do Google (ids "g:...") não existem aqui: 404.
  */
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
+  const deny = await denyUnless('agenda.use'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   if (!isValidId(params.id)) return notFound()

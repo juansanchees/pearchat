@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CalendarCheck, Clock, GoogleLogo, PencilSimple, Plugs, Trash, Warning } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
 import { AGENDA_CHANGED, emitAgendaChanged } from '@/components/app/events'
+import { usePermissions } from '@/components/app/use-permissions'
 import { Spinner } from '@/components/pear'
 import type { ServiceTypeDto } from '@/server/calendar/types'
 import type { CalendarStateDto, EventDeleteResponse, EventDto, EventWriteResponse, Lembrete } from '@/server/calendar/types'
@@ -37,6 +38,8 @@ export function ConnectedView({
   onConnectGoogle?: () => void
 }) {
   const { toast, wa, agentName } = useAppState()
+  // Atendente usa a agenda, mas não a gestão (Google, preferências, link, tipos): o servidor também barra (calendar.manage).
+  const gerir = usePermissions().can('calendar.manage')
 
   // "Hoje" só é calculado no cliente (evita divergência de hidratação).
   const [today, setToday] = useState<string | null>(null)
@@ -343,7 +346,7 @@ export function ConnectedView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {!cal.conectado ? (
+      {!gerir && (!cal.conectado || reconectar || (cal.demo && cal.googleConfigurado)) ? null : !cal.conectado ? (
         <Banner
           tone="info"
           text="Você está usando a agenda do PearChat. Conecte o Google Agenda para sincronizar seus compromissos."
@@ -436,7 +439,7 @@ export function ConnectedView({
               setDuracao(m)
               setHora(editing ? hora : '')
             }}
-            onEditTipos={() => setEditorOpen(true)}
+            onEditTipos={gerir ? () => setEditorOpen(true) : undefined}
             date={selDate}
             onDate={(d) => {
               goToDate(d)
@@ -453,6 +456,7 @@ export function ConnectedView({
             onCancelEdit={cancelEdit}
           />
         )}
+        {gerir && (
         <Preferences
           duracao={cal.duracaoPadraoMin}
           onDuracao={(d) => void patch({ duracaoPadraoMin: d })}
@@ -469,6 +473,7 @@ export function ConnectedView({
           disconnecting={disconnecting}
           onDisconnect={() => void desconectar()}
         />
+        )}
       </div>
     </div>
     </div>

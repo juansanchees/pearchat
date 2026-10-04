@@ -1,3 +1,4 @@
+import { denyUnless } from '@/server/auth/guard'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
@@ -39,6 +40,7 @@ const querySchema = z.object({
  * duracaoMin omitido -> duração padrão da conexão (ou 60). Resposta: FreeSlotsResponse.
  */
 export async function GET(req: NextRequest) {
+  const deny = await denyUnless('agenda.use'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
 

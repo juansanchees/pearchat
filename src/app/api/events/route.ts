@@ -1,3 +1,4 @@
+import { denyUnless } from '@/server/auth/guard'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
@@ -40,6 +41,7 @@ const querySchema = z.object({ from: instant, to: instant })
  * Devolve eventos que se sobrepõem a [from, to). Resposta: EventListResponse.
  */
 export async function GET(req: NextRequest) {
+  const deny = await denyUnless('agenda.use'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
 
@@ -102,6 +104,7 @@ const bodySchema = z
  * 201 EventWriteResponse | 400 | 401 | 409 CONFLITO | 422 CONTATO_INVALIDO.
  */
 export async function POST(req: NextRequest) {
+  const deny = await denyUnless('agenda.use'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
 

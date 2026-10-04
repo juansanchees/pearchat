@@ -207,7 +207,7 @@ export function NewBooking({
   tipoLegado: string | null
   duracao: number
   onDuracao: (m: number) => void
-  onEditTipos: () => void
+  onEditTipos?: () => void
   date: string
   onDate: (d: string) => void
   diaCurto: string
@@ -249,13 +249,15 @@ export function NewBooking({
           </option>
         ))}
       </select>
-      <button
-        type="button"
-        onClick={onEditTipos}
-        className="inline-flex items-center gap-1 self-start rounded-md border-0 bg-transparent p-0 text-[11.5px] text-light-accent-300 hover:underline"
-      >
-        <PencilSimple size={11} /> Editar tipos
-      </button>
+      {onEditTipos && (
+        <button
+          type="button"
+          onClick={onEditTipos}
+          className="inline-flex items-center gap-1 self-start rounded-md border-0 bg-transparent p-0 text-[11.5px] text-light-accent-300 hover:underline"
+        >
+          <PencilSimple size={11} /> Editar tipos
+        </button>
+      )}
       <div className="flex items-center gap-2">
         <label className="flex-none text-[11.5px] text-light-neutral-500" htmlFor="ag-dur">
           Duração
