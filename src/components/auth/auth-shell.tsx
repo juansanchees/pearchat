@@ -5,7 +5,7 @@ import { Logo } from '@/components/brand/logo'
 
 export function Brand({ dark = false }: { dark?: boolean }) {
   return (
-    <Link href="/login" className="-ml-1 flex items-center rounded-md" aria-label="PearChat">
+    <Link href="/" className="-ml-1 flex items-center rounded-md" aria-label="PearChat — página inicial">
       <Logo theme={dark ? 'dark' : 'light'} height={dark ? 44 : 40} priority />
     </Link>
   )
