@@ -107,7 +107,7 @@ export async function nextDaysWithSlots(
   after: string,
   now: Date,
   n = 2,
-  opts: { ignoreEventId?: string; cfg?: Cfg } = {},
+  opts: { ignoreEventId?: string; cfg?: Cfg; filtro?: (hm: string) => boolean } = {},
 ): Promise<{ data: string; diaSemana: string; horarios: string[] }[]> {
   const cfg = opts.cfg ?? (await loadCfg(workspaceId))
   const hoje = spToday(now)
@@ -118,7 +118,7 @@ export async function nextDaysWithSlots(
   const { busy } = await loadBusy(workspaceId, spToDate(start, '00:00'), spToDate(addDaysStr(end, 1), '00:00'), opts.ignoreEventId)
   const out: { data: string; diaSemana: string; horarios: string[] }[] = []
   for (let d = start; d <= end && out.length < n; d = addDaysStr(d, 1)) {
-    const hs = slotsForDay(d, st.duracaoMin, busy, cfg.antecedenciaMin, now)
+    const hs = slotsForDay(d, st.duracaoMin, busy, cfg.antecedenciaMin, now).filter((h) => !opts.filtro || opts.filtro(h))
     if (hs.length > 0) out.push({ data: d, diaSemana: diaSemanaOf(d), horarios: hs.slice(0, 6) })
   }
   return out

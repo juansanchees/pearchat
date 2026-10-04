@@ -46,9 +46,21 @@ export type ToolContext = {
 
 const str = (max: number) => z.string().trim().min(1).max(max)
 
+export type Periodo = 'manha' | 'tarde' | 'noite'
+/** Aceita "manhã", "Tarde"... (o modelo às vezes manda com acento); valor desconhecido continua sendo recusado pela validação. */
+const periodoSchema = z.preprocess(
+  (v) => (typeof v === 'string' ? v.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '') : v === null ? undefined : v),
+  z.enum(['manha', 'tarde', 'noite']).optional(),
+)
+/** manhã < 12:00; tarde 12:00 a 17:59; noite a partir das 18:00. `hm` = "HH:MM". */
+export function noPeriodo(hm: string, p: Periodo): boolean {
+  const h = Number(hm.slice(0, 2))
+  return p === 'manha' ? h < 12 : p === 'tarde' ? h >= 12 && h < 18 : h >= 18
+}
+
 const schemas = {
   listar_servicos: z.object({}).passthrough(),
-  listar_horarios_livres: z.object({ data: str(10), servico: str(80) }),
+  listar_horarios_livres: z.object({ data: str(10), servico: str(80), periodo: periodoSchema }),
   criar_agendamento: z.object({ servico: str(80), inicio: str(30), nome: z.string().trim().max(80).optional() }),
   consultar_agendamentos: z.object({}).passthrough(),
   remarcar_agendamento: z.object({ agendamentoId: str(60), novoInicio: str(30) }),
@@ -70,6 +82,11 @@ export const TOOL_DEFS: ToolDef[] = [
       properties: {
         data: { type: 'string', description: 'Dia no formato AAAA-MM-DD (fuso de São Paulo).' },
         servico: { type: 'string', description: 'Nome do serviço, como na lista de serviços.' },
+        periodo: {
+          type: 'string',
+          enum: ['manha', 'tarde', 'noite'],
+          description: 'Opcional. Passe quando o cliente pediu um período: manha (antes das 12:00), tarde (12:00 a 17:59) ou noite (a partir das 18:00). Só horários desse período são devolvidos e liberados para agendar.',
+        },
       },
       required: ['data', 'servico'],
       additionalProperties: false,
@@ -154,8 +171,8 @@ export function createToolRunner(ctx: ToolContext) {
     return (offers = parseOffers(c?.ofertasIa, nowFn().getTime()))
   }
 
-  async function addOffers(list: Offer[]): Promise<void> {
-    const cur = (await loadOffers()).filter((o) => nowFn().getTime() - o.t < OFFER_TTL_MS)
+  async function addOffers(list: Offer[], manter?: (o: Offer) => boolean): Promise<void> {
+    const cur = (await loadOffers()).filter((o) => nowFn().getTime() - o.t < OFFER_TTL_MS && (!manter || manter(o)))
     const keys = new Set(list.map((o) => `${o.s}|${o.i}`))
     offers = [...cur.filter((o) => !keys.has(`${o.s}|${o.i}`)), ...list].slice(-OFFERS_MAX)
     if (ctx.conversationId) {
@@ -190,22 +207,35 @@ export function createToolRunner(ctx: ToolContext) {
     const reg = (date: string, hs: string[]) => {
       for (const h of hs) novos.push({ s: rs.st.id, i: spToDate(date, h).toISOString(), t })
     }
-    reg(a.data, day.horarios)
+    const per = a.periodo
+    const filtra = (hs: string[]) => (per ? hs.filter((h) => noPeriodo(h, per)) : hs)
+    const horarios = filtra(day.horarios)
+    reg(a.data, horarios)
     const res: Result = {
       ok: true,
       data: a.data,
       diaSemana: diaSemanaOf(a.data),
       servico: rs.st.nome,
       duracaoMin: rs.st.duracaoMin,
-      horarios: day.horarios,
+      horarios,
+      ...(per ? { periodo: per } : {}),
     }
-    if (day.horarios.length === 0) {
-      res.diaCheio = true
-      const prox = await nextDaysWithSlots(ctx.workspaceId, rs.st, a.data, now, 2)
+    if (horarios.length === 0) {
+      if (per && day.horarios.length > 0) {
+        res.semVagaNoPeriodo = true
+        res.observacao = `Não há horário livre nesse dia no período pedido (${per}). Diga isso ao cliente e pergunte se aceita outro período ou outro dia; só então consulte de novo.`
+      } else {
+        res.diaCheio = true
+      }
+      const prox = await nextDaysWithSlots(ctx.workspaceId, rs.st, a.data, now, 2, per ? { filtro: (h) => noPeriodo(h, per) } : {})
       res.proximosDiasComVaga = prox
       for (const p of prox) reg(p.data, p.horarios)
     }
-    await addOffers(novos)
+    // Com período pedido, ofertas antigas desse serviço e dia fora do período deixam de valer: o servidor só aceita criar/remarcar dentro dele.
+    await addOffers(
+      novos,
+      per ? (o) => !(o.s === rs.st.id && localIso(new Date(o.i)).slice(0, 10) === a.data && !noPeriodo(localIso(new Date(o.i)).slice(11, 16), per)) : undefined,
+    )
     return res
   }
 
