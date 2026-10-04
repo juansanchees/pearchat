@@ -7,7 +7,7 @@ import { parse } from 'node:url'
 import { loadEnvConfig } from '@next/env'
 import { Server } from 'socket.io'
 import { getToken } from 'next-auth/jwt'
-import { orgRoom, workspaceRoom } from '@/server/realtime/events'
+import { attentionRoom, orgRoom, userRoom, workspaceRoom } from '@/server/realtime/events'
 import type { ClientToServerEvents, ServerToClientEvents } from '@/server/realtime/events'
 
 const dev = !process.argv.includes('--prod') && process.env.NODE_ENV !== 'production'
@@ -19,12 +19,14 @@ const hostname = process.env.HOSTNAME_BIND ?? '0.0.0.0'
 
 const COOKIE_NAMES = ['__Secure-authjs.session-token', 'authjs.session-token'] as const
 
-type SocketData = { workspaceId: string; organizationId: string }
+type SocketData = { workspaceId: string; organizationId: string; userId: string; papel: string }
 
 // Carregada UMA vez no main() (depois do loadEnvConfig): evita compilar/importar no primeiro socket.
-let resolveActive: (userId: string) => Promise<{ workspaceId: string; organizationId: string; sessionVersion: number } | null> = async () => null
+let resolveActive: (userId: string) => Promise<{ workspaceId: string; organizationId: string; sessionVersion: number; papel: string; blocked: boolean } | null> = async () => null
+// Equipe: espaços liberados para atendentes (carregada no main()).
+let agentSpaces: (userId: string) => Promise<string[]> = async () => []
 
-async function spaceFromCookie(cookieHeader: string | undefined): Promise<{ workspaceId: string; organizationId: string } | null> {
+async function spaceFromCookie(cookieHeader: string | undefined): Promise<{ workspaceId: string; organizationId: string; userId: string; papel: string } | null> {
   const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET
   if (!cookieHeader || !secret) return null
   // Cookie de sessão pode estar em partes (.0, .1...) quando grande; o prefixo basta para detectar.
@@ -45,18 +47,19 @@ async function spaceFromCookie(cookieHeader: string | undefined): Promise<{ work
     const active = await resolveActive(userId)
     // Sessão revogada ("sair de todos os dispositivos"): a versão do token não bate com a do banco.
     if (active && (token?.sessionVersion ?? 0) !== active.sessionVersion) return null
-    return active ? { workspaceId: active.workspaceId, organizationId: active.organizationId } : null
+    // Equipe: usuário desativado / atendente sem espaço liberado não abre socket.
+    if (active?.blocked) return null
+    return active ? { workspaceId: active.workspaceId, organizationId: active.organizationId, userId, papel: active.papel } : null
   } catch {
-    // Banco fora do ar / migração ainda não aplicada: usa o que o token traz.
-    const workspaceId = token?.workspaceId
-    return typeof workspaceId === 'string' && workspaceId
-      ? { workspaceId, organizationId: typeof token?.organizationId === 'string' ? token.organizationId : '' }
-      : null
+    // Banco fora do ar / migração ainda não aplicada: NEGA (sem o banco não dá para conferir papel nem espaço).
+    return null
   }
 }
 
 async function main() {
   resolveActive = (await import('@/server/spaces/org')).resolveActiveSpace
+  const access = await import('@/server/team/access')
+  agentSpaces = async (userId) => (await access.allowedWorkspaceIds(userId, 'agent')) ?? []
   const { default: next } = await import('next')
   const app = next({ dev, hostname: 'localhost', port })
   const handle = app.getRequestHandler()
@@ -78,6 +81,8 @@ async function main() {
       if (!space) return nextFn(new Error('unauthorized'))
       socket.data.workspaceId = space.workspaceId
       socket.data.organizationId = space.organizationId
+      socket.data.userId = space.userId
+      socket.data.papel = space.papel
       nextFn()
     } catch {
       nextFn(new Error('unauthorized'))
@@ -88,7 +93,13 @@ async function main() {
     // O espaço vem SEMPRE do token validado + banco, nunca do cliente. Eventos completos só da sala do espaço
     // ATIVO; a sala da organização só recebe avisos leves (space.attention) dos outros WhatsApps.
     void socket.join(workspaceRoom(socket.data.workspaceId))
-    if (socket.data.organizationId) void socket.join(orgRoom(socket.data.organizationId))
+    void socket.join(userRoom(socket.data.userId))
+    if (socket.data.papel === 'agent') {
+      // Equipe: atendente só recebe avisos dos espaços em que é membro (nunca a sala da organização).
+      void agentSpaces(socket.data.userId).then((ids) => ids.forEach((id) => void socket.join(attentionRoom(id))))
+    } else if (socket.data.organizationId) {
+      void socket.join(orgRoom(socket.data.organizationId))
+    }
   })
 
   const { setIo } = await import('@/server/realtime/emit')

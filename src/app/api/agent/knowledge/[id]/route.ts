@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { apiSession, notFound, parseBody, unauthorized } from '@/server/settings/http'
 import { deleteKnowledge, knowledgeSchema, updateKnowledge } from '@/server/agent/service'
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const deny = await denyUnless('agent.manage'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   const body = await parseBody(req, knowledgeSchema.partial())
@@ -12,6 +14,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const deny = await denyUnless('agent.manage'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   return (await deleteKnowledge(s.workspaceId, params.id)) ? NextResponse.json({ ok: true }) : notFound('Resposta')

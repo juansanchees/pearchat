@@ -133,6 +133,27 @@ export function welcomeEmail({ nome }: { nome?: string }): MailContent {
   return { subject: 'Bem-vindo ao PearChat', html, text }
 }
 
+/** Convite para entrar na equipe de uma conta (Equipe). O link vale 7 dias e só pode ser usado uma vez. */
+export function teamInviteEmail({ link, organizacao, convidadoPor, papel }: { link: string; organizacao: string; convidadoPor?: string; papel: string }): MailContent {
+  const quem = convidadoPor?.trim() ? `${convidadoPor.trim()} convidou você` : 'Você foi convidado'
+  const html = layout(
+    `${quem} para a equipe de ${organizacao} no PearChat. O link vale por 7 dias.`,
+    h1(`Entre na equipe de ${organizacao}`) +
+      p(`${escapeHtml(quem)} para atender no PearChat como <strong>${escapeHtml(papel)}</strong>. Clique no botão abaixo para criar seu acesso.`) +
+      button(link, 'Aceitar convite') +
+      muted('O link vale por <strong>7 dias</strong> e só pode ser usado uma vez.') +
+      muted(`Se o botão não abrir, copie este endereço no navegador:<br><span style="word-break:break-all;color:#1e6b3a;">${escapeHtml(link)}</span>`) +
+      `<hr style="border:0;border-top:1px solid #eef0e3;margin:20px 0 14px;">` +
+      muted('Não esperava este convite? Ignore este e-mail: nada será criado.'),
+  )
+  const text =
+    `Entre na equipe de ${organizacao}\n\n${quem} para atender no PearChat como ${papel}.\n\n` +
+    `Aceite neste link (vale por 7 dias, uso único):\n${link}\n\n` +
+    `Não esperava este convite? Ignore este e-mail: nada será criado.\n` +
+    textFooter()
+  return { subject: `Convite para a equipe de ${organizacao} no PearChat`, html, text }
+}
+
 /** Aviso de segurança: verificação em duas etapas ativada ou desativada. */
 export function twoFactorChangedEmail({ ativada, nome }: { ativada: boolean; nome?: string }): MailContent {
   const primeiro = nome?.trim().split(/\s+/)[0]

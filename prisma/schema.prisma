@@ -83,6 +83,7 @@ model Organization {
 
   workspaces Workspace[]
   users      User[]
+  invites    Invite[]
 }
 
 model Workspace {
@@ -127,6 +128,7 @@ model Workspace {
   bookingDiasAFrente      Int      @default(30)
   bookingMensagem         String?
   bookingAttempts         BookingAttempt[]
+  members                 SpaceMember[]
 
   @@index([organizationId])
 }
@@ -151,9 +153,14 @@ model User {
   totpEnabledAt  DateTime?
   totpLastStep   Int? // último passo de 30 s aceito (anti-reuso)
   sessionVersion Int       @default(0)
+  // Equipe (migração 0015): papel = owner | admin | agent; desativadoEm = removido da equipe (não entra, sessões caem).
+  desativadoEm   DateTime?
 
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  spaceMemberships      SpaceMember[]
+  assignedConversations Conversation[] @relation("ConversationAssignee")
+  invitesSent           Invite[]
   accounts     Account[]
   sessions     Session[]
   recoveryCodes RecoveryCode[]
@@ -267,16 +274,21 @@ model Conversation {
   unread        Int               @default(0)
   lastMessageAt DateTime?
   typing        Boolean           @default(false)
+  // Responsável pela conversa (migração 0015). Nulo = sem responsável.
+  assigneeId    String?
+  assignedAt    DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
   workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   contact   Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignee  User?         @relation("ConversationAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   messages  Message[]
   jobs      FollowUpJob[]
   aiJobs    AiJob[]
 
   @@index([workspaceId, lastMessageAt])
+  @@index([workspaceId, assigneeId])
 }
 
 model Message {
@@ -307,6 +319,8 @@ model Message {
   providerMediaId   String?
   // Motivo curto da falha de envio (migration 0014), sem dados do cliente.
   failReason        String?
+  // Quem enviou a mensagem pelo app (migração 0015). Sem relação: o histórico sobrevive à saída da pessoa.
+  senderUserId      String?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -670,4 +684,53 @@ model MetaPartnerEvent {
 
   @@index([wabaId])
   @@index([createdAt])
+}
+
+// Equipe (migração 0015): espaços (WhatsApps) a que um atendente tem acesso. Owner/admin enxergam todos da organização.
+model SpaceMember {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  createdAt   DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+}
+
+// Convite para a equipe. O token (32 bytes aleatórios) NUNCA é guardado: só o hash.
+model Invite {
+  id             String    @id @default(cuid())
+  organizationId String
+  email          String
+  papel          String
+  workspaceIds   String[]  @default([])
+  tokenHash      String    @unique
+  convidadoPorId String?
+  expiraEm       DateTime
+  aceitoEm       DateTime?
+  revogadoEm     DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  convidadoPor User?        @relation(fields: [convidadoPorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, aceitoEm, revogadoEm])
+  @@index([email])
+}
+
+// Auditoria mínima (migração 0015). Nunca guarda conteúdo de mensagens nem dados de contatos.
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  workspaceId    String?
+  userId         String?
+  acao           String
+  alvo           String?
+  meta           Json?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
 }

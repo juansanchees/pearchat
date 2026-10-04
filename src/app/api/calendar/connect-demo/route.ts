@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
+import { denyUnless } from '@/server/auth/guard'
 import { badRequest, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
 import {
   DEFAULT_LEMBRETES,
@@ -39,6 +40,7 @@ const bodySchema = z
  * (desconecte antes de simular).
  */
 async function connectDemo(req: NextRequest) {
+  const deny = await denyUnless('calendar.manage'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
 

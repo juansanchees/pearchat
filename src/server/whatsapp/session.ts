@@ -3,6 +3,7 @@ import type { ConnectionStatus, WhatsAppSession } from '@prisma/client'
 import { db } from '@/lib/db'
 import { kindToProvider, kindToStatus, providerToKind, statusToKind } from '@/lib/mappers'
 import type { ConnectionStatusKind, ProviderKind, WhatsAppStatusDTO } from '@/lib/types'
+import { auditWorkspace } from '@/server/audit/log'
 import { setDisparosAtivos } from '@/server/campaigns/service'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { decrypt, encrypt } from './crypto'
@@ -109,6 +110,7 @@ export async function setStatus(
     create: { workspaceId, ...data },
     update: data,
   })
+  if (newConnection) void auditWorkspace(workspaceId, null, 'wa.connected') // Equipe: auditoria mínima
   if (newConnection && row.provider === 'RAPIDA' && process.env.WA_MOCK !== 'true') scheduleInitialImport(workspaceId)
   const dto = toStatusDTO(row)
   emitToWorkspace(workspaceId, 'connection.update', {

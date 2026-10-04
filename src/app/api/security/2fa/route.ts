@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
+import { audit } from '@/server/audit/log'
 import { invalidateActiveSpace } from '@/server/spaces/org'
 import { apiSession, fail, parseBody, unauthorized } from '@/server/settings/http'
 import { clientIpFromHeaders } from '@/server/security/hash'
@@ -45,11 +46,15 @@ export async function POST(req: Request) {
     if (res.blocked) return fail(BLOCKED_MESSAGE, 429)
     try {
       let out: unknown
-      if (input.action === 'enable') out = { recoveryCodes: await confirmSetup(s.userId, input.code) }
+      if (input.action === 'enable') {
+        out = { recoveryCodes: await confirmSetup(s.userId, input.code) }
+        await audit({ organizationId: s.organizationId, userId: s.userId, acao: '2fa.enabled' })
+      }
       else if (input.action === 'recovery') out = { recoveryCodes: await regenerateRecovery(s.userId, input.code) }
       else {
         await disableMfa(s.userId, { password: input.password, code: input.code })
         invalidateActiveSpace(s.userId) // a versão de sessão subiu: a releitura não pode esperar o cache
+        await audit({ organizationId: s.organizationId, userId: s.userId, acao: '2fa.disabled' })
         out = { ok: true }
       }
       await markSuccess('login', subject)

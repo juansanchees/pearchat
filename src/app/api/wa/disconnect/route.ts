@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { auditWorkspace } from '@/server/audit/log'
+import { denyUnless } from '@/server/auth/guard'
 import { providerToKind } from '@/lib/mappers'
 import { getApiSession } from '@/server/whatsapp/auth'
 import { getProvider } from '@/server/whatsapp'
@@ -8,6 +10,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST() {
+  const deny = await denyUnless('wa.manage'); if (deny) return deny
   const session = await getApiSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   const { workspaceId } = session
@@ -33,5 +36,6 @@ export async function POST() {
     resetHistory: true,
   })
   await disableAutomations(workspaceId)
+  await auditWorkspace(workspaceId, session.userId, 'wa.disconnected')
   return NextResponse.json(toStatusDTO(row))
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { Check, Checks, Clock, Sparkle, WarningCircle } from '@phosphor-icons/react'
+import { useAppState } from '@/components/app/app-state'
 import type { MessageDTO } from '@/lib/types'
 import { isMediaLabel } from '@/server/media/mime'
 import { formatHour } from './format'
@@ -17,6 +18,7 @@ export function MessageBubble({
   onRetryMedia?: (messageId: string) => void
   onMediaLoaded?: () => void
 }) {
+  const { user } = useAppState()
   const received = message.author === 'cliente'
   const isIa = message.author === 'ia'
   const media = message.mediaType ?? null
@@ -42,6 +44,10 @@ export function MessageBubble({
             <Sparkle size={11} weight="fill" />
             {agentName} · IA
           </div>
+        ) : null}
+        {/* Equipe: com mais de uma pessoa na conta, mostra quem enviou (primeiro nome), no estilo do rótulo da IA. */}
+        {!received && !isIa && message.senderNome && (user.equipe ?? 1) > 1 ? (
+          <div className="mb-1.5 text-[10.5px] font-medium leading-none text-light-neutral-500">{message.senderNome}</div>
         ) : null}
         {media ? (
           <div className={caption ? 'mb-1.5' : ''}>

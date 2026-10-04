@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { auth } from '@/auth'
+import { can } from '@/server/auth/permissions'
 import { db } from '@/lib/db'
 import { listCampaigns } from '@/server/campaigns/service'
 import { countFollowUpQueue } from '@/server/followup/service'
@@ -17,10 +19,12 @@ export interface SidebarSummary {
 export async function GET() {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
+  const session = await auth()
+  const manager = can(session?.user, 'campaigns.manage') // Equipe: atendente não vê disparos nem fila do follow-up
   const [contatos, fuQueue, campanhas] = await Promise.all([
     db.contact.count({ where: { workspaceId } }),
-    countFollowUpQueue(workspaceId),
-    listCampaigns(workspaceId),
+    manager ? countFollowUpQueue(workspaceId) : Promise.resolve(0),
+    manager ? listCampaigns(workspaceId) : Promise.resolve([]),
   ])
   return NextResponse.json({ contatos, fuQueue, campanhas } satisfies SidebarSummary)
 }

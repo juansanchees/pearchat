@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { z } from 'zod'
 import { getApiSession } from '@/server/whatsapp/auth'
 import { exchangeEmbeddedSignupCode } from '@/server/whatsapp/cloud-api'
@@ -22,6 +23,7 @@ const bodySchema = z.object({
 // Retorno do Cadastro incorporado pelo SDK (FB.login + evento WA_EMBEDDED_SIGNUP). Tudo que vem do navegador é validado:
 // state de uso único, número pertencente à WABA do token e número não usado por outro workspace.
 export async function POST(req: Request) {
+  const deny = await denyUnless('wa.manage'); if (deny) return deny
   const session = await getApiSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))

@@ -26,6 +26,8 @@ export interface ConversationListItem {
   lastMessagePreview: string | null
   /** ISO 8601 */
   lastMessageAt: string | null
+  /** Equipe: responsável pela conversa; null/ausente = sem responsável. */
+  assignee?: { id: string; nome: string; fotoUrl: string | null } | null
 }
 
 export type MediaTypeKind = 'image' | 'audio' | 'video' | 'document' | 'sticker'
@@ -43,6 +45,9 @@ export interface MessageDTO {
   status: MessageStatusKind
   /** ISO 8601 */
   createdAt: string
+  /** Equipe: quem enviou pelo app (primeiro nome em senderNome). */
+  senderUserId?: string | null
+  senderNome?: string | null
   mediaType?: MediaTypeKind | null
   mediaMime?: string | null
   mediaSize?: number | null
@@ -186,5 +191,7 @@ export interface BillingDTO {
   limites: { respostasIa: number | null; disparos: number | null; contatos: number | null }
   /** WhatsApps (espaços) em uso e o máximo do plano. */
   espacos: { usados: number; limite: number }
+  /** Equipe: pessoas ativas + convites pendentes e o máximo do plano. */
+  pessoas?: { usados: number; limite: number }
   faturas: { id: string; mes: string; valor: number; status: string; pdfUrl: string | null }[]
 }

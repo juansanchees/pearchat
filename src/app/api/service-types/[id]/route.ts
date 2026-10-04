@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
@@ -26,6 +27,7 @@ const patchSchema = z
 
 /** PATCH /api/service-types/[id] -> 200 { tipo } | 400 | 404 | 409. Não permite desativar o último tipo ativo. */
 export async function PATCH(req: Request, { params }: Ctx) {
+  const deny = await denyUnless('servicetypes.manage'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   if (!isValidId(params.id)) return notFound()
@@ -69,6 +71,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
 /** DELETE /api/service-types/[id] -> 200 { ok } | 400 (último tipo) | 404. Eventos antigos mantêm o texto `tipo`. */
 export async function DELETE(_req: Request, { params }: Ctx) {
+  const deny = await denyUnless('servicetypes.manage'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   if (!isValidId(params.id)) return notFound()

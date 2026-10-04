@@ -4,13 +4,13 @@ import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { escapeLike } from '@/server/contacts/queries'
-import { badRequest, cleanText, isValidId, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, cleanText, isValidId, sessionIds, unauthorized } from '@/server/messages/api'
 import { conversationInclude, toConversationItem } from '@/server/messages/dto'
 
 export const dynamic = 'force-dynamic'
 
 const querySchema = z.object({
-  filter: z.enum(['todas', 'nao_lidas', 'com_ia']).default('todas'),
+  filter: z.enum(['todas', 'nao_lidas', 'com_ia', 'minhas']).default('todas'),
   // Uma conversa específica (ex.: aberta por ?c= e fora das 200 da lista).
   id: z.string().max(64).refine(isValidId, 'Id inválido').optional(),
   q: z
@@ -21,8 +21,9 @@ const querySchema = z.object({
 })
 
 export async function GET(req: NextRequest) {
-  const workspaceId = await sessionWorkspaceId()
-  if (!workspaceId) return unauthorized()
+  const ids = await sessionIds()
+  if (!ids) return unauthorized()
+  const { workspaceId, userId } = ids
 
   const sp = req.nextUrl.searchParams
   const parsed = querySchema.safeParse({
@@ -37,6 +38,7 @@ export async function GET(req: NextRequest) {
   if (id) where.id = id
   if (filter === 'nao_lidas') where.unread = { gt: 0 }
   if (filter === 'com_ia') where.mode = 'IA'
+  if (filter === 'minhas') where.assigneeId = userId // Equipe: conversas atribuídas a mim
   if (q) {
     // Nome ou telefone (qualquer máscara). A busca é no servidor: acha também conversas além das 200 da lista.
     const digits = q.replace(/\D/g, '')

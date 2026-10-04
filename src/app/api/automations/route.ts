@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import { z } from 'zod'
 import { auth } from '@/auth'
 import { db } from '@/lib/db'
@@ -11,6 +12,7 @@ const bodySchema = z.object({
 
 // Liga/desliga uma automação do workspace. Desligar Disparos pausa as campanhas em andamento.
 export async function PATCH(req: Request) {
+  const deny = await denyUnless('automations.toggle'); if (deny) return deny
   const session = await auth()
   const workspaceId = session?.user?.workspaceId
   if (!workspaceId) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })

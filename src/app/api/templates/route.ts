@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { denyUnless } from '@/server/auth/guard'
 import { CampaignError, createTemplate, listTemplates, templateSchema, toTemplateDTO } from '@/server/campaigns/service'
 import { apiSession, fail, parseBody, unauthorized } from '@/server/settings/http'
 import { submitTemplate, syncTemplates, TemplateError } from '@/server/whatsapp/templates'
@@ -15,6 +16,7 @@ async function isOficial(workspaceId: string): Promise<boolean> {
 }
 
 export async function GET() {
+  const deny = await denyUnless('campaigns.manage'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   // Conexão oficial: traz o status real da Meta antes de listar (no máx. 1 vez por minuto; falha não impede a lista).
@@ -26,6 +28,7 @@ export async function GET() {
 
 // Conexão oficial: cria o modelo NA META (ou envia para aprovação um "Só no PearChat"). Conexão rápida: modelo local, como antes.
 export async function POST(req: Request) {
+  const deny = await denyUnless('campaigns.manage'); if (deny) return deny
   const s = await apiSession()
   if (!s) return unauthorized()
   const body = await parseBody(req, templateSchema)

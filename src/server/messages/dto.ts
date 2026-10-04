@@ -4,8 +4,10 @@ import type { ConversationItem } from '@/components/conversas/types'
 import type { MediaStatusKind, MediaTypeKind, MessageAuthorKind, MessageDTO, TranscriptStatusKind } from '@/lib/types'
 import { isMediaKind, isMediaLabel } from '@/server/media/mime'
 
-export function toMessageDTO(m: Message): MessageDTO {
+/** `senderNome` (Equipe): primeiro nome de quem enviou pelo app; opcional para não mudar quem já chama com 1 argumento. */
+export function toMessageDTO(m: Message, senderNome?: string | null): MessageDTO {
   return {
+    ...(m.senderUserId ? { senderUserId: m.senderUserId, ...(senderNome ? { senderNome } : {}) } : {}),
     id: m.id,
     conversationId: m.conversationId,
     direction: m.direction === 'IN' ? 'in' : 'out',
@@ -29,7 +31,19 @@ export function toMessageDTO(m: Message): MessageDTO {
   }
 }
 
-export type ConversationWithRefs = Conversation & { contact: Contact; messages: Message[] }
+export type ConversationWithRefs = Conversation & {
+  contact: Contact
+  messages: Message[]
+  assignee?: { id: string; nome: string; fotoUrl: string | null; image: string | null } | null
+}
+
+/** Primeiro nome de quem enviou cada mensagem (uma consulta por lote). Mensagens sem remetente do app ficam de fora. */
+export async function senderFirstNames(messages: Pick<Message, 'senderUserId'>[]): Promise<Map<string, string>> {
+  const ids = Array.from(new Set(messages.map((m) => m.senderUserId).filter((v): v is string => !!v)))
+  if (ids.length === 0) return new Map()
+  const rows = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, nome: true } })
+  return new Map(rows.map((u) => [u.id, u.nome.trim().split(/\s+/)[0]]))
+}
 
 export function toConversationItem(c: ConversationWithRefs): ConversationItem {
   const last = c.messages[0]
@@ -47,11 +61,14 @@ export function toConversationItem(c: ConversationWithRefs): ConversationItem {
       last?.mediaType && isMediaKind(last.mediaType) ? { type: last.mediaType as MediaTypeKind, durationSec: last.mediaDurationSec } : null,
     lastMessageAt: c.lastMessageAt ? c.lastMessageAt.toISOString() : null,
     lastMessageAuthor: last ? (last.author.toLowerCase() as MessageAuthorKind) : null,
+    // Equipe: responsável pela conversa (null = sem responsável).
+    assignee: c.assignee ? { id: c.assignee.id, nome: c.assignee.nome, fotoUrl: c.assignee.fotoUrl ?? c.assignee.image } : null,
   }
 }
 
 export const conversationInclude = {
   contact: true,
+  assignee: { select: { id: true, nome: true, fotoUrl: true, image: true } },
   messages: { orderBy: { createdAt: 'desc' as const }, take: 1 },
 }
 

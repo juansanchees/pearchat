@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnless } from '@/server/auth/guard'
 import type { NextRequest } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { z } from 'zod'
@@ -39,6 +40,7 @@ const patchSchema = z
  * A agenda-destino fica sempre selecionada. 200 CalendarStateDto | 400 | 401 | 404 NAO_CONECTADO.
  */
 export async function PATCH(req: NextRequest) {
+  const deny = await denyUnless('calendar.manage'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
 
@@ -80,6 +82,7 @@ export async function PATCH(req: NextRequest) {
  * 200 CalendarStateDto (já desconectado) | 401. Idempotente.
  */
 export async function DELETE() {
+  const deny = await denyUnless('calendar.manage'); if (deny) return deny
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
   const conn = await getConnection(workspaceId)

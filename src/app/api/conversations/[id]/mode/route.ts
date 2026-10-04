@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { badRequest, isValidId, notFound, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, isValidId, notFound, readJson, sessionIds, unauthorized } from '@/server/messages/api'
 import { loadConversationItem } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
 
@@ -12,8 +12,9 @@ const schema = z.object({ mode: z.enum(['humano', 'ia']) })
 
 // "Assumir conversa" (humano) / "Devolver para IA/automação" (ia, com o agente ou o follow-up ligado).
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const workspaceId = await sessionWorkspaceId()
-  if (!workspaceId) return unauthorized()
+  const ids = await sessionIds()
+  if (!ids) return unauthorized()
+  const { workspaceId, userId } = ids
   if (!isValidId(params.id)) return notFound()
 
   const parsed = schema.safeParse(await readJson(req))
@@ -34,8 +35,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   await db.conversation.update({
     where: { id: conv.id },
-    data: { mode: parsed.data.mode === 'ia' ? 'IA' : 'HUMANO' },
+    // Equipe: devolver para a IA/automação tira o responsável (se a IA passar de novo, ela volta "sem responsável").
+    data: { mode: parsed.data.mode === 'ia' ? 'IA' : 'HUMANO', ...(parsed.data.mode === 'ia' ? { assigneeId: null, assignedAt: null } : {}) },
   })
+  // Equipe: "Assumir conversa" sem responsável atribui a quem assumiu.
+  if (parsed.data.mode === 'humano') {
+    await db.conversation.updateMany({ where: { id: conv.id, assigneeId: null }, data: { assigneeId: userId, assignedAt: new Date() } })
+  }
   const item = await loadConversationItem(workspaceId, conv.id)
   if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })
   return NextResponse.json(item)

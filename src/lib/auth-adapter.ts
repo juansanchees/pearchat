@@ -3,6 +3,7 @@ import type { Adapter, AdapterAccount, AdapterUser } from 'next-auth/adapters'
 import type { User } from '@prisma/client'
 import { db } from '@/lib/db'
 import { sendWelcome } from '@/server/mail/email-verification'
+import { createUserFromPendingInvite } from '@/server/team/service'
 
 // Converte a linha do banco no formato do Auth.js (name/image) mantendo workspaceId e nome.
 function toAdapterUser(u: User): AdapterUser {
@@ -20,6 +21,9 @@ export function pearchatAdapter(): Adapter {
     async createUser(data) {
       const email = data.email.toLowerCase()
       const nome = data.name?.trim() || email.split('@')[0]
+      // Equipe: e-mail com convite pendente entra na organização que convidou (sem criar organização nova).
+      const invited = await createUserFromPendingInvite(email, { nome, image: data.image ?? null })
+      if (invited) return toAdapterUser(invited)
       const user = await db.$transaction(async (tx) => {
         const nomeNegocio = `Negócio de ${nome.split(/\s+/)[0]}`
         const org = await tx.organization.create({ data: { nome: nomeNegocio } })

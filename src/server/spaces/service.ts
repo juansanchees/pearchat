@@ -5,6 +5,7 @@ import type { ConnectionStatusKind, ProviderKind } from '@/lib/types'
 import { ensureServiceTypes } from '@/server/calendar/service-types'
 import { getProvider } from '@/server/whatsapp'
 import { disableAutomations, setStatus } from '@/server/whatsapp/session'
+import { userCanAccessSpace } from '@/server/team/access'
 import { invalidateActiveSpace, PLAN_NAME, PLAN_SPACE_LIMIT } from './org'
 
 export class SpaceError extends Error {
@@ -48,11 +49,12 @@ export const patchSchema = z
 
 const LIMIT_MSG = (n: number) => `Seu plano permite ${n} ${n === 1 ? 'WhatsApp' : 'WhatsApps'}`
 
-export async function listSpaces(organizationId: string, activeWorkspaceId: string): Promise<SpacesResponse> {
+/** `onlyIds` (Equipe): atendente enxerga só os espaços liberados para ele; null/undefined = todos da organização. */
+export async function listSpaces(organizationId: string, activeWorkspaceId: string, onlyIds?: string[] | null): Promise<SpacesResponse> {
   const [org, rows] = await Promise.all([
     db.organization.findUniqueOrThrow({ where: { id: organizationId }, select: { plano: true } }),
     db.workspace.findMany({
-      where: { organizationId, arquivadoEm: null },
+      where: { organizationId, arquivadoEm: null, ...(onlyIds ? { id: { in: onlyIds } } : {}) },
       orderBy: [{ ordem: 'asc' }, { createdAt: 'asc' }],
       select: { id: true, nome: true, ordem: true, whatsappSession: { select: { provider: true, status: true, numero: true } } },
     }),
@@ -144,6 +146,8 @@ async function ownedSpace(organizationId: string, workspaceId: string) {
 export async function switchSpace(userId: string, organizationId: string, workspaceId: string): Promise<void> {
   const ws = await ownedSpace(organizationId, workspaceId)
   if (ws.arquivadoEm) throw new SpaceError('Este WhatsApp está arquivado', 409)
+  // Equipe: atendente só troca para espaço em que é membro (id direto não adianta).
+  if (!(await userCanAccessSpace(userId, workspaceId))) throw new SpaceError('Você não tem acesso a este WhatsApp', 403, 'SEM_ACESSO')
   await db.user.update({ where: { id: userId }, data: { workspaceId, organizationId } })
   invalidateActiveSpace(userId)
 }
