@@ -1,10 +1,9 @@
 import { cn } from '@/lib/utils'
+import { initialsOf } from '@/lib/initials'
 
 /** Siglas: 1ª letra do 1º nome + 1ª letra do 2º nome (como digitadas). */
 export function initials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  return (parts[0][0] ?? '') + (parts[1]?.[0] ?? '')
+  return initialsOf(name, 'second')
 }
 
 export function Avatar({

@@ -6,6 +6,7 @@ import { planFollowUps, runDueFollowUps } from './followup'
 import { runDueReminders } from './reminders'
 import { runDueHistoryImports } from '@/server/whatsapp/history-import'
 import { runDueMediaDownloads } from '@/server/media/receive'
+import { runDuePhotoRefresh } from '@/server/contacts/photo'
 import { runDueTranscriptions } from './transcribe'
 import { engineDisabled, log, logError } from './util'
 
@@ -24,6 +25,7 @@ export type TickSummary = {
   historico: { importacoes: number }
   midia: { downloads: number; transcricoes: number }
   cobranca: { avisos: number }
+  fotos: { enfileiradas: number }
   ignoradas: string[]
 }
 
@@ -51,7 +53,7 @@ async function task<T>(name: string, fallback: T, fn: () => Promise<T>, skipped:
 /** Um ciclo completo. Também usado pela rota de desenvolvimento /api/dev/engine/tick. */
 export async function runTick(): Promise<TickSummary> {
   const ignoradas: string[] = []
-  const [ia, disparos, followup, lembretes, agenda, historico, midia, cobranca] = await Promise.all([
+  const [ia, disparos, followup, lembretes, agenda, historico, midia, cobranca, fotos] = await Promise.all([
     task('ia', { varridas: 0, executadas: 0 }, async () => {
         // Primeiro responde o que já venceu; a varredura (mais lenta) não atrasa a resposta.
         const executadas = await runDueAiJobs()
@@ -73,9 +75,11 @@ export async function runTick(): Promise<TickSummary> {
     task('midia', { downloads: 0, transcricoes: 0 }, async () => ({ downloads: await runDueMediaDownloads(), transcricoes: await runDueTranscriptions() }), ignoradas),
     // Cobrança: verificação diária (aviso de fim do teste). No-op com BILLING_ENABLED=false.
     task('cobranca', { avisos: 0 }, async () => ({ avisos: await runBillingDaily() }), ignoradas),
+    // Fotos do WhatsApp dos contatos: 3 a cada 15 s (12 por minuto), em segundo plano.
+    task('fotos', { enfileiradas: 0 }, async () => ({ enfileiradas: await runDuePhotoRefresh() }), ignoradas),
   ])
   ;(globalThis as unknown as { __pearchat_last_tick?: number }).__pearchat_last_tick = Date.now() // lido por /api/health
-  return { ia, disparos, followup, lembretes, agenda, historico, midia, cobranca, ignoradas }
+  return { ia, disparos, followup, lembretes, agenda, historico, midia, cobranca, fotos, ignoradas }
 }
 
 /** Inicia o laço (uma vez por processo). Desligável com ENGINE_DISABLED=true. */

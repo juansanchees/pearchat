@@ -1,9 +1,8 @@
+import { initialsOf } from '@/lib/initials'
+
+// 1ª letra do 1º nome + 1ª letra do último (por grafema; emoji/símbolo não viram sigla).
 export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  const first = parts[0][0] ?? ''
-  const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? '') : ''
-  return (first + last).toUpperCase()
+  return initialsOf(name, 'last').toUpperCase()
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')

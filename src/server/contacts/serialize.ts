@@ -30,5 +30,6 @@ export function toContactDTO(c: ContactRow): ContactDTO {
     optOut: c.optOut,
     lastContactAt: iso(c.conversation?.lastMessageAt ?? c.createdAt),
     conversationId: c.conversation?.id ?? null,
+    photoUrl: c.photoUrl,
   }
 }

@@ -14,6 +14,7 @@ import {
 import { patchSchema } from '@/server/contacts/schemas'
 import type { PatchInput } from '@/server/contacts/schemas'
 import { contactInclude, toContactDTO } from '@/server/contacts/serialize'
+import { contactPhotoIdFromUrl, deleteContactPhoto } from '@/server/media/avatars'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,11 +66,14 @@ export async function DELETE(_req: Request, { params }: Ctx) {
 
   const row = await db.contact.findFirst({
     where: { id: params.id, workspaceId },
-    select: { id: true, conversation: { select: { id: true } } },
+    select: { id: true, photoUrl: true, conversation: { select: { id: true } } },
   })
   if (!row) return contactNotFound()
   if (row.conversation) return conflict('Este contato tem uma conversa e não pode ser excluído')
 
   await db.contact.deleteMany({ where: { id: row.id, workspaceId } })
+  // A cópia da foto do WhatsApp sai junto com o contato.
+  const photoId = contactPhotoIdFromUrl(row.photoUrl)
+  if (photoId) await deleteContactPhoto(workspaceId, photoId)
   return NextResponse.json({ ok: true })
 }

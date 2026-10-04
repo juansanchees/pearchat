@@ -298,6 +298,9 @@ model Contact {
   aniversario  DateTime?
   notas        String?
   optOut       Boolean   @default(false)
+  // Foto do WhatsApp (migration 0019): caminho interno /api/contact-photo/<id> e quando foi verificada pela última vez.
+  photoUrl       String?
+  photoCheckedAt DateTime?
   pedidos      Int       @default(0)
   totalGasto   Decimal   @default(0)
   clienteDesde DateTime?

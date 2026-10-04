@@ -63,6 +63,7 @@ export function ConversationItem({
     >
       <ContactAvatar
         name={item.nome}
+        photoUrl={item.photoUrl}
         size={42}
         badge={
           item.mode === 'ia' && iaOn ? (

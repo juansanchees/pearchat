@@ -328,6 +328,17 @@ export class EvolutionProvider implements WhatsAppProvider {
     return { data: Buffer.from(b64, 'base64'), mime: parsed.data.mimetype, fileName: parsed.data.fileName }
   }
 
+  /**
+   * POST /chat/fetchProfilePictureUrl/{instance} com `{ number }` (Evolution 2.3.7). Responde `{ wuid, profilePictureUrl }`;
+   * foto privada ou inexistente vem como `profilePictureUrl: null` (não é erro).
+   */
+  async fetchProfilePicture(workspaceId: string, to: ContactRef): Promise<string | null> {
+    const raw = await evo('POST', `/chat/fetchProfilePictureUrl/${encodeURIComponent(instanceNameFor(workspaceId))}`, { number: recipientDigits(to) }, 15_000)
+    const parsed = z.object({ profilePictureUrl: z.string().nullable().optional() }).passthrough().safeParse(raw)
+    if (!parsed.success) throw new WhatsAppProviderError('Resposta inesperada da Evolution', 502, null)
+    return parsed.data.profilePictureUrl || null
+  }
+
   async canSendFreeform(): Promise<boolean> {
     return true
   }

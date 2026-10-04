@@ -19,6 +19,8 @@ export interface ConversationListItem {
   contactId: string
   nome: string
   telefone: string | null
+  /** Foto do WhatsApp copiada pelo servidor (/api/contact-photo/<id>); null/ausente = só iniciais. */
+  photoUrl?: string | null
   /** null = ninguém atendeu ainda */
   mode: ConversationModeKind | null
   unread: number

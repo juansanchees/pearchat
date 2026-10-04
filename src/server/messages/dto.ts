@@ -52,6 +52,7 @@ export function toConversationItem(c: ConversationWithRefs): ConversationItem {
     contactId: c.contactId,
     nome: c.contact.nome,
     telefone: c.contact.telefone,
+    photoUrl: c.contact.photoUrl,
     mode: c.mode ? (c.mode.toLowerCase() as 'ia' | 'humano') : null,
     unread: c.unread,
     typing: c.typing,

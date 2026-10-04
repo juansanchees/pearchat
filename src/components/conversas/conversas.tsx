@@ -13,6 +13,7 @@ import { ChatHeader } from './chat-header'
 import { Composer } from './composer'
 import { ConversationList } from './conversation-list'
 import { MessageThread } from './message-thread'
+import { useAiReplyAction } from './use-ai-reply'
 import { useConversations } from './use-conversations'
 import { useHistoryImport } from './use-history-import'
 import { WindowNotice } from './window-notice'
@@ -29,6 +30,7 @@ export default function Conversas(): JSX.Element {
   const [initialParam] = useState(param)
   const c = useConversations(initialParam)
   const history = useHistoryImport(c.reloadList)
+  const aiReply = useAiReplyAction(c.active, automations.ia)
   // Abaixo de 900 px a grade vira coluna única: lista -> conversa.
   const [showChat, setShowChat] = useState(false)
   // Arrastar um arquivo para a área da conversa: vira o anexo do campo de mensagem.
@@ -139,6 +141,7 @@ export default function Conversas(): JSX.Element {
                 agentName={agentName}
                 onMode={(m) => void c.setMode(m)}
                 onBack={() => setShowChat(false)}
+                aiReply={{ pendente: aiReply.pendente, respondendo: aiReply.respondendo, onClick: () => void aiReply.request() }}
               />
               <MessageThread
                 conversationId={c.active.id}

@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { Tag } from '@/components/pear'
 import { ContactNotes } from './contact-notes'
 import { formatBRL, formatBirthday, formatSince, NONE, sigla } from './format'
+import { PhotoLayer } from '@/components/conversas/contact-avatar'
 import type { Contact } from './types'
 
 function Info({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
@@ -52,9 +53,10 @@ export function ContactPanel({
       <div className="flex flex-col items-center gap-2.5 bg-gradient-to-b from-light-accent-900 to-light-surface px-[18px] pb-[18px] pt-[22px] text-center">
         <span
           aria-hidden="true"
-          className="grid h-16 w-16 place-items-center rounded-pill border-[3px] border-solid border-light-surface bg-light-accent-800 text-[20px] font-medium leading-none text-light-accent-200 shadow-[0_0_0_1px_var(--light-accent-700)]"
+          className="relative grid h-16 w-16 place-items-center rounded-pill border-[3px] border-solid border-light-surface bg-light-accent-800 text-[20px] font-medium leading-none text-light-accent-200 shadow-[0_0_0_1px_var(--light-accent-700)]"
         >
           {sigla(contact.name)}
+          <PhotoLayer src={contact.photoUrl} />
         </span>
         <div className="min-w-0">
           <h2 className="m-0 break-words text-base font-medium leading-tight">{contact.name}</h2>
