@@ -44,3 +44,6 @@ next-env.d.ts
 # deploy (segredos de producao)
 deploy/.env.production
 .claude/
+
+# hash do ultimo deploy (gerado por deploy.sh)
+.deploy-commit

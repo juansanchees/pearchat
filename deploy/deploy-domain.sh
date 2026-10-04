@@ -18,6 +18,8 @@ grep -q "^AUTH_URL='https://$DOMAIN'" deploy/.env.production || { echo "AUTH_URL
 
 REMOTE_CMD="mkdir -p /opt/pearchat && cd /opt/pearchat && rm -rf src prisma docker public && tar xzf - -C /opt/pearchat || { echo UPLOAD_FALHOU; exit 1; }; echo UPLOAD_OK; (STOP_ZAPFLOO=1 setsid nohup bash deploy/remote.sh > /dev/null 2>&1 < /dev/null &); echo REMOTE_DISPARADO"
 
+# Hash do commit enviado (vira /opt/pearchat/.deploy-commit; lido pelo backup e por /api/health).
+(git rev-parse HEAD 2>/dev/null || echo desconhecido) > .deploy-commit
 echo "==> Conexao SSH unica: upload + disparo de remote.sh (para o Zapfloo, sobe Caddy + app) em segundo plano"
 tar czf - \
   --exclude=node_modules --exclude=.next --exclude=.git --exclude='.env' --exclude='.env.local' \

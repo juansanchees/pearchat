@@ -65,6 +65,7 @@ export async function runTick(): Promise<TickSummary> {
     // Histórico do WhatsApp: passagens incrementais depois de conectar (1, 3, 10 e 30 min).
     task('historico', { importacoes: 0 }, async () => ({ importacoes: await runDueHistoryImports() }), ignoradas),
   ])
+  ;(globalThis as unknown as { __pearchat_last_tick?: number }).__pearchat_last_tick = Date.now() // lido por /api/health
   return { ia, disparos, followup, lembretes, agenda, historico, ignoradas }
 }
 

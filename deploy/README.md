@@ -106,3 +106,9 @@ Requisitos na Evolution (ja no `docker-compose.prod.yml`, servico `evolution`): 
 Migration `0006_history_import` (aditiva): rode `npx prisma migrate deploy` no deploy do app.
 
 Como funciona: a instancia nova ja nasce com `syncFullHistory` e os eventos `MESSAGES_SET`, `CHATS_SET`, `CONTACTS_SET`, `CHATS_UPSERT`. Instancias ja criadas recebem a configuracao (settings/set e webhook/set, idempotente) quando a importacao roda. O WhatsApp so entrega o historico completo no PAREAMENTO: para o numero que ja estava conectado, a Evolution passa a usar o que ja guardou desde que `DATABASE_SAVE_DATA_*` foi ligado; para trazer o historico antigo do celular e preciso desconectar e reconectar o QR. Importacao automatica ao conectar e aos 1, 3, 10 e 30 min; manual por `POST /api/wa/history/import`; status em `GET /api/wa/history`.
+
+## Backup, monitoramento e limpeza (pos-deploy)
+
+Depois de cada deploy bem-sucedido, `remote.sh` (1) limpa sobras de build (`docker image prune -f` e `docker builder prune -f --filter until=48h`; nunca `-a`, nunca volumes) e registra o espaco livre antes/depois, e (2) instala de forma idempotente e nao bloqueante o backup diario (`deploy/backup/`, ver `deploy/backup/README.md`) e o monitor a cada 5 min (`deploy/monitor/`, ver `deploy/monitor/README.md`). Falha nessas etapas nao muda o `DEPLOY_RESULT`. O `deploy.sh`/`deploy-domain.sh` enviam `.deploy-commit` (hash do commit) para `/opt/pearchat`.
+
+Acoes do dono: guardar `/root/.pearchat-backup-key` FORA do servidor; configurar a copia externa (`BACKUP_REMOTE`) e um canal de alerta (`MONITOR_WEBHOOK_URL` ou `MONITOR_EMAIL_TO`); opcionalmente `HEALTH_TOKEN` no `.env.production`. Sem a copia externa o backup e somente local.
