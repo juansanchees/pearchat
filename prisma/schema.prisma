@@ -371,7 +371,7 @@ model Template {
   rejectionReason String?
   components      Json?
   syncedAt        DateTime?
-  exampleValues   String[]
+  exampleValues   String[]  @default([])
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
