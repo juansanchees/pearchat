@@ -3,15 +3,18 @@ import { EMPRESA } from '@/components/legal/legal-layout'
 import { LogoLink, NAV } from './site-header'
 import { wrap } from './ui/styles'
 
-const linkCls = 'rounded-sm text-[14px] text-light-neutral-400 underline-offset-2 transition-colors hover:text-light-text hover:underline'
+// Rodapé escuro, continuando a chamada final. Mantém todo o conteúdo legal (razão social, CNPJ, endereço,
+// Termos, Privacidade e contato).
+const linkCls =
+  'inline-flex min-h-[32px] items-center rounded-sm text-[14px] text-dark-neutral-400 underline-offset-2 transition-colors hover:text-white hover:underline'
 
 export function SiteFooter() {
   return (
-    <footer className="bg-light-bg pb-10 pt-16">
+    <footer className="border-t border-white/[.06] bg-[#0a1a10] pb-10 pt-16 text-dark-text">
       <div className={`${wrap} grid grid-cols-1 gap-12 min-[768px]:grid-cols-[minmax(0,5fr)_minmax(0,3fr)_minmax(0,3fr)]`}>
         <div className="max-w-[420px]">
-          <LogoLink />
-          <p className="mt-4 text-[13px] leading-[1.7] text-light-neutral-500">
+          <LogoLink dark />
+          <p className="mt-4 text-[13px] leading-[1.7] text-dark-neutral-400">
             {EMPRESA.razao}
             <br />
             CNPJ {EMPRESA.cnpj}
@@ -19,16 +22,16 @@ export function SiteFooter() {
             {EMPRESA.endereco}
           </p>
         </div>
-        <nav aria-label="Página inicial" className="flex flex-col gap-2.5">
-          <p className="mb-1 text-[12px] font-medium uppercase tracking-[.12em] text-light-neutral-500">PearChat</p>
+        <nav aria-label="Página inicial" className="flex flex-col gap-1">
+          <p className="mb-2 text-[12px] font-medium uppercase tracking-[.12em] text-dark-neutral-500">PearChat</p>
           {NAV.map((n) => (
             <a key={n.href} href={n.href} className={linkCls}>
               {n.label}
             </a>
           ))}
         </nav>
-        <nav aria-label="Conta e documentos" className="flex flex-col gap-2.5">
-          <p className="mb-1 text-[12px] font-medium uppercase tracking-[.12em] text-light-neutral-500">Conta e documentos</p>
+        <nav aria-label="Conta e documentos" className="flex flex-col gap-1">
+          <p className="mb-2 text-[12px] font-medium uppercase tracking-[.12em] text-dark-neutral-500">Conta e documentos</p>
           <Link href="/registro" className={linkCls}>
             Criar conta
           </Link>
@@ -47,7 +50,7 @@ export function SiteFooter() {
         </nav>
       </div>
       <div className={`${wrap} mt-14`}>
-        <p className="border-t border-light-divider pt-6 text-[12.5px] text-light-neutral-500">© {new Date().getFullYear()} PearChat</p>
+        <p className="border-t border-white/[.08] pt-6 text-[12.5px] text-dark-neutral-500">© {new Date().getFullYear()} PearChat</p>
       </div>
     </footer>
   )
