@@ -53,6 +53,13 @@ export interface SpaceAttentionPayload {
   handoff?: { agente: string; contato: string; motivo: string }
 }
 
+/** A agenda do espaço mudou fora da tela do dono (ex.: cliente agendou pelo link público). */
+export interface AgendaUpdatedPayload {
+  workspaceId: string
+  /** Presente quando o agendamento veio do link público: o painel mostra um aviso. */
+  link?: { cliente: string; inicio: string }
+}
+
 export interface ServerToClientEvents {
   'space.attention': (payload: SpaceAttentionPayload) => void
   'message.received': (payload: MessageReceivedPayload) => void
@@ -60,6 +67,7 @@ export interface ServerToClientEvents {
   'connection.update': (payload: ConnectionUpdatePayload) => void
   'conversation.updated': (payload: ConversationUpdatedPayload) => void
   'handoff.requested': (payload: HandoffRequestedPayload) => void
+  'agenda.updated': (payload: AgendaUpdatedPayload) => void
 }
 
 export interface ClientToServerEvents {

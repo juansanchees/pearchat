@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarCheck, Clock, GoogleLogo, PencilSimple, Plugs, Trash, Warning } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
-import { emitAgendaChanged } from '@/components/app/events'
+import { AGENDA_CHANGED, emitAgendaChanged } from '@/components/app/events'
 import { Spinner } from '@/components/pear'
 import type { ServiceTypeDto } from '@/server/calendar/types'
 import type { CalendarStateDto, EventDeleteResponse, EventDto, EventWriteResponse, Lembrete } from '@/server/calendar/types'
@@ -90,6 +90,18 @@ export function ConnectedView({
     }
     return m
   }, [week.events])
+
+  // Agendamento novo por fora desta tela (ex.: cliente usou o link público): recarrega a grade e os horários.
+  const { reload: reloadWeek } = week
+  const { reload: reloadFree } = free
+  useEffect(() => {
+    const on = () => {
+      void reloadWeek()
+      void reloadFree()
+    }
+    window.addEventListener(AGENDA_CHANGED, on)
+    return () => window.removeEventListener(AGENDA_CHANGED, on)
+  }, [reloadWeek, reloadFree])
 
   const { sincronizadoEm } = week
   useEffect(() => {

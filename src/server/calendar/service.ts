@@ -42,6 +42,7 @@ export function toEventDto(e: EventRow): EventDto {
     origem: e.origem,
     contactId: e.contactId,
     serviceTypeId: e.serviceTypeId,
+    ...(e.canal === 'link' ? { canal: 'link' as const } : {}),
     ...(e.origem === 'MANUAL' && e.serviceType?.cor ?{ cor: e.serviceType.cor } : {}),
     cliente: e.contact?.nome ?? null,
     noGoogle: e.googleEventId !== null,

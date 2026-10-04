@@ -2,14 +2,16 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ClockClockwise, Hand, LockSimple, PaperPlaneTilt, PauseCircle, Plugs, Sparkle, Warning } from '@phosphor-icons/react'
+import { CalendarCheck, ClockClockwise, Hand, LockSimple, PaperPlaneTilt, PauseCircle, Plugs, Sparkle, Warning } from '@phosphor-icons/react'
 import type { AutomationKey, DrawerKey, WhatsAppStatusDTO } from '@/lib/types'
 import type { SpaceDTO, SpacesResponse } from '@/server/spaces/service'
 import type { ConnectConfig } from '@/server/whatsapp/config'
 import type { SpaceAttentionPayload } from '@/server/realtime/events'
 import { redirectIfUnauthorized } from '@/lib/auth-redirect'
 import { closeSocket, useRawSocketEvent, useSocketEvent } from '@/lib/socket-client'
+import { toSp } from '@/components/agenda/time'
 import { AUTOMATION_TITLES } from './automations'
+import { emitAgendaChanged } from './events'
 import { HANDOFF_WINDOW_EVENT } from './handoff'
 import type { HandoffRequestedPayload } from './handoff'
 
@@ -164,6 +166,19 @@ export function AppStateProvider({
       text: p.motivo,
     })
     window.dispatchEvent(new CustomEvent<HandoffRequestedPayload>(HANDOFF_WINDOW_EVENT, { detail: p }))
+  })
+
+  // A agenda mudou por fora (cliente agendou pelo link público): atualiza as telas e avisa o dono.
+  useSocketEvent('agenda.updated', (p) => {
+    emitAgendaChanged()
+    if (!p.link) return
+    const at = toSp(p.link.inicio)
+    const [, mm, dd] = at.date.split('-')
+    toast({
+      icon: <CalendarCheck size={18} weight="fill" />,
+      title: 'Novo agendamento pelo link',
+      text: `${p.link.cliente}, ${dd}/${mm} ${at.hm}`,
+    })
   })
 
   // Recarrega os cartões dos WhatsApps. A tela é do espaço `workspaceId`; se o servidor diz que o ativo agora é outro

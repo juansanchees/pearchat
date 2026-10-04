@@ -1,7 +1,7 @@
 'use client'
 
 import { ArrowClockwise, CaretLeft, CaretRight, Sparkle } from '@phosphor-icons/react'
-import { Spinner } from '@/components/pear'
+import { Spinner, Tag } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import type { EventDto } from '@/server/calendar/types'
 import { ORIGEM_BAR } from './data'
@@ -235,6 +235,7 @@ export function WeekGrid({
                           <span className="truncate">
                             {toSp(ev.inicio).hm} · {ev.titulo}
                           </span>
+                          {ev.canal === 'link' && <Tag className="!flex-none !rounded-[4px] !px-[5px] !py-px !text-[9px]">Link</Tag>}
                         </div>
                         {ev.origem !== 'GOOGLE' && (
                           <div className="mt-0.5 truncate text-[10.5px] text-light-neutral-500">{ev.cliente ?? 'Cliente sem nome'}</div>

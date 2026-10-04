@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { CalendarPlus, Check, GoogleLogo, PencilSimple, Sparkle, TrashSimple, User } from '@phosphor-icons/react'
-import { Spinner } from '@/components/pear'
+import { Spinner, Tag } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import type { EventDto, EventOrigem, ServiceTypeDto } from '@/server/calendar/types'
 import { TIPO_DUR_OPTS } from './data'
@@ -95,6 +95,7 @@ export function DayCard({
                   )}
                   {o.label}
                 </span>
+                {ev.canal === 'link' && <Tag className="!px-[7px] !py-px !text-[10px]">Link</Tag>}
                 {fora && <span className="text-light-neutral-500">{fora}</span>}
                 {ev.somenteLeitura && <span className="text-light-neutral-500">Edite no Google Agenda</span>}
               </div>
