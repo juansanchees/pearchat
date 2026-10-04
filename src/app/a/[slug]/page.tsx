@@ -19,5 +19,5 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 export default async function PublicBookingPage({ params }: { params: { slug: string } }) {
   const ws = await getPublicWorkspace(params.slug)
   if (!ws) notFound()
-  return <BookingFlow slug={params.slug} negocio={ws.nome} />
+  return <BookingFlow slug={params.slug} negocio={ws.nome} logoSrc={ws.temLogo ? `/api/public/booking/${params.slug}/logo` : null} />
 }

@@ -94,7 +94,7 @@ const pillBase =
 const pillOn = 'border-light-accent-600 bg-light-accent-900 text-light-accent-200'
 const pillOff = 'border-light-divider bg-light-surface text-light-text hover:border-light-neutral-700'
 
-export function BookingFlow({ slug, negocio }: { slug: string; negocio: string }) {
+export function BookingFlow({ slug, negocio, logoSrc = null }: { slug: string; negocio: string; logoSrc?: string | null }) {
   const base = `/api/public/booking/${encodeURIComponent(slug)}`
   const [info, setInfo] = useState<Info | null>(null)
   const [loadErr, setLoadErr] = useState<'rede' | 'indisponivel' | null>(null)
@@ -289,6 +289,10 @@ export function BookingFlow({ slug, negocio }: { slug: string; negocio: string }
         }}
       >
         <div className="mx-auto w-full max-w-[560px]">
+          {logoSrc && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoSrc} alt={`Logo de ${nomeNegocio}`} width={56} height={56} className="mb-4 h-14 w-14 rounded-pill border border-dark-accent-700 object-cover" />
+          )}
           <p className="m-0 text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-dark-accent-300">Agendamento online</p>
           <h1 className="mb-0 mt-3 text-balance text-[28px] font-medium leading-[1.15] tracking-[-0.02em] min-[560px]:text-[34px]">{nomeNegocio}</h1>
           {info?.mensagem && <p className="mb-0 mt-3 max-w-[48ch] text-[14px] leading-[1.55] text-dark-neutral-300 [text-wrap:pretty]">{info.mensagem}</p>}

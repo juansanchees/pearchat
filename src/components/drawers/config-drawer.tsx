@@ -25,6 +25,7 @@ export function ConfigDrawer() {
   const { horarioAtendimento, setHorarioAtendimento, notifs, setNotifs } = useDrawerData()
   const loading = useDrawerLoad('config')
   const photo = usePhotoPicker()
+  const logo = usePhotoPicker('logo')
   const { can } = usePermissions() // Equipe: atendente não vê "Este WhatsApp", "Conexões" nem "Equipe"
   const disconnect = useDisconnect()
   const router = useRouter()
@@ -86,6 +87,22 @@ export function ConfigDrawer() {
 
       {can('settings.workspace') && (
       <Section label="Este WhatsApp" gap="gap-3">
+        {logo.input}
+        <div className="flex items-center gap-[14px]">
+          <button type="button" title="Trocar logo" aria-label="Trocar logo" onClick={logo.open} className="rounded-pill p-0">
+            <Avatar name={user.empresa} size={56} src={logo.fotoUrl} className="text-[17px]" />
+          </button>
+          <div className="min-w-0 text-[12.5px] font-medium">Logo do negócio</div>
+          <button type="button" className="pc-btn pc-btn-secondary !text-[12px]" disabled={logo.uploading} onClick={logo.open}>
+            <Camera size={14} />
+            {logo.uploading ? 'Enviando…' : logo.hasOwn ? 'Trocar logo' : 'Enviar logo'}
+          </button>
+          {logo.hasOwn && (
+            <button type="button" className="pc-btn pc-btn-ghost !text-[12px]" disabled={logo.uploading} onClick={() => void logo.remove()}>
+              Remover logo
+            </button>
+          )}
+        </div>
         <div className="flex flex-wrap gap-3">
           <Field label="Nome do negócio" className="min-w-0 flex-[1_1_180px]">
             <input className="pc-input" value={user.empresa} onChange={(e) => setUser({ empresa: e.target.value })} />
