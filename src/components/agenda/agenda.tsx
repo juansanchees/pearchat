@@ -35,6 +35,8 @@ export function Agenda() {
   const { cal, setCal, loading, error, reload } = useCalendarState()
   const [step, setStep] = useState<ConnectStep>(null)
   const [realMode, setRealMode] = useState(false)
+  // Sem Google conectado a Agenda abre na grade (eventos do PearChat); o fluxo de conexão abre pelo aviso do topo.
+  const [flowOpen, setFlowOpen] = useState(false)
   const [syncedAt, setSyncedAt] = useState<string | null>(null)
   const [, setTick] = useState(0)
 
@@ -92,12 +94,13 @@ export function Agenda() {
 
   // Na volta do OAuth a conexão já existe, mas a tela continua no passo de agendas até "Concluir conexão".
   const pickingReal = realMode && step === 'agendas' && !!cal?.conectado
-  const inFlow = !!cal && (!cal.conectado || pickingReal)
+  const inFlow = !!cal && (pickingReal || (!cal.conectado && flowOpen))
   const gOn = !!cal?.conectado && !pickingReal
+  const showGrid = !!cal && !inFlow
   const subtitle = !cal
     ? 'Carregando…'
     : !gOn
-      ? 'Google Agenda não conectado'
+      ? 'Agenda do PearChat · Google Agenda não conectado'
       : cal.demo
         ? `${cal.email || 'Google'} · modo de demonstração`
         : cal.precisaReconectar
@@ -135,14 +138,23 @@ export function Agenda() {
           onConnected={(next) => {
             setCal(next)
             setRealMode(false)
+            setFlowOpen(false)
             emitAgendaChanged()
+          }}
+          onClose={() => {
+            setStep(null)
+            setFlowOpen(false)
           }}
         />
       )}
 
-      {cal && gOn && (
+      {cal && showGrid && (
         <ConnectedView
           cal={cal}
+          onConnectGoogle={() => {
+            setStep(null)
+            setFlowOpen(true)
+          }}
           patch={patch}
           clienteParam={clienteParam}
           onSynced={setSyncedAt}

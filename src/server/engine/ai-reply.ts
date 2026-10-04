@@ -12,6 +12,7 @@ import { notifySpaceAttention } from '@/server/spaces/attention'
 import { loadConversationItem, toMessageDTO } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { canSendFreeformTo } from './freeform'
+import { HANDOFF_LIMIT_NOTE, HANDOFF_MODEL_NOTE, handoffRuleNote } from './handoff-reasons'
 import { contactRef, OutboundError, sendAndRecord } from './outbound'
 import { cancelPendingFollowUps } from './followup'
 import { agentMayReplyAt, detectHandoffRule, formatAgora, genericHandoffMessage, isStopRequest, ungroundedMoney } from './rules'
@@ -297,14 +298,14 @@ async function execute(job: AiJob): Promise<JobResult> {
     // Avisa o cliente UMA vez (sem falar de plano/limite) antes de passar para a equipe.
     const jaAvisou = await db.message.findFirst({ where: { conversationId, author: 'IA', body: LIMIT_NOTICE }, select: { id: true } })
     await handoff({ session, conv, motivo: 'limite do plano', message: jaAvisou ? null : LIMIT_NOTICE })
-    return { kind: 'done', note: 'limite de respostas de IA do plano' }
+    return { kind: 'done', note: HANDOFF_LIMIT_NOTE }
   }
 
   // Regras de passagem por palavra-chave: antes de chamar o modelo.
   const hit = detectHandoffRule(customerText, agent.handoffRules)
   if (hit) {
     await handoff({ session, conv, motivo: hit.motivo, message: hit.mensagem(responsavel) })
-    return { kind: 'done', note: `passagem: ${hit.motivo}` }
+    return { kind: 'done', note: handoffRuleNote(hit.motivo) }
   }
 
   if (!(await canSendFreeformTo(session, to))) return { kind: 'done', note: 'fora da janela de 24h: só modelos aprovados' }
@@ -364,7 +365,7 @@ async function execute(job: AiJob): Promise<JobResult> {
 
   if (texto.includes(HANDOFF_MARKER)) {
     await handoff({ session, conv, motivo: 'regra de passagem (decisão da IA)', message: genericHandoffMessage(responsavel) })
-    return { kind: 'done', note: 'passagem pelo modelo' }
+    return { kind: 'done', note: HANDOFF_MODEL_NOTE }
   }
 
   try {

@@ -21,6 +21,7 @@ import { useAppState } from '@/components/app/app-state'
 import { Spinner, Tag } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import type { CalendarStateDto } from '@/server/calendar/types'
+import { BookingLinkSettings } from './booking-link-settings'
 import { CAL_CORES, DEMO_CALS, DEMO_DESTINO, DEMO_SELECIONADAS, GOOGLE_CONTAS, api } from './data'
 
 export type ConnectStep = null | 'conta' | 'agendas'
@@ -49,12 +50,15 @@ export function ConnectFlow({
   onStep,
   realMode,
   onConnected,
+  onClose,
 }: {
   cal: CalendarStateDto
   step: ConnectStep
   onStep: (s: ConnectStep) => void
   realMode: boolean
   onConnected: (next: CalendarStateDto, concluded: boolean) => void
+  /** Volta para a grade da Agenda (conexão adiada). */
+  onClose?: () => void
 }) {
   const { toast } = useAppState()
   const [conta, setConta] = useState<string | null>(null)
@@ -89,7 +93,15 @@ export function ConnectFlow({
 
   return (
     <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto bg-light-bg bg-[radial-gradient(900px_480px_at_30%_0%,#f0faea,transparent_70%)] p-8">
-      {step === null && <Intro onGoogle={iniciar} />}
+      {step === null && (
+        <div className="flex w-[min(900px,100%)] flex-col gap-4">
+          <Intro onGoogle={iniciar} onClose={onClose} />
+          {/* O link público funciona com a agenda do próprio PearChat: configurável sem conectar o Google. */}
+          <div className={cn(cardCls, 'gap-2.5 p-5 [&>div]:border-0 [&>div]:pt-0')}>
+            <BookingLinkSettings />
+          </div>
+        </div>
+      )}
 
       {step === 'conta' && (
         <div className={cn(cardCls, 'relative w-[min(440px,100%)] gap-4 p-7')}>
@@ -174,9 +186,9 @@ export function ConnectFlow({
   )
 }
 
-function Intro({ onGoogle }: { onGoogle: () => void }) {
+function Intro({ onGoogle, onClose }: { onGoogle: () => void; onClose?: () => void }) {
   return (
-    <div className={cn(cardCls, 'w-[min(900px,100%)] flex-row flex-wrap items-center gap-9 p-9 animate-[zfIn_.35s_ease_both]')}>
+    <div className={cn(cardCls, 'w-full flex-row flex-wrap items-center gap-9 p-9 animate-[zfIn_.35s_ease_both]')}>
       <div className="min-w-0 flex-[1_1_320px]">
         <div className="text-[10.5px] font-medium uppercase leading-none tracking-[.16em] text-light-accent-300">Agenda</div>
         <h2 className="m-0 mt-3 text-[30px] font-medium leading-[1.15] tracking-[-.02em]">Conecte sua agenda</h2>
@@ -213,6 +225,11 @@ function Intro({ onGoogle }: { onGoogle: () => void }) {
           </span>
           <ArrowRight size={14} className="text-light-accent-300" />
         </button>
+        {onClose && (
+          <button type="button" onClick={onClose} className="pc-btn pc-btn-ghost self-start px-2 py-1 text-[12px]">
+            <ArrowLeft size={12} /> Voltar para a agenda
+          </button>
+        )}
         {OUTRAS.map((o) => (
           <div
             key={o.nome}

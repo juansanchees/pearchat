@@ -20,7 +20,7 @@ function Submit() {
 export function LoginForm({
   googleEnabled = false,
   oauthError,
-  callbackUrl = '/',
+  callbackUrl = '/whatsapp',
 }: {
   googleEnabled?: boolean
   oauthError?: string

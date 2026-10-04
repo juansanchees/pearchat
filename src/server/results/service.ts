@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { addDaysStr } from '@/server/booking/availability'
 import { spToDate } from '@/server/calendar/time'
+import { HANDOFF_LIKE_ANY, HANDOFF_LIKE_LIMIT, HANDOFF_LIKE_RULE, HANDOFF_RULE_PREFIX_END } from '@/server/engine/handoff-reasons'
 import { spParts } from '@/server/engine/util'
 import type { Periodo, ResultsDto } from './types'
 
@@ -107,19 +108,19 @@ export async function compute(ws: string, periodo: Periodo, now: Date): Promise<
       FROM (
         SELECT j."conversationId",
                CASE WHEN j."error" IS NULL THEN 'resp'
-                    WHEN j."error" LIKE 'passagem%' OR j."error" LIKE 'limite de respostas%' THEN 'handoff' END AS kind
+                    WHEN j."error" LIKE ${HANDOFF_LIKE_ANY[0]} OR j."error" LIKE ${HANDOFF_LIKE_ANY[1]} THEN 'handoff' END AS kind
         FROM "AiJob" j
         WHERE j."workspaceId" = ${ws} AND j."status" = 'feito' AND j."runAt" >= ${from} AND j."runAt" < ${to}
       ) t WHERE kind IS NOT NULL`),
 
     db.$queryRaw<{ motivo: string; total: Num }[]>(Prisma.sql`
-      SELECT CASE WHEN j."error" LIKE 'passagem: %' THEN substr(j."error", 11)
-                  WHEN j."error" LIKE 'limite de respostas%' THEN 'Limite do plano'
+      SELECT CASE WHEN j."error" LIKE ${HANDOFF_LIKE_RULE} THEN substr(j."error", ${HANDOFF_RULE_PREFIX_END}::int)
+                  WHEN j."error" LIKE ${HANDOFF_LIKE_LIMIT} THEN 'Limite do plano'
                   ELSE 'Decisão da IA' END AS motivo,
              COUNT(*)::int AS total
       FROM "AiJob" j
       WHERE j."workspaceId" = ${ws} AND j."status" = 'feito' AND j."runAt" >= ${from} AND j."runAt" < ${to}
-        AND (j."error" LIKE 'passagem%' OR j."error" LIKE 'limite de respostas%')
+        AND (j."error" LIKE ${HANDOFF_LIKE_ANY[0]} OR j."error" LIKE ${HANDOFF_LIKE_ANY[1]})
       GROUP BY 1 ORDER BY total DESC, motivo ASC`),
 
     db.$queryRaw<{ origem: string; total: Num }[]>(Prisma.sql`

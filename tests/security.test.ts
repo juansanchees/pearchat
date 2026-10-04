@@ -78,7 +78,10 @@ describe('limite de tentativas', () => {
     const email = `claro-${uniq()}@teste.local`
     await reserve('login', { email, ip: '203.0.113.77' })
     const rows = await db.loginAttempt.findMany({ orderBy: { createdAt: 'desc' }, take: 20 })
-    for (const r of rows) assert.match(r.emailHash, /^[0-9a-f]{64}$/), assert.match(r.ipHash, /^[0-9a-f]{64}$/)
+    for (const r of rows) {
+      assert.match(r.emailHash, /^[0-9a-f]{64}$/)
+      assert.match(r.ipHash, /^[0-9a-f]{64}$/)
+    }
   })
 })
 

@@ -25,6 +25,7 @@ export function ConnectedView({
   onDisconnected,
   clienteParam,
   onSynced,
+  onConnectGoogle,
 }: {
   cal: CalendarStateDto
   patch: (body: CalendarPatch) => Promise<boolean>
@@ -32,6 +33,8 @@ export function ConnectedView({
   clienteParam: string | null
   /** Chamado com o instante da última leitura bem-sucedida do Google (para o status da barra superior). */
   onSynced?: (iso: string) => void
+  /** Sem Google conectado: abre o fluxo de conexão a partir do aviso no topo. */
+  onConnectGoogle?: () => void
 }) {
   const { toast, wa, agentName } = useAppState()
 
@@ -329,7 +332,14 @@ export function ConnectedView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {reconectar ? (
+      {!cal.conectado ? (
+        <Banner
+          tone="info"
+          text="Você está usando a agenda do PearChat. Conecte o Google Agenda para sincronizar seus compromissos."
+          action="Conectar Google Agenda"
+          onAction={() => onConnectGoogle?.()}
+        />
+      ) : reconectar ? (
         <Banner
           tone="warn"
           text="Sua conexão com o Google expirou. Os agendamentos continuam salvos aqui, mas não sincronizam até você reconectar."
@@ -439,6 +449,7 @@ export function ConnectedView({
           tiposCount={tipos.length}
           onEditTipos={() => setEditorOpen(true)}
           oficial={wa.provider === 'oficial'}
+          conectado={cal.conectado}
           email={cal.email || 'Google'}
           demo={cal.demo}
           disconnecting={disconnecting}
