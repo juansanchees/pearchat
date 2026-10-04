@@ -5,15 +5,18 @@ import { authConfig } from '@/auth.config'
 const { auth } = NextAuth(authConfig)
 
 // Páginas legais: públicas para todos (logado ou não), sem redirecionamento.
-const OPEN_PAGES = ['/privacidade', '/termos']
+const OPEN_PAGES = ['/privacidade', '/termos', '/sessao-encerrada']
 // /verificar-email exige sessão (o código vai para a conta logada).
-const PUBLIC_PAGES = ['/login', '/registro', '/recuperar-senha', '/redefinir-senha']
+const PUBLIC_PAGES = ['/login', '/registro', '/recuperar-senha', '/redefinir-senha', '/verificar-acesso']
 
 export default auth((req) => {
   const { pathname } = req.nextUrl
   if (OPEN_PAGES.includes(pathname)) return NextResponse.next()
   const isPublic = PUBLIC_PAGES.includes(pathname)
   const loggedIn = !!req.auth
+
+  // Página inicial do site: visitante vê a apresentação (estática); quem está logado vai direto para o app.
+  if (pathname === '/') return loggedIn ? NextResponse.redirect(new URL('/whatsapp', req.nextUrl)) : NextResponse.next()
 
   if (!loggedIn && pathname.startsWith('/api/')) {
     // Chamadas fetch esperam JSON, não o HTML da tela de login.
