@@ -1,17 +1,17 @@
 'use client'
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import Image from 'next/image'
-import { useMotionValueEvent, useScroll } from 'motion/react'
-import type { Icon } from '@phosphor-icons/react'
-import { Bell, CalendarCheck, ChatCircleDots, CheckCircle, Clock, Sparkle } from '@phosphor-icons/react/dist/ssr'
+import type { Icon } from '@/components/site/ui/icons'
+import { Bell, CalendarCheck, ChatCircleDots, CheckCircle, Clock, Sparkle } from '@/components/site/ui/icons'
 import { cn } from '@/lib/utils'
 import { useReducedMotion } from '../anim/use-play'
+import { useScrollProgress } from '../anim/use-scroll-progress'
 import { wrap } from '../ui/styles'
 
 /*
  * Seção escura de impacto: a linha do tempo de um atendimento que acontece sozinho, com o PearChat no centro.
- * Os seis acontecimentos acendem em sequência conforme a área dos cartões rola pela tela (useScroll do motion), e um
+ * Os seis acontecimentos acendem em sequência conforme a área dos cartões rola pela tela (useScrollProgress), e um
  * ponto de luz percorre a linha em U até o cartão ativo (offset-path, só transform). Sem JavaScript ou com movimento
  * reduzido, tudo aparece aceso.
  */
@@ -125,18 +125,17 @@ export function Impact() {
   const [hydrated, setHydrated] = useState(false)
   useEffect(() => setHydrated(true), [])
 
-  const track = (p: number) => setActive(p <= 0.001 ? -1 : Math.min(LAST, Math.floor(p * (LAST + 1.2))))
-  const dScroll = useScroll({ target: desk, offset: ['start 0.85', 'end 0.5'] })
-  const mScroll = useScroll({ target: mob, offset: ['start 0.8', 'end 0.6'] })
-  useMotionValueEvent(dScroll.scrollYProgress, 'change', (p) => !reduced && desk.current?.offsetParent && track(p))
-  useMotionValueEvent(mScroll.scrollYProgress, 'change', (p) => !reduced && mob.current?.offsetParent && track(p))
+  // Acende conforme a área dos cartões rola (só quando o movimento é permitido; senão, tudo aceso).
+  const track = useCallback((p: number) => {
+    if (!reducedRef.current) setActive(p <= 0.001 ? -1 : Math.min(LAST, Math.floor(p * (LAST + 1.2))))
+  }, [])
+  const reducedRef = useRef(false)
   useEffect(() => {
-    if (!hydrated) return
-    if (reduced) return setActive(LAST)
-    const el = desk.current?.offsetParent ? dScroll : mScroll
-    track(el.scrollYProgress.get())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, reduced])
+    reducedRef.current = reduced
+    if (reduced && hydrated) setActive(LAST)
+  }, [reduced, hydrated])
+  useScrollProgress(desk, track, 0.85, 0.5)
+  useScrollProgress(mob, track, 0.8, 0.6)
 
   const pos = [
     { x: LEFT_X, y: ROWS[0]! },
@@ -149,7 +148,7 @@ export function Impact() {
   const frac = active < 0 ? 0 : STOPS[active]!
 
   return (
-    <section aria-labelledby="t-impacto" className="relative overflow-hidden bg-[#050807] py-24 text-dark-text min-[768px]:py-32">
+    <section aria-labelledby="t-impacto" style={{ containIntrinsicSize: 'auto 1300px' }} className="lp-cv relative overflow-hidden bg-[#050807] py-24 text-dark-text min-[768px]:py-32">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"

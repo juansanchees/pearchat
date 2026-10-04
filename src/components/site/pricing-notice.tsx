@@ -1,4 +1,4 @@
-import { Info } from '@phosphor-icons/react/dist/ssr'
+import { Info } from '@/components/site/ui/icons'
 
 // Aviso de cobrança da página inicial. Fica sozinho de propósito: quando a cobrança começar, troque só o texto aqui.
 export const BILLING_NOTICE = 'A cobrança ainda não está ativa: durante o lançamento, o uso é gratuito.'

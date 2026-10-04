@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import type { Icon } from '@phosphor-icons/react'
-import { Cake, FirstAidKit, ForkKnife, HairDryer, PawPrint, Scissors, Storefront, Wrench } from '@phosphor-icons/react/dist/ssr'
+import type { Icon } from '@/components/site/ui/icons'
+import { Cake, FirstAidKit, ForkKnife, HairDryer, PawPrint, Scissors, Storefront, Wrench } from '@/components/site/ui/icons'
 import { cn } from '@/lib/utils'
 import { usePlay } from '../anim/use-play'
 import { AGENTE, Avatar, Bubble } from '../ui/primitives'
@@ -53,7 +53,7 @@ export function Niches() {
   }
 
   return (
-    <section ref={section} onPointerDown={stopAuto} onKeyDown={stopAuto} id="para-quem-e" aria-labelledby="t-quem" className="bg-white py-24 min-[768px]:py-36">
+    <section ref={section} onPointerDown={stopAuto} onKeyDown={stopAuto} id="para-quem-e" aria-labelledby="t-quem" style={{ containIntrinsicSize: 'auto 1100px' }} className="lp-cv bg-white py-24 min-[768px]:py-36">
       <div className={wrap}>
         <div className="grid grid-cols-1 gap-14 min-[1024px]:grid-cols-[minmax(0,6fr)_minmax(0,6fr)] min-[1024px]:gap-20">
           <div>
@@ -78,7 +78,7 @@ export function Niches() {
                     onKeyDown={(e) => onKey(e, idx)}
                     className={cn(
                       'group flex min-h-[56px] items-center gap-3.5 border-b border-light-divider py-4 text-left text-[18px] font-medium tracking-[-0.01em] transition-colors duration-200 min-[768px]:text-[20px]',
-                      on ? 'text-light-text' : 'text-light-neutral-500 hover:text-light-text',
+                      on ? 'text-light-text' : 'text-light-neutral-400 hover:text-light-text',
                     )}
                   >
                     <span
@@ -103,7 +103,7 @@ export function Niches() {
                   <Avatar nome={n.cliente} size={36} ia />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13.5px] font-medium leading-tight">{n.cliente}</div>
-                    <div className="mt-0.5 text-[11px] text-light-neutral-500">WhatsApp · {n.negocio}</div>
+                    <div className="mt-0.5 text-[11px] text-light-neutral-400">WhatsApp · {n.negocio}</div>
                   </div>
                 </div>
                 <div key={i} className="flex h-[280px] flex-col justify-end gap-2.5 overflow-hidden bg-light-bg px-4 py-5 min-[560px]:px-5">

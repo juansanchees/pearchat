@@ -1,11 +1,11 @@
 import Link from 'next/link'
-import { ArrowRight } from '@phosphor-icons/react/dist/ssr'
+import { ArrowRight } from '@/components/site/ui/icons'
 import { PearGlass } from '@/components/brand/pear-glass'
 import { btnPro, wrap } from '../ui/styles'
 
 export function FinalCta() {
   return (
-    <section aria-labelledby="t-final" className="relative overflow-hidden bg-[#050807] text-dark-text">
+    <section aria-labelledby="t-final" style={{ containIntrinsicSize: 'auto 900px' }} className="lp-cv relative overflow-hidden bg-[#050807] text-dark-text">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"

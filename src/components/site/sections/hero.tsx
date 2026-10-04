@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, WhatsappLogo } from '@phosphor-icons/react/dist/ssr'
+import { ArrowRight, WhatsappLogo } from '@/components/site/ui/icons'
 import { btnPrimary, btnSecondary, wrap } from '../ui/styles'
 import { HeroStage } from './hero-stage'
 
@@ -41,7 +41,7 @@ export function Hero() {
             Conhecer o PearChat
           </a>
         </div>
-        <p className="mt-4 text-[13px] text-light-neutral-500">Sem cartão de crédito. Durante o lançamento, o uso é gratuito.</p>
+        <p className="mt-4 text-[13px] text-light-neutral-400">Sem cartão de crédito. Durante o lançamento, o uso é gratuito.</p>
       </div>
 
       <div className="relative mt-14 pb-20 min-[768px]:mt-16 min-[768px]:pb-24">

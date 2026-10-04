@@ -1,4 +1,4 @@
-import { CalendarCheck, Check, ClockClockwise, Bell, Sparkle, WhatsappLogo } from '@phosphor-icons/react/dist/ssr'
+import { CalendarCheck, Check, ClockClockwise, Bell, Sparkle, WhatsappLogo } from '@/components/site/ui/icons'
 import { cn } from '@/lib/utils'
 import { AGENTE, AppWindow, Avatar, MiniLabel, Switch } from '../ui/primitives'
 
@@ -85,7 +85,7 @@ export function ConnectPanel({ state = 'aguardando', className }: { state?: Conn
             <WhatsappLogo size={17} weight="fill" />
           </span>
         </div>
-        <span className="flex items-center gap-1.5 text-[11px] text-light-neutral-500">
+        <span className="flex items-center gap-1.5 text-[11px] text-light-neutral-400">
           <span className="h-1.5 w-1.5 rounded-pill bg-light-accent-500" />
           {state === 'conectado' ? 'Pronto para atender' : 'Aguardando leitura do código'}
         </span>
@@ -117,7 +117,7 @@ export function TeachPanel({ filled = TEACH_ITEMS.length, className }: { filled?
       <div>
         <div className="mb-2 flex items-baseline justify-between">
           <MiniLabel>O que ele precisa saber</MiniLabel>
-          <span className="text-[10.5px] text-light-neutral-500">{filled} respostas</span>
+          <span className="text-[10.5px] text-light-neutral-400">{filled} respostas</span>
         </div>
         <div className="flex flex-col gap-1.5">
           {TEACH_ITEMS.map(([p, r], i) => (
@@ -129,7 +129,7 @@ export function TeachPanel({ filled = TEACH_ITEMS.length, className }: { filled?
               )}
             >
               <span className="w-[110px] flex-none text-[11.5px] font-medium">{p}</span>
-              <span key={i < filled ? 'on' : 'off'} className={cn('min-w-0 flex-1 truncate text-[11.5px] text-light-neutral-500', i < filled && 'lp-pop')}>{i < filled ? r : ' '}</span>
+              <span key={i < filled ? 'on' : 'off'} className={cn('min-w-0 flex-1 truncate text-[11.5px] text-light-neutral-400', i < filled && 'lp-pop')}>{i < filled ? r : ' '}</span>
               {i < filled && <Check size={12} weight="bold" className="flex-none text-light-accent-400" />}
             </div>
           ))}
@@ -217,12 +217,12 @@ export function WorkingPanel({ count = FEED.length, className }: { count?: numbe
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
               <span className="flex-1 truncate text-[13px] font-medium">{c.nome}</span>
-              <span className="text-[10.5px] text-light-neutral-500">{c.hora}</span>
+              <span className="text-[10.5px] text-light-neutral-400">{c.hora}</span>
             </div>
             <div className="mt-1 flex items-center gap-1.5">
               {c.kind === 'agenda' && <CalendarCheck size={13} weight="bold" className="flex-none text-light-accent-400" />}
               {c.kind === 'followup' && <ClockClockwise size={13} weight="bold" className="flex-none text-light-accent-400" />}
-              <span className={cn('flex-1 truncate text-[12px]', c.kind ? 'font-medium text-light-accent-300' : 'text-light-neutral-500')}>{c.previa}</span>
+              <span className={cn('flex-1 truncate text-[12px]', c.kind ? 'font-medium text-light-accent-300' : 'text-light-neutral-400')}>{c.previa}</span>
               {c.novas && <span className="h-[18px] min-w-[18px] rounded-pill bg-light-accent-fill px-[5px] text-center text-[10.5px] font-medium leading-[18px] text-white">{c.novas}</span>}
             </div>
           </div>

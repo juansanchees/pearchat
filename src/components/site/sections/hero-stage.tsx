@@ -1,17 +1,16 @@
 'use client'
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { LazyMotion, m, useMotionValue, useScroll, useSpring, useTransform, type MotionValue } from 'motion/react'
-import { CalendarCheck } from '@phosphor-icons/react/dist/ssr'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
+import { CalendarCheck } from '@/components/site/ui/icons'
 import { PearGlass } from '@/components/brand/pear-glass'
 import { cn } from '@/lib/utils'
 import { useStepper } from '../anim/use-play'
 import { HERO_FINAL, HeroAgenda, HeroAgent, HeroChat, HeroContacts } from '../mini/hero-windows'
 
-// Palco do herói (ilha cliente). A mini-história roda em laço (useStepper) e as camadas respondem ao mouse
-// (parallax por profundidade, amortecido por mola; desligado em telas de toque) e ao scroll (o conjunto "deita").
-// Recursos de animação do motion são carregados depois, sob demanda.
-const loadFeatures = () => import('../anim/motion-features').then((r) => r.default)
+// Palco do herói (ilha cliente). A mini-história roda em laço (useStepper). As camadas respondem ao mouse (parallax por
+// profundidade, amortecido) e ao scroll (o conjunto inclina): um laço requestAnimationFrame só enquanto há movimento
+// escreve três variáveis CSS na cena (--mx, --my, --sp); a inclinação e os deslocamentos são calculados no CSS
+// (globals.css, .lp-scene e .lp-par), só com transform. Parallax do mouse desligado em toque e com movimento reduzido.
 
 /** Quanto tempo (ms) cada passo da história fica na tela; o último é a pausa antes de recomeçar. */
 const DURATIONS = [700, 1500, 1300, 1900, 1300, 1200, 1900, 1100, 5200]
@@ -30,114 +29,119 @@ function NewBookingToast({ show, className }: { show: boolean; className?: strin
       </span>
       <span className="min-w-0">
         <span className="block text-[12.5px] font-medium leading-tight">Novo agendamento</span>
-        <span className="mt-0.5 block truncate text-[11.5px] text-light-neutral-500">Rafael Costa · amanhã, 16:00</span>
+        <span className="mt-0.5 block truncate text-[11.5px] text-light-neutral-400">Rafael Costa · amanhã, 16:00</span>
       </span>
     </div>
   )
 }
 
-/** Camada do palco: posição/profundidade fixas no CSS 3D e um deslocamento de parallax proporcional à profundidade. */
-function Layer({
-  box,
-  depth,
-  mx,
-  my,
-  children,
-  className,
-}: {
-  box: { left: number; top: number; width: number; transform: string }
-  depth: number
-  mx: MotionValue<number>
-  my: MotionValue<number>
-  children: ReactNode
-  className?: string
-}) {
-  const x = useTransform(mx, (v) => v * depth * 16)
-  const y = useTransform(my, (v) => v * depth * 10)
+/** Camada: posição/profundidade fixas em 3D e um deslocamento de parallax proporcional a `depth` (via CSS). */
+function Layer({ box, depth, children }: { box: { left: number; top: number; width: number; transform: string }; depth: number; children: ReactNode }) {
   return (
     <div className="lp-layer" style={{ left: box.left, top: box.top, width: box.width, transform: box.transform }}>
-      <m.div style={{ x, y }} className={className}>
+      <div className="lp-par" style={{ '--d': depth } as CSSProperties}>
         {children}
-      </m.div>
+      </div>
     </div>
   )
+}
+
+function useStageMotion(stage: RefObject<HTMLDivElement | null>, scene: RefObject<HTMLDivElement | null>, ready: boolean) {
+  useEffect(() => {
+    const st = stage.current
+    const sc = scene.current
+    if (!st || !sc || typeof IntersectionObserver === 'undefined') return
+    const fine = window.matchMedia('(hover: hover) and (pointer: fine)')
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let tx = 0
+    let ty = 0
+    let cx = 0
+    let cy = 0
+    let raf = 0
+    let visible = false
+    const frame = () => {
+      raf = 0
+      cx += (tx - cx) * 0.07
+      cy += (ty - cy) * 0.07
+      const r = st.getBoundingClientRect()
+      const sp = reduced.matches ? 0 : Math.min(1, Math.max(0, -r.top / Math.max(1, r.height)))
+      sc.style.setProperty('--mx', cx.toFixed(4))
+      sc.style.setProperty('--my', cy.toFixed(4))
+      sc.style.setProperty('--sp', sp.toFixed(4))
+      if (Math.abs(tx - cx) > 0.001 || Math.abs(ty - cy) > 0.001) kick()
+    }
+    const kick = () => {
+      if (!raf && visible) raf = window.requestAnimationFrame(frame)
+    }
+    const move = (e: PointerEvent) => {
+      if (!fine.matches || reduced.matches || e.pointerType !== 'mouse') return
+      tx = (e.clientX / window.innerWidth) * 2 - 1
+      ty = (e.clientY / window.innerHeight) * 2 - 1
+      kick()
+    }
+    const io = new IntersectionObserver(([e]) => {
+      visible = !!e?.isIntersecting
+      kick()
+    })
+    io.observe(st)
+    window.addEventListener('pointermove', move, { passive: true })
+    window.addEventListener('scroll', kick, { passive: true })
+    return () => {
+      io.disconnect()
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('scroll', kick)
+      if (raf) window.cancelAnimationFrame(raf)
+    }
+  }, [stage, scene, ready])
 }
 
 export function HeroStage() {
   const { ref, step, fading } = useStepper<HTMLDivElement>({ durations: DURATIONS, final: HERO_FINAL, initial: 1 })
   const created = step >= HERO_FINAL
-  const sectionRef = useRef<HTMLDivElement>(null)
-
-  // Mouse: -1..1, amortecido. Só em dispositivos com ponteiro fino e com movimento permitido.
-  const rawX = useMotionValue(0)
-  const rawY = useMotionValue(0)
-  const mx = useSpring(rawX, { stiffness: 60, damping: 18, mass: 0.6 })
-  const my = useSpring(rawY, { stiffness: 60, damping: 18, mass: 0.6 })
-  const [fine, setFine] = useState(false)
-  useEffect(() => {
-    const mq = window.matchMedia('(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)')
-    const on = () => setFine(mq.matches)
-    on()
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
-  useEffect(() => {
-    if (!fine) {
-      rawX.set(0)
-      rawY.set(0)
-      return
-    }
-    const move = (e: PointerEvent) => {
-      rawX.set((e.clientX / window.innerWidth) * 2 - 1)
-      rawY.set((e.clientY / window.innerHeight) * 2 - 1)
-    }
-    window.addEventListener('pointermove', move, { passive: true })
-    return () => window.removeEventListener('pointermove', move)
-  }, [fine, rawX, rawY])
-
-  // Scroll: ao rolar para fora do herói, o conjunto inclina um pouco mais.
-  const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start start', 'end start'] })
-  const scroll = useTransform(scrollYProgress, (v) => (fine ? v : 0))
-  const rotateX = useTransform([my, scroll], (v: number[]) => 13 - (v[0] ?? 0) * 2.5 + (v[1] ?? 0) * 9)
-  const rotateY = useTransform(mx, (v) => -5 + v * 4)
+  const sceneRef = useRef<HTMLDivElement>(null)
+  // A cena 3D (só existe a partir de 768 px) é montada depois de hidratar: o contêiner já tem a altura certa e a
+  // cena entra com o mesmo fade do palco. Assim o HTML inicial (e o celular) não carregam as quatro janelas.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  useStageMotion(ref, sceneRef, mounted)
 
   return (
-    <LazyMotion features={loadFeatures}>
-      <div ref={sectionRef}>
-        <div ref={ref} className="lp-stage lp-stage-in relative mx-auto hidden min-[768px]:block" aria-hidden="true">
-          <div className="lp-scale">
-            <m.div className="lp-scene" style={{ rotateX, rotateY }}>
-              <Layer box={{ left: -20, top: 10, width: 330, transform: 'translateZ(-260px) rotateY(-24deg)' }} depth={-1.4} mx={mx} my={my}>
-                <HeroAgent />
-              </Layer>
-              <Layer box={{ left: 20, top: 352, width: 320, transform: 'translateZ(-140px) rotateY(-20deg)' }} depth={-0.8} mx={mx} my={my}>
-                <HeroContacts />
-              </Layer>
-              <Layer box={{ left: 880, top: 30, width: 350, transform: 'translateZ(-200px) rotateY(22deg)' }} depth={-1.1} mx={mx} my={my}>
-                <HeroAgenda created={created} />
-              </Layer>
-              <Layer box={{ left: 290, top: 60, width: 640, transform: 'translateZ(0)' }} depth={0} mx={mx} my={my}>
-                <HeroChat step={step} fading={fading} />
-              </Layer>
-              <Layer box={{ left: 870, top: 470, width: 290, transform: 'translateZ(150px)' }} depth={0.9} mx={mx} my={my}>
-                <NewBookingToast show={created && !fading} />
-              </Layer>
-              <Layer box={{ left: 1050, top: 196, width: 140, transform: 'translateZ(230px) rotate(9deg)' }} depth={1.6} mx={mx} my={my}>
-                <div className="lp-float">
-                  <PearGlass id="pg-hero" className="w-full" />
-                </div>
-              </Layer>
-            </m.div>
+    <div>
+      <div ref={ref} className="lp-stage lp-stage-in relative mx-auto hidden min-[768px]:block" aria-hidden="true">
+        <div className="lp-scale">
+          {mounted && (
+          <div ref={sceneRef} className="lp-scene lp-fade-in">
+            <Layer box={{ left: -20, top: 10, width: 330, transform: 'translateZ(-260px) rotateY(-24deg)' }} depth={-1.4}>
+              <HeroAgent />
+            </Layer>
+            <Layer box={{ left: 20, top: 352, width: 320, transform: 'translateZ(-140px) rotateY(-20deg)' }} depth={-0.8}>
+              <HeroContacts />
+            </Layer>
+            <Layer box={{ left: 880, top: 30, width: 350, transform: 'translateZ(-200px) rotateY(22deg)' }} depth={-1.1}>
+              <HeroAgenda created={created} />
+            </Layer>
+            <Layer box={{ left: 290, top: 60, width: 640, transform: 'translateZ(0)' }} depth={0}>
+              <HeroChat step={step} fading={fading} />
+            </Layer>
+            <Layer box={{ left: 870, top: 470, width: 290, transform: 'translateZ(150px)' }} depth={0.9}>
+              <NewBookingToast show={created && !fading} />
+            </Layer>
+            <Layer box={{ left: 236, top: 462, width: 132, transform: 'translateZ(230px) rotate(-8deg)' }} depth={1.6}>
+              <div className="lp-float">
+                <PearGlass id="pg-hero" className="w-full" />
+              </div>
+            </Layer>
           </div>
-        </div>
-
-        {/* Celular: uma janela só, com a história rodando */}
-        <div className="lp-stage-in relative mx-auto mt-2 max-w-[520px] min-[768px]:hidden" aria-hidden="true">
-          <MobileStory />
-          <PearGlass id="pg-hero-m" className="lp-float absolute -right-1 -top-14 w-[66px]" />
+          )}
         </div>
       </div>
-    </LazyMotion>
+
+      {/* Celular: uma janela só, com a história rodando */}
+      <div className="lp-stage-in relative mx-auto mt-2 max-w-[520px] min-[768px]:hidden" aria-hidden="true">
+        <MobileStory />
+        <PearGlass id="pg-hero-m" className="lp-float absolute -right-1 -top-14 w-[66px]" />
+      </div>
+    </div>
   )
 }
 

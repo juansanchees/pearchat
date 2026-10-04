@@ -58,6 +58,10 @@ function LivePanel({ i, active, className }: { i: number; active: boolean; class
 export function HowItWorks() {
   const [active, setActive] = useState(0)
   const refs = useRef<(HTMLLIElement | null)[]>([])
+  // Os painéis do bloco fixo só existem depois de hidratar (o bloco tem altura fixa e fica abaixo da dobra): o HTML
+  // inicial leva uma cópia só de cada painel (a empilhada), o que deixa a página mais leve.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return
@@ -74,7 +78,7 @@ export function HowItWorks() {
   }, [])
 
   return (
-    <section id="como-funciona" aria-labelledby="t-como" className="relative bg-[#0a0f0c] py-24 text-dark-text min-[768px]:py-36">
+    <section id="como-funciona" aria-labelledby="t-como" style={{ containIntrinsicSize: 'auto 3600px' }} className="lp-cv relative bg-[#0a0f0c] py-24 text-dark-text min-[768px]:py-36">
       <div aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(50% 30% at 75% 20%, rgba(46,154,72,.16), transparent 70%)' }} />
       <div className={`${wrap} relative`}>
         <div className="max-w-[760px]">
@@ -111,7 +115,7 @@ export function HowItWorks() {
                 <div className="mt-8 [@media(min-width:1024px)_and_(min-height:700px)]:hidden">
                   <p className="sr-only">{s.alt}</p>
                   <div aria-hidden="true">
-                    <LivePanel i={i} active />
+                    <LivePanel i={i} active className="max-w-[640px]" />
                   </div>
                 </div>
               </li>
@@ -131,12 +135,12 @@ export function HowItWorks() {
                 <p className="sr-only" aria-live="polite">
                   {STEPS[active]!.alt}
                 </p>
-                {STEPS.map((s, i) => (
+                {mounted && STEPS.map((s, i) => (
                   <div
                     key={s.titulo}
                     aria-hidden="true"
                     className={cn(
-                      'absolute inset-0 grid place-items-center p-10 transition-[opacity,transform] duration-700 ease-[cubic-bezier(.2,.8,.2,1)]',
+                      'absolute inset-0 grid place-items-center p-10 transition-[opacity,transform] duration-700 [transition-timing-function:cubic-bezier(.2,.8,.2,1)]',
                       i === active ? 'translate-y-0 scale-100 opacity-100' : cn('pointer-events-none opacity-0', i < active ? '-translate-y-6 scale-[.97]' : 'translate-y-6 scale-[.97]'),
                     )}
                   >

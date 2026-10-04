@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { Icon } from '@phosphor-icons/react'
+import type { Icon } from '@/components/site/ui/icons'
 import {
   ArrowsClockwise,
   Bell,
@@ -15,11 +15,10 @@ import {
   Stack,
   Tag as TagIcon,
   UsersThree,
-} from '@phosphor-icons/react/dist/ssr'
+} from '@/components/site/ui/icons'
 import { cn } from '@/lib/utils'
-import { AgendaLive, AiChatLive, BroadcastLive, ContactsLive, FollowupLive, InboxLive } from '../live/feature-live'
+import { AgendaLive, AiChatLive, BroadcastLive, ContactsLive, FollowupLive, InboxLive, SpacesSwitcher } from '../lazy'
 import { FollowupRules, KnowledgeCard } from '../mini/conversations'
-import { SpacesSwitcher } from '../mini/spaces'
 import { eyebrow, h2, h3, lead, wrap } from '../ui/styles'
 
 function Eyebrow({ Icon, children }: { Icon: Icon; children: ReactNode }) {
@@ -84,7 +83,7 @@ export function Features() {
         </div>
 
         {/* 1. Agente de IA */}
-        <article className="mt-20 grid grid-cols-1 items-center gap-12 min-[1024px]:mt-32 min-[1024px]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] min-[1024px]:gap-16">
+        <article style={{ containIntrinsicSize: 'auto 1000px' }} className="lp-cv mt-20 grid grid-cols-1 items-center gap-12 min-[1024px]:mt-32 min-[1024px]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] min-[1024px]:gap-16">
           <div>
             <Eyebrow Icon={Sparkle}>Agente de IA</Eyebrow>
             <h3 className={cn(h3, 'mt-5')}>Ensine uma vez. Deixe a IA responder.</h3>
@@ -107,7 +106,7 @@ export function Features() {
         </article>
 
         {/* 2. Agenda + link + confirmação */}
-        <article className="mt-32 min-[1024px]:mt-48">
+        <article style={{ containIntrinsicSize: 'auto 1000px' }} className="lp-cv mt-32 min-[1024px]:mt-48">
           <div className="grid grid-cols-1 gap-8 min-[1024px]:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] min-[1024px]:items-end">
             <div>
               <Eyebrow Icon={CalendarDots}>Agenda e link de agendamento</Eyebrow>
@@ -137,7 +136,7 @@ export function Features() {
         </article>
 
         {/* 3. Follow-up */}
-        <article className="mt-32 grid grid-cols-1 items-center gap-12 min-[1024px]:mt-48 min-[1024px]:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] min-[1024px]:gap-16">
+        <article style={{ containIntrinsicSize: 'auto 1000px' }} className="lp-cv mt-32 grid grid-cols-1 items-center gap-12 min-[1024px]:mt-48 min-[1024px]:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] min-[1024px]:gap-16">
           <Visual
             alt="Conversa parada: a cliente diz que vai pensar, passam 2 horas sem resposta, o follow-up automático pergunta se ela conseguiu analisar e ela responde."
             className="order-2 min-[1024px]:order-1"
@@ -157,7 +156,7 @@ export function Features() {
         </article>
 
         {/* 4. Central de conversas e equipe */}
-        <article className="mt-32 min-[1024px]:mt-48">
+        <article style={{ containIntrinsicSize: 'auto 1000px' }} className="lp-cv mt-32 min-[1024px]:mt-48">
           <div className="mx-auto max-w-[760px] text-center">
             <div className="flex justify-center">
               <Eyebrow Icon={ChatsCircle}>Central de conversas e equipe</Eyebrow>
@@ -199,7 +198,7 @@ export function Features() {
               <BroadcastLive />
             </Visual>
           </article>
-          <article className="min-[1024px]:pt-40">
+          <article style={{ containIntrinsicSize: 'auto 1000px' }} className="lp-cv min-[1024px]:pt-40">
             <Eyebrow Icon={TagIcon}>Contatos</Eyebrow>
             <h3 className={cn(h3, 'mt-5')}>Sua base de clientes organizada.</h3>
             <p className={cn(lead, 'mt-5')}>Etiquetas para separar clientes, leads e agendamentos. Busca rápida e importação por planilha.</p>
@@ -210,7 +209,7 @@ export function Features() {
         </div>
 
         {/* 7. Vários WhatsApps */}
-        <article className="mt-32 overflow-hidden rounded-[28px] border border-light-accent-700/60 bg-[linear-gradient(160deg,#f0faea_0%,#ffffff_60%)] p-6 min-[768px]:p-12 min-[1024px]:mt-48 min-[1200px]:p-16">
+        <article style={{ containIntrinsicSize: 'auto 1000px' }} className="lp-cv mt-32 overflow-hidden rounded-[28px] border border-light-accent-700/60 bg-[linear-gradient(160deg,#f0faea_0%,#ffffff_60%)] p-6 min-[768px]:p-12 min-[1024px]:mt-48 min-[1200px]:p-16">
           <div className="grid grid-cols-1 items-center gap-12 min-[1100px]:grid-cols-[minmax(0,4fr)_minmax(0,7fr)]">
             <div>
               <Eyebrow Icon={Stack}>Vários WhatsApps</Eyebrow>

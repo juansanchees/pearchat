@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { CalendarCheck, Check, Checks, Sparkle } from '@phosphor-icons/react/dist/ssr'
+import { CalendarCheck, Check, Checks, Sparkle } from '@/components/site/ui/icons'
 import { cn } from '@/lib/utils'
 import { windowShadow } from './styles'
 
@@ -79,10 +79,10 @@ export function Bubble({
         style={{ borderRadius: received ? '14px 14px 14px 4px' : '14px 14px 4px 14px' }}
       >
         {from === 'ia' && <IaLabel />}
-        {from === 'equipe' && sender && <span className="mb-1.5 block text-[10.5px] font-medium leading-none text-light-neutral-500">{sender}</span>}
+        {from === 'equipe' && sender && <span className="mb-1.5 block text-[10.5px] font-medium leading-none text-light-neutral-400">{sender}</span>}
         <div className="[text-wrap:pretty]">{children}</div>
         {time && (
-          <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-light-neutral-500">
+          <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-light-neutral-400">
             {time}
             {!received && (read ? <Checks size={13} className="text-light-accent-300" /> : <Check size={12} />)}
           </div>
@@ -128,7 +128,7 @@ export function SystemNote({ children, icon, tone = 'accent', className }: { chi
 /** Divisor de tempo dentro da conversa ("2 h sem resposta"). */
 export function TimeGap({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center gap-2.5 py-1 text-[11px] text-light-neutral-500">
+    <div className="flex items-center gap-2.5 py-1 text-[11px] text-light-neutral-400">
       <span className="h-px flex-1 border-t border-dashed border-light-neutral-700" />
       {children}
       <span className="h-px flex-1 border-t border-dashed border-light-neutral-700" />
@@ -189,7 +189,7 @@ export function AppWindow({
           <span className="h-[9px] w-[9px] rounded-pill bg-light-neutral-800" />
           <span className="h-[9px] w-[9px] rounded-pill bg-light-neutral-800" />
           <span className="h-[9px] w-[9px] rounded-pill bg-light-neutral-800" />
-          {title && <span className="absolute inset-x-0 text-center text-[11px] font-medium text-light-neutral-500">{title}</span>}
+          {title && <span className="absolute inset-x-0 text-center text-[11px] font-medium text-light-neutral-400">{title}</span>}
         </div>
       )}
       <div className={bodyClassName}>{children}</div>
@@ -199,7 +199,7 @@ export function AppWindow({
 
 /** Rótulo de seção no estilo do app (.pc-section-label). */
 export function MiniLabel({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('text-[10px] font-medium uppercase leading-none tracking-[.12em] text-light-neutral-500', className)}>{children}</div>
+  return <div className={cn('text-[10px] font-medium uppercase leading-none tracking-[.12em] text-light-neutral-400', className)}>{children}</div>
 }
 
 /** Texto alternativo curto para uma mini-interface marcada como aria-hidden. */

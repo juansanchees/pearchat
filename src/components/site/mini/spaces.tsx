@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ClockClockwise, Hand, PaperPlaneTilt, Plus, Sparkle, WhatsappLogo } from '@phosphor-icons/react/dist/ssr'
+import { ClockClockwise, Hand, PaperPlaneTilt, Plus, Sparkle, WhatsappLogo } from '@/components/site/ui/icons'
 import { cn } from '@/lib/utils'
 import { AGENTE, AppWindow, Avatar, Switch } from '../ui/primitives'
 
@@ -139,7 +139,7 @@ export function SpacesSwitcher({ initial = 'centro', className }: { initial?: st
       <div className="flex min-w-0 flex-col bg-white" aria-live="polite">
         <div className="flex items-center gap-2 border-b border-light-divider px-4 py-3">
           <span className="text-[13.5px] font-medium">{sp.nome}</span>
-          <span className="text-[11.5px] text-light-neutral-500">· {sp.convs.length} conversas hoje</span>
+          <span className="text-[11.5px] text-light-neutral-400">· {sp.convs.length} conversas hoje</span>
           {sp.pendentes > 0 && (
             <span className="ml-auto inline-flex items-center gap-1 rounded-pill bg-light-accent-900 px-2 py-[3px] text-[10.5px] text-light-accent-200">
               <Hand size={11} weight="fill" aria-hidden="true" /> {sp.pendentes} aguardando
@@ -153,10 +153,10 @@ export function SpacesSwitcher({ initial = 'centro', className }: { initial?: st
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className="flex-1 truncate text-[13px] font-medium">{c.nome}</span>
-                  <span className={cn('text-[10.5px]', c.novas ? 'text-light-accent-300' : 'text-light-neutral-500')}>{c.hora}</span>
+                  <span className={cn('text-[10.5px]', c.novas ? 'text-light-accent-300' : 'text-light-neutral-400')}>{c.hora}</span>
                 </div>
                 <div className="mt-1 flex items-center gap-2">
-                  <span className="flex-1 truncate text-[12px] text-light-neutral-500">{c.previa}</span>
+                  <span className="flex-1 truncate text-[12px] text-light-neutral-400">{c.previa}</span>
                   {c.novas && <span className="h-[18px] min-w-[18px] rounded-pill bg-light-accent-fill px-[5px] text-center text-[10.5px] font-medium leading-[18px] text-white">{c.novas}</span>}
                 </div>
               </div>

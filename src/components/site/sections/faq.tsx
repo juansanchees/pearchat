@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { Plus } from '@phosphor-icons/react/dist/ssr'
+import { Plus } from '@/components/site/ui/icons'
 import { EMPRESA } from '@/components/legal/legal-layout'
 import { cn } from '@/lib/utils'
 import { eyebrow, h2, wrap } from '../ui/styles'
@@ -44,7 +44,7 @@ function perguntas(essencial: string): { p: string; r: ReactNode }[] {
 
 export function Faq({ essencial }: { essencial: string }) {
   return (
-    <section id="duvidas" aria-labelledby="t-faq" className="border-t border-light-divider bg-white py-24 min-[768px]:py-36">
+    <section id="duvidas" aria-labelledby="t-faq" style={{ containIntrinsicSize: 'auto 1100px' }} className="lp-cv border-t border-light-divider bg-white py-24 min-[768px]:py-36">
       <div className={`${wrap} grid grid-cols-1 gap-12 min-[1024px]:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] min-[1024px]:gap-20`}>
         <div>
           <p className={cn(eyebrow, 'text-light-accent-300')}>Dúvidas</p>

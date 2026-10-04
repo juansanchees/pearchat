@@ -17,7 +17,7 @@ import {
   Question,
   Sparkle,
   User,
-} from '@phosphor-icons/react/dist/ssr'
+} from '@/components/site/ui/icons'
 import { cn } from '@/lib/utils'
 import { AGENTE, AppWindow, Avatar, Bubble, MiniLabel, SystemNote, TimeGap, TypingBubble } from '../ui/primitives'
 
@@ -27,7 +27,7 @@ function ChatHead({ nome, tel, mode = 'ia', resp }: { nome: string; tel: string;
       <Avatar nome={nome} size={36} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13.5px] font-medium leading-tight">{nome}</div>
-        <div className="mt-0.5 text-[11px] text-light-neutral-500">{tel}</div>
+        <div className="mt-0.5 text-[11px] text-light-neutral-400">{tel}</div>
       </div>
       {mode === 'ia' ? (
         <span className="hidden items-center gap-1.5 whitespace-nowrap rounded-pill border border-light-accent-700 bg-light-accent-900 px-2.5 py-[4px] text-[11px] text-light-accent-200 min-[420px]:flex">
@@ -69,7 +69,7 @@ export function AiChat({ step = AI_CHAT_FINAL, fading = false, className }: { st
     <AppWindow title="Conversas" className={className} bodyClassName="flex flex-col bg-light-bg">
       <ChatHead nome="Juliana Freitas" tel="(11) 97744-2210" />
       <div className={cn('flex h-[360px] flex-col justify-end gap-2.5 overflow-hidden px-5 pb-5 pt-4 transition-opacity duration-500', fading && 'opacity-0')}>
-        <div className="mb-auto self-center rounded-pill bg-white px-3 py-1 text-[10.5px] text-light-neutral-500 shadow-[0_0_0_1px_#e3e7d6]">Hoje</div>
+        <div className="mb-auto self-center rounded-pill bg-white px-3 py-1 text-[10.5px] text-light-neutral-400 shadow-[0_0_0_1px_#e3e7d6]">Hoje</div>
         {AI_MSGS.map((m) => {
           if ((m.at === 3 && step === 2) || (m.at === 6 && step === 5)) return <TypingBubble key={`t${m.at}`} />
           return m.at <= step ? (
@@ -89,7 +89,7 @@ function Composer({ text = 'Escreva para assumir a conversa' }: { text?: string 
     <div className="flex items-center gap-2 border-t border-light-divider bg-white px-4 py-3">
       <Paperclip size={16} className="flex-none text-light-accent-500" />
       <Lightning size={16} className="flex-none text-light-accent-500" />
-      <span className="flex h-9 min-w-0 flex-1 items-center truncate rounded-md border border-light-divider px-2.5 text-[12.5px] text-light-neutral-500">{text}</span>
+      <span className="flex h-9 min-w-0 flex-1 items-center truncate rounded-md border border-light-divider px-2.5 text-[12.5px] text-light-neutral-400">{text}</span>
       <span className="inline-flex items-center gap-1.5 rounded-md border border-light-accent-500 px-3 py-2 text-[12.5px] font-medium text-light-accent-300">
         <PaperPlaneRight size={14} /> Enviar
       </span>
@@ -113,12 +113,12 @@ export function KnowledgeCard({ className }: { className?: string }) {
           <Sparkle size={14} weight="fill" />
         </span>
         <span className="text-[13px] font-medium">O que a IA sabe</span>
-        <span className="ml-auto text-[11px] text-light-neutral-500">5 de 5</span>
+        <span className="ml-auto text-[11px] text-light-neutral-400">5 de 5</span>
       </div>
       <ul className="mt-3 flex flex-wrap gap-1.5">
         {SABE.map(({ Icon, t }) => (
           <li key={t} className="flex items-center gap-1.5 rounded-pill border border-light-divider bg-light-bg py-[5px] pl-2.5 pr-2 text-[12px]">
-            <Icon size={14} className="text-light-neutral-500" />
+            <Icon size={14} className="text-light-neutral-400" />
             {t}
             <Check size={12} weight="bold" className="text-light-accent-400" />
           </li>
@@ -247,10 +247,10 @@ function InboxItem({ c }: { c: InboxRow }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="flex-1 truncate text-[13px] font-medium">{c.nome}</span>
-          <span className={cn('text-[10.5px]', c.novas ? 'text-light-accent-300' : 'text-light-neutral-500')}>{c.hora}</span>
+          <span className={cn('text-[10.5px]', c.novas ? 'text-light-accent-300' : 'text-light-neutral-400')}>{c.hora}</span>
         </div>
         <div className="mt-1 flex items-center gap-2">
-          <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-[11.5px] text-light-neutral-500">
+          <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-[11.5px] text-light-neutral-400">
             {c.foto && <Camera size={12} className="flex-none" />}
             <span className="truncate">{c.previa}</span>
           </span>
@@ -336,7 +336,7 @@ export function Inbox({
     <AppWindow title="Conversas" className={className} bodyClassName="grid grid-cols-1 min-[900px]:grid-cols-[300px_minmax(0,1fr)]">
       <div className="hidden flex-col border-r border-light-divider bg-white min-[900px]:flex">
         <div className="flex flex-col gap-2.5 px-3.5 pb-2.5 pt-3.5">
-          <div className="flex h-9 items-center gap-2 rounded-md border border-light-divider px-2.5 text-[12.5px] text-light-neutral-500">
+          <div className="flex h-9 items-center gap-2 rounded-md border border-light-divider px-2.5 text-[12.5px] text-light-neutral-400">
             <MagnifyingGlass size={14} /> Buscar conversa
           </div>
           <div className="flex gap-1.5">
@@ -355,7 +355,7 @@ export function Inbox({
         </div>
         <div className="relative overflow-hidden" style={{ height: ROW_H * INBOX.length }}>
           <div
-            className="transition-transform duration-700 ease-[cubic-bezier(.2,.8,.2,1)]"
+            className="transition-transform duration-700 [transition-timing-function:cubic-bezier(.2,.8,.2,1)]"
             style={{ transform: `translateY(${incoming ? 0 : -ROW_H}px)` }}
           >
             <div className={cn('transition-[opacity,background-color] duration-700', incoming ? 'bg-light-accent-900/60 opacity-100' : 'opacity-0')}>
@@ -375,7 +375,7 @@ export function Inbox({
             <div className="max-w-[78%] border border-light-divider bg-white p-1.5 text-[13px]" style={{ borderRadius: '14px 14px 14px 4px' }}>
               <HairSwatch />
               <div className="px-1.5 pb-0.5 pt-1.5">Quero fazer essa cor. É possível?</div>
-              <div className="px-1.5 text-right text-[10px] text-light-neutral-500">14:20</div>
+              <div className="px-1.5 text-right text-[10px] text-light-neutral-400">14:20</div>
             </div>
           </div>
           <div className="flex justify-start">
@@ -388,7 +388,7 @@ export function Inbox({
                   <i key={i} className={cn('w-[3px] rounded-pill', i < 7 ? 'bg-light-accent-500' : 'bg-light-neutral-700')} style={{ height: h }} />
                 ))}
               </span>
-              <span className="text-[10.5px] text-light-neutral-500">0:12</span>
+              <span className="text-[10.5px] text-light-neutral-400">0:12</span>
             </div>
           </div>
           <Bubble from="ia" time="14:21">
@@ -408,16 +408,16 @@ export function Inbox({
             {QUICK.map(([a, t], i) => (
               <div key={a} className={cn('flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[12px] transition-colors duration-200', i === qrActive && 'bg-[rgba(29,33,23,.07)]')}>
                 <span className="flex-none font-mono text-[11.5px] text-light-accent-300">/{a}</span>
-                <span className="min-w-0 flex-1 truncate text-light-neutral-500">{t}</span>
+                <span className="min-w-0 flex-1 truncate text-light-neutral-400">{t}</span>
               </div>
             ))}
             <div className="mt-1 flex items-center gap-2.5 border-t border-light-divider px-2.5 pb-1.5 pt-2.5 text-[12px]">
-              <GearSix size={13} className="text-light-neutral-500" /> Gerenciar respostas rápidas
+              <GearSix size={13} className="text-light-neutral-400" /> Gerenciar respostas rápidas
             </div>
           </div>
           <Paperclip size={16} className="flex-none text-light-accent-500" />
           <Lightning size={16} className="flex-none text-light-accent-500" />
-          <span className={cn('flex h-9 min-w-0 flex-1 items-center rounded-md border px-2.5 text-[13px]', typed ? 'border-light-accent-500' : 'border-light-divider text-light-neutral-500')}>
+          <span className={cn('flex h-9 min-w-0 flex-1 items-center rounded-md border px-2.5 text-[13px]', typed ? 'border-light-accent-500' : 'border-light-divider text-light-neutral-400')}>
             {typed || 'Digite uma mensagem'}
             {typed && <span className="lp-caret ml-px h-4 w-px bg-light-accent-500" />}
           </span>

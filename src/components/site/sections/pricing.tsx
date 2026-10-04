@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Check } from '@phosphor-icons/react/dist/ssr'
+import { Check } from '@/components/site/ui/icons'
 import { PLAN_KEYS, PLANS, planPrice, type PlanKey } from '@/lib/plans'
 import { cn } from '@/lib/utils'
 import { PricingNotice } from '../pricing-notice'
@@ -29,7 +29,7 @@ const PARA: Record<PlanKey, string> = {
 
 export function Pricing() {
   return (
-    <section id="planos" aria-labelledby="t-planos" className="bg-light-bg py-24 min-[768px]:py-36">
+    <section id="planos" aria-labelledby="t-planos" style={{ containIntrinsicSize: 'auto 1500px' }} className="lp-cv bg-light-bg py-24 min-[768px]:py-36">
       <div className={wrap}>
         <div className="mx-auto max-w-[760px] text-center">
           <p className={cn(eyebrow, 'text-light-accent-300')}>Planos</p>
@@ -60,11 +60,11 @@ export function Pricing() {
                   <h3 className="text-[19px] font-semibold tracking-[-0.01em]">{p.nome}</h3>
                   {destaque && <span className="rounded-pill bg-dark-accent-500 px-2.5 py-1 text-[11px] font-medium text-[#06200f]">Recomendado</span>}
                 </div>
-                <p className={cn('mt-1.5 text-[14px]', destaque ? 'text-dark-neutral-400' : 'text-light-neutral-500')}>{PARA[key]}</p>
+                <p className={cn('mt-1.5 text-[14px]', destaque ? 'text-dark-neutral-400' : 'text-light-neutral-400')}>{PARA[key]}</p>
                 <p className="mt-7 flex items-baseline gap-1.5">
                   <span className={cn('text-[16px] font-medium', destaque ? 'text-dark-neutral-300' : 'text-light-neutral-400')}>R$</span>
                   <span className="text-[52px] font-semibold leading-none tracking-[-0.04em]">{preco(planPrice(key))}</span>
-                  <span className={cn('text-[14px]', destaque ? 'text-dark-neutral-400' : 'text-light-neutral-500')}>/mês</span>
+                  <span className={cn('text-[14px]', destaque ? 'text-dark-neutral-400' : 'text-light-neutral-400')}>/mês</span>
                 </p>
                 <ul className={cn('mt-7 flex list-none flex-col gap-3 border-t p-0 pt-7', destaque ? 'border-white/10' : 'border-light-divider')}>
                   {linhas(key).map((l) => (

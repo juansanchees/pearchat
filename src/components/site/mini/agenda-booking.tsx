@@ -1,4 +1,4 @@
-import { CaretLeft, CaretRight, Check, Clock, GoogleLogo, LinkSimple, Sparkle } from '@phosphor-icons/react/dist/ssr'
+import { CaretLeft, CaretRight, Check, Clock, GoogleLogo, LinkSimple, Sparkle } from '@/components/site/ui/icons'
 import { cn } from '@/lib/utils'
 import { AppWindow, Bubble, Tag } from '../ui/primitives'
 
@@ -47,7 +47,7 @@ export function WeekAgenda({ fresh = true, confirmed = true, className }: { fres
     <AppWindow title="Agenda" className={className}>
       <div className="flex items-center gap-2.5 border-b border-light-divider px-4 py-3">
         <span className="text-[14px] font-medium">Outubro de 2026</span>
-        <span className="hidden text-[11.5px] text-light-neutral-500 min-[480px]:inline">13 a 18 de out.</span>
+        <span className="hidden text-[11.5px] text-light-neutral-400 min-[480px]:inline">13 a 18 de out.</span>
         <span className="flex-1" />
         <span className="hidden items-center gap-1.5 rounded-pill border border-light-divider px-2.5 py-[4px] text-[10.5px] text-light-neutral-400 min-[560px]:inline-flex">
           <GoogleLogo size={11} /> Google Agenda conectado
@@ -60,7 +60,7 @@ export function WeekAgenda({ fresh = true, confirmed = true, className }: { fres
         <div />
         {DAYS.map((d, i) => (
           <div key={d.n} className={cn('flex flex-col items-center gap-1 border-l border-light-divider pb-2 pt-[9px]', d.sel && 'bg-light-accent-900', !MOBILE_DAYS.includes(i) && 'max-[639px]:hidden')}>
-            <span className={cn('text-[10px] uppercase tracking-[.06em]', d.sel ? 'text-light-accent-300' : 'text-light-neutral-500')}>{d.sem}</span>
+            <span className={cn('text-[10px] uppercase tracking-[.06em]', d.sel ? 'text-light-accent-300' : 'text-light-neutral-400')}>{d.sem}</span>
             <span
               className={cn(
                 'grid h-7 w-7 place-items-center rounded-pill text-[13px] font-medium leading-none',
@@ -76,7 +76,7 @@ export function WeekAgenda({ fresh = true, confirmed = true, className }: { fres
         <div>
           {HOURS.map((h) => (
             <div key={h} className="relative" style={{ height: ROW }}>
-              <span className="absolute right-1.5 top-1 text-[9.5px] text-light-neutral-500">{h}</span>
+              <span className="absolute right-1.5 top-1 text-[9.5px] text-light-neutral-400">{h}</span>
             </div>
           ))}
         </div>
@@ -105,7 +105,7 @@ export function WeekAgenda({ fresh = true, confirmed = true, className }: { fres
                         {hm(e.h)} · {e.titulo}
                       </span>
                     </div>
-                    {e.cliente && <div className="mt-0.5 truncate text-[9.5px] text-light-neutral-500">{e.cliente}</div>}
+                    {e.cliente && <div className="mt-0.5 truncate text-[9.5px] text-light-neutral-400">{e.cliente}</div>}
                     {e.dur >= 1 && (e.conf || e.link) && (
                       <div className="mt-1 flex gap-1 max-[1100px]:hidden">
                         {e.link && <Tag className="!rounded-[4px] !px-[5px] !py-px !text-[8.5px]">Link</Tag>}
@@ -146,7 +146,7 @@ function StepTitle({ n, done, children }: { n: number; done: boolean; children: 
       <span
         className={cn(
           'grid h-[18px] w-[18px] flex-none place-items-center rounded-pill border text-[9.5px] font-medium leading-none',
-          done ? 'border-light-accent-600 bg-light-accent-800 text-light-accent-200' : 'border-light-divider text-light-neutral-500',
+          done ? 'border-light-accent-600 bg-light-accent-800 text-light-accent-200' : 'border-light-divider text-light-neutral-400',
         )}
       >
         {done ? <Check size={9} weight="bold" /> : n}
@@ -179,7 +179,7 @@ export function BookingPhone({ step = 3, className }: { step?: number; className
                 <Check size={20} weight="bold" />
               </span>
               <div className="text-[13px] font-medium">Agendamento confirmado</div>
-              <div className="text-[10.5px] text-light-neutral-500">Limpeza de pele · qua, 15 de out. · 14:00</div>
+              <div className="text-[10.5px] text-light-neutral-400">Limpeza de pele · qua, 15 de out. · 14:00</div>
             </div>
           ) : (
             <>
@@ -198,7 +198,7 @@ export function BookingPhone({ step = 3, className }: { step?: number; className
                         {on && <span className="h-1.5 w-1.5 rounded-pill bg-light-accent-400" />}
                       </span>
                       <span className="flex-1 text-[11px] font-medium text-light-text">{nome}</span>
-                      <span className="flex items-center gap-1 text-[9.5px] text-light-neutral-500">
+                      <span className="flex items-center gap-1 text-[9.5px] text-light-neutral-400">
                         <Clock size={9} />
                         {dur}
                       </span>
@@ -222,7 +222,7 @@ export function BookingPhone({ step = 3, className }: { step?: number; className
                       const on = step >= 2 && n === 15
                       return (
                         <span key={n} className={cn('flex h-[50px] flex-1 flex-col items-center justify-center gap-0.5 rounded-md border', on ? pillOn : pillOff)}>
-                          <span className="text-[8.5px] uppercase leading-none text-light-neutral-500">{s}</span>
+                          <span className="text-[8.5px] uppercase leading-none text-light-neutral-400">{s}</span>
                           <span className="text-[14px] font-medium leading-none">{n}</span>
                         </span>
                       )
@@ -250,7 +250,7 @@ export function BookingPhone({ step = 3, className }: { step?: number; className
             </>
           )}
         </div>
-        <div className="absolute inset-x-0 bottom-3 flex items-center justify-center gap-1 text-[9px] text-light-neutral-500">
+        <div className="absolute inset-x-0 bottom-3 flex items-center justify-center gap-1 text-[9px] text-light-neutral-400">
           <LinkSimple size={10} /> Agendamento por PearChat
         </div>
       </div>
@@ -275,7 +275,7 @@ export function ReminderCard({ step = 2, className }: { step?: number; className
       )}
     >
       <div className="flex items-center justify-between gap-2 px-0.5">
-        <span className="text-[10px] font-medium uppercase tracking-[.12em] text-light-neutral-500">Lembrete automático</span>
+        <span className="text-[10px] font-medium uppercase tracking-[.12em] text-light-neutral-400">Lembrete automático</span>
         <span className={cn('transition-opacity duration-300', step >= 2 ? 'opacity-100' : 'opacity-0')}>
           <Tag>Confirmado</Tag>
         </span>

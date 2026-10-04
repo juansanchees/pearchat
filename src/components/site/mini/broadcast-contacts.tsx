@@ -1,4 +1,4 @@
-import { CalendarBlank, FileXls, MagnifyingGlass, Moon, PaperPlaneTilt, Timer, UsersThree } from '@phosphor-icons/react/dist/ssr'
+import { CalendarBlank, FileXls, MagnifyingGlass, Moon, PaperPlaneTilt, Timer, UsersThree } from '@/components/site/ui/icons'
 import { cn } from '@/lib/utils'
 import { AppWindow, Avatar, MiniLabel, Switch, Tag } from '../ui/primitives'
 
@@ -22,7 +22,7 @@ export function Broadcast({ step = 1, sent = 31, className }: { step?: number; s
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-medium leading-tight">Aviso de horário de feriado</div>
-          <div className="mt-1 text-[11.5px] tabular-nums text-light-neutral-500">{status}</div>
+          <div className="mt-1 text-[11.5px] tabular-nums text-light-neutral-400">{status}</div>
         </div>
         <span key={tag} className="lp-pop">
           <Tag tone={step >= 1 ? 'accent' : 'neutral'}>{tag}</Tag>
@@ -32,9 +32,9 @@ export function Broadcast({ step = 1, sent = 31, className }: { step?: number; s
       <div>
         <MiniLabel className="mb-2">Para quem enviar</MiniLabel>
         <div className="flex items-center gap-2.5 rounded-md border border-light-divider px-3 py-2.5">
-          <UsersThree size={16} className="text-light-neutral-500" />
+          <UsersThree size={16} className="text-light-neutral-400" />
           <span className="flex-1 text-[12.5px]">Clientes ativos</span>
-          <span className="text-[11.5px] text-light-neutral-500">86 contatos</span>
+          <span className="text-[11.5px] text-light-neutral-400">86 contatos</span>
         </div>
       </div>
 
@@ -50,13 +50,13 @@ export function Broadcast({ step = 1, sent = 31, className }: { step?: number; s
         <div>
           <MiniLabel className="mb-2">Quando enviar</MiniLabel>
           <div className="flex items-center gap-2 rounded-md border border-light-divider px-3 py-2 text-[12px]">
-            <CalendarBlank size={14} className="text-light-neutral-500" /> Agendar: hoje, 18:00
+            <CalendarBlank size={14} className="text-light-neutral-400" /> Agendar: hoje, 18:00
           </div>
         </div>
         <div>
           <MiniLabel className="mb-2">Intervalo entre mensagens</MiniLabel>
           <div className="flex items-center gap-2 rounded-md border border-light-divider px-3 py-2 text-[12px]">
-            <Timer size={14} className="text-light-neutral-500" /> 15–30 s
+            <Timer size={14} className="text-light-neutral-400" /> 15–30 s
           </div>
         </div>
       </div>
@@ -93,7 +93,7 @@ export function ContactsPanel({ filter = 'Todos', className }: { filter?: string
   return (
     <AppWindow title="Contatos" className={className}>
       <div className="flex flex-wrap items-center gap-2 px-4 pb-3 pt-4">
-        <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-light-divider px-2.5 text-[12px] text-light-neutral-500">
+        <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-light-divider px-2.5 text-[12px] text-light-neutral-400">
           <MagnifyingGlass size={14} className="flex-none" /> <span className="truncate">Buscar por nome, número ou etiqueta</span>
         </div>
         <span className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md border border-light-accent-500 px-3 text-[12px] font-medium text-light-accent-300">
@@ -124,9 +124,9 @@ export function ContactsPanel({ filter = 'Todos', className }: { filter?: string
                 <Tag key={t}>{t}</Tag>
               ))}
             </div>
-            <div className="mt-0.5 text-[11.5px] text-light-neutral-500">{c.tel}</div>
+            <div className="mt-0.5 text-[11.5px] text-light-neutral-400">{c.tel}</div>
           </div>
-          <span className="hidden text-[11px] text-light-neutral-500 min-[400px]:inline">{c.quando}</span>
+          <span className="hidden text-[11px] text-light-neutral-400 min-[400px]:inline">{c.quando}</span>
         </div>
       ))}
       </div>

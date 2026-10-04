@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { List, X } from '@phosphor-icons/react/dist/ssr'
+import { List, X } from '@/components/site/ui/icons'
 import { Logo } from '@/components/brand/logo'
 import { btnSmall } from './ui/styles'
 
@@ -11,10 +11,10 @@ export const NAV = [
   { href: '#duvidas', label: 'Dúvidas' },
 ]
 
-export function LogoLink({ dark = false, height = 34 }: { dark?: boolean; height?: number }) {
+export function LogoLink({ dark = false, height = 34, priority = false }: { dark?: boolean; height?: number; priority?: boolean }) {
   return (
     <Link href="/" className="-ml-1 flex flex-none items-center rounded-md" aria-label="PearChat, página inicial">
-      <Logo theme={dark ? 'dark' : 'light'} height={height} priority />
+      <Logo theme={dark ? 'dark' : 'light'} height={height} priority={priority} />
     </Link>
   )
 }
@@ -24,7 +24,7 @@ export function SiteHeader() {
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-[rgba(29,33,23,.06)] bg-[rgba(246,247,239,.78)] backdrop-blur-xl backdrop-saturate-150">
       <div className="mx-auto flex h-16 w-full max-w-[1240px] items-center gap-8 px-5 min-[768px]:px-8">
-        <LogoLink />
+        <LogoLink priority />
         <nav aria-label="Seções" className="hidden items-center gap-7 text-[14px] text-light-neutral-400 min-[1024px]:flex">
           {NAV.map((n) => (
             <a key={n.href} href={n.href} className="rounded-sm transition-colors hover:text-light-text">

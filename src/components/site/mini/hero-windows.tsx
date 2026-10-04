@@ -1,4 +1,4 @@
-import { Lightning, MagnifyingGlass, Microphone, Paperclip, PaperPlaneRight, Sparkle } from '@phosphor-icons/react/dist/ssr'
+import { Lightning, MagnifyingGlass, Microphone, Paperclip, PaperPlaneRight, Sparkle } from '@/components/site/ui/icons'
 import { cn } from '@/lib/utils'
 import { AGENTE, AppWindow, Avatar, Bubble, MiniLabel, Switch, SystemNote, Tag, TypingBubble } from '../ui/primitives'
 
@@ -53,7 +53,7 @@ export function HeroChat({
       {/* Lista */}
       <div className={cn('flex-col border-r border-light-divider bg-white', compact ? 'hidden' : 'hidden min-[768px]:flex')}>
         <div className="px-3 pb-2 pt-3">
-          <div className="flex h-8 items-center gap-2 rounded-md border border-light-divider px-2.5 text-[12px] text-light-neutral-500">
+          <div className="flex h-8 items-center gap-2 rounded-md border border-light-divider px-2.5 text-[12px] text-light-neutral-400">
             <MagnifyingGlass size={13} /> Buscar conversa
           </div>
           <div className="mt-2.5 flex gap-1">
@@ -77,7 +77,7 @@ export function HeroChat({
               <span className="flex-1 truncate text-[12.5px] font-medium">Rafael Costa</span>
               <span className="text-[10px] text-light-accent-300">10:13</span>
             </div>
-            <div className={cn('mt-0.5 truncate text-[11px]', p.typing ? 'text-light-accent-300' : 'text-light-neutral-500')}>{p.text}</div>
+            <div className={cn('mt-0.5 truncate text-[11px]', p.typing ? 'text-light-accent-300' : 'text-light-neutral-400')}>{p.text}</div>
           </div>
         </div>
         {OUTRAS.map((c) => (
@@ -86,10 +86,10 @@ export function HeroChat({
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
                 <span className="flex-1 truncate text-[12.5px] font-medium">{c.nome}</span>
-                <span className={cn('text-[10px]', c.novas ? 'text-light-accent-300' : 'text-light-neutral-500')}>{c.hora}</span>
+                <span className={cn('text-[10px]', c.novas ? 'text-light-accent-300' : 'text-light-neutral-400')}>{c.hora}</span>
               </div>
               <div className="mt-0.5 flex items-center gap-1.5">
-                <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-[11px] text-light-neutral-500">
+                <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-[11px] text-light-neutral-400">
                   {c.audio && <Microphone size={12} className="flex-none" />}
                   <span className="truncate">{c.previa}</span>
                 </span>
@@ -109,7 +109,7 @@ export function HeroChat({
           <Avatar nome="Rafael Costa" size={34} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-medium leading-tight">Rafael Costa</div>
-            <div className="mt-0.5 whitespace-nowrap text-[10.5px] text-light-neutral-500">(11) 98765-4321</div>
+            <div className="mt-0.5 whitespace-nowrap text-[10.5px] text-light-neutral-400">(11) 98765-4321</div>
           </div>
           <span className="hidden items-center gap-1.5 whitespace-nowrap rounded-pill border border-light-accent-700 bg-light-accent-900 px-2.5 py-[4px] text-[10.5px] text-light-accent-200 min-[480px]:flex">
             <Sparkle size={12} /> {AGENTE} (IA) respondendo
@@ -137,7 +137,7 @@ export function HeroChat({
         <div className="flex items-center gap-2 border-t border-light-divider bg-white px-3 py-2.5">
           <Paperclip size={15} className="flex-none text-light-accent-500" />
           <Lightning size={15} className="flex-none text-light-accent-500" />
-          <span className="flex h-8 min-w-0 flex-1 items-center truncate rounded-md border border-light-divider px-2.5 text-[12px] text-light-neutral-500">
+          <span className="flex h-8 min-w-0 flex-1 items-center truncate rounded-md border border-light-divider px-2.5 text-[12px] text-light-neutral-400">
             Escreva para assumir a conversa
           </span>
           <span className="inline-flex items-center gap-1 rounded-md border border-light-accent-500 px-2.5 py-[6px] text-[11.5px] font-medium text-light-accent-300">
@@ -174,7 +174,7 @@ export function HeroAgenda({ created = true, className }: { created?: boolean; c
     <AppWindow title="Agenda" className={className}>
       <div className="flex items-center gap-2 border-b border-light-divider px-3.5 py-2.5">
         <span className="text-[13px] font-medium">Esta semana</span>
-        <span className="text-[11px] text-light-neutral-500">9 a 11</span>
+        <span className="text-[11px] text-light-neutral-400">9 a 11</span>
         <span className="flex-1" />
         <span className="rounded-md border border-light-divider px-2 py-[3px] text-[10.5px]">Hoje</span>
       </div>
@@ -182,7 +182,7 @@ export function HeroAgenda({ created = true, className }: { created?: boolean; c
         <div />
         {days.map((d) => (
           <div key={d.n} className={cn('flex flex-col items-center gap-1 border-l border-light-divider py-2', d.sel && 'bg-light-accent-900')}>
-            <span className={cn('text-[9.5px] uppercase tracking-[.06em]', d.sel ? 'text-light-accent-300' : 'text-light-neutral-500')}>{d.sem}</span>
+            <span className={cn('text-[9.5px] uppercase tracking-[.06em]', d.sel ? 'text-light-accent-300' : 'text-light-neutral-400')}>{d.sem}</span>
             <span
               className={cn(
                 'grid h-6 w-6 place-items-center rounded-pill text-[12px] font-medium leading-none',
@@ -198,7 +198,7 @@ export function HeroAgenda({ created = true, className }: { created?: boolean; c
         <div>
           {HOURS.map((h) => (
             <div key={h} className="relative" style={{ height: ROW }}>
-              <span className="absolute right-1.5 top-1 text-[9.5px] text-light-neutral-500">{h}</span>
+              <span className="absolute right-1.5 top-1 text-[9.5px] text-light-neutral-400">{h}</span>
             </div>
           ))}
         </div>
@@ -225,7 +225,7 @@ export function HeroAgenda({ created = true, className }: { created?: boolean; c
                       {`${Math.floor(e.start)}:${e.start % 1 ? '30' : '00'}`} · {e.titulo}
                     </span>
                   </div>
-                  <div className="truncate text-[9.5px] text-light-neutral-500">{e.cliente}</div>
+                  <div className="truncate text-[9.5px] text-light-neutral-400">{e.cliente}</div>
                 </div>
               ))}
           </div>
@@ -246,7 +246,7 @@ export function HeroContacts({ className }: { className?: string }) {
   return (
     <AppWindow title="Contatos" className={className}>
       <div className="px-3.5 py-2.5">
-        <div className="flex h-8 items-center gap-2 rounded-md border border-light-divider px-2.5 text-[11.5px] text-light-neutral-500">
+        <div className="flex h-8 items-center gap-2 rounded-md border border-light-divider px-2.5 text-[11.5px] text-light-neutral-400">
           <MagnifyingGlass size={13} /> Buscar por nome, número ou etiqueta
         </div>
       </div>
@@ -260,7 +260,7 @@ export function HeroContacts({ className }: { className?: string }) {
                 <Tag key={t}>{t}</Tag>
               ))}
             </div>
-            <div className="mt-0.5 text-[10.5px] text-light-neutral-500">{c.tel}</div>
+            <div className="mt-0.5 text-[10.5px] text-light-neutral-400">{c.tel}</div>
           </div>
         </div>
       ))}
@@ -301,7 +301,7 @@ export function HeroAgent({ className }: { className?: string }) {
           ].map(([p, r]) => (
             <div key={p} className="rounded-md border border-light-divider bg-light-bg px-2.5 py-1.5">
               <div className="text-[11px] font-medium">{p}</div>
-              <div className="text-[10.5px] text-light-neutral-500">{r}</div>
+              <div className="text-[10.5px] text-light-neutral-400">{r}</div>
             </div>
           ))}
         </div>

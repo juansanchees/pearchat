@@ -152,14 +152,15 @@
 
 /* ===== Página inicial (landing). Tudo prefixado com .lp-: não afeta o app. ===== */
 html:has(.lp-root) { scroll-behavior: smooth; scroll-padding-top: 84px; }
-.lp-root section[id] { scroll-margin-top: 84px; }
+.lp-root [tabindex="-1"]:focus { outline: none; }
 
-/* Palco do herói: cena fixa de 1200 × 660 px que escala por breakpoint. A inclinação (rotateX/rotateY) vem do motion. */
+/* Palco do herói: cena fixa de 1200 × 660 px que escala por breakpoint. A inclinação usa --mx/--my (mouse, -1..1)
+   e --sp (scroll, 0..1), escritas por hero-stage.tsx; as camadas (.lp-par) se deslocam conforme a profundidade --d. */
 .lp-stage { --lp-s: 1; height: calc(680px * var(--lp-s)); }
 .lp-scale { position: absolute; left: 50%; top: 0; width: 1200px; height: 660px; transform: translateX(-50%) scale(var(--lp-s)); transform-origin: 50% 0; perspective: 1900px; perspective-origin: 50% 20%; }
-.lp-scene { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(13deg) rotateY(-5deg); transform-origin: 50% 30%; }
+.lp-scene { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(calc(13deg - var(--my, 0) * 2.5deg + var(--sp, 0) * 9deg)) rotateY(calc(-5deg + var(--mx, 0) * 4deg)); transform-origin: 50% 30%; }
 .lp-layer { position: absolute; transform-style: preserve-3d; }
-.lp-layer > div { transform-style: preserve-3d; }
+.lp-par { transform-style: preserve-3d; transform: translate3d(calc(var(--mx, 0) * var(--d, 0) * 16px), calc(var(--my, 0) * var(--d, 0) * 10px), 0); }
 @media (max-width: 1239px) { .lp-stage { --lp-s: 0.8; } }
 @media (max-width: 1023px) { .lp-stage { --lp-s: 0.6; } }
 
@@ -168,12 +169,19 @@ html:has(.lp-root) { scroll-behavior: smooth; scroll-padding-top: 84px; }
 .lp-pop { animation: lpPop .45s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes lpStageIn { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
 .lp-stage-in { animation: lpStageIn 1s cubic-bezier(.2,.8,.2,1) .15s both; }
+@keyframes lpFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.lp-fade-in { animation: lpFadeIn .9s ease both; }
 @keyframes lpFloat { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-10px) rotate(-2deg); } }
 .lp-float { animation: lpFloat 9s ease-in-out infinite; }
 @keyframes lpFade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .lp-faq details[open] > p { animation: lpFade .3s ease both; }
 @keyframes lpBlink { 50% { opacity: 0; } }
 .lp-caret { animation: lpBlink 1s steps(1) infinite; }
+
+/* Blocos abaixo da dobra: o navegador pula estilo/layout/pintura enquanto estão longe da tela. O tamanho estimado
+   fica em style (containIntrinsicSize: 'auto …'); com "auto", depois de renderizado ele lembra o tamanho real.
+   Como as estimativas mexem na posição das âncoras, anim/reveal.tsx (AnchorFix) corrige o pouso depois do scroll. */
+.lp-cv { content-visibility: auto; }
 
 /* Revelação ao rolar: só com JavaScript (html.lp-js) e com movimento permitido; nunca muda o layout. */
 @media (prefers-reduced-motion: no-preference) {
