@@ -92,7 +92,7 @@ export async function authorizeGoogleSignIn(account: GoogleAccount, profile: Goo
         })
       }
       if (Object.keys(patch).length) await tx.user.update({ where: { id: user.id }, data: patch })
-    })
+    }, { maxWait: 10_000, timeout: 20_000 }) // vários comandos em sequência: folga para o banco remoto lento
     await audit({ organizationId: user.organizationId, userId: user.id, acao: 'account.google_linked', meta: { verificadoAntes: !!user.emailVerified } })
     invalidateActiveSpace(user.id)
   } catch (e) {

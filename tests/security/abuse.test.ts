@@ -197,13 +197,14 @@ function walk(dir: string, out: string[] = []): string[] {
   return out
 }
 
+/** Roda um script TypeScript em outro processo. Tenta de novo se o banco remoto recusar a conexão (o pooler é compartilhado). */
 function runTs(file: string, args: string[], env: Record<string, string>) {
-  return spawnSync(process.execPath, [path.join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs'), file, ...args], {
-    cwd: ROOT,
-    env: { ...process.env, ...env },
-    encoding: 'utf8',
-    timeout: 120_000,
-  })
+  let r = spawnSync(process.execPath, [path.join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs'), file, ...args], { cwd: ROOT, env: { ...process.env, ...env }, encoding: 'utf8', timeout: 120_000 })
+  for (let i = 0; i < 2 && r.status === 1 && /Can't reach database server/.test(r.stderr); i++) {
+    spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},3000)'])
+    r = spawnSync(process.execPath, [path.join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs'), file, ...args], { cwd: ROOT, env: { ...process.env, ...env }, encoding: 'utf8', timeout: 120_000 })
+  }
+  return r
 }
 
 describe('A3: conta de demonstração sem senha no repositório', () => {
@@ -245,6 +246,7 @@ describe('A3: conta de demonstração sem senha no repositório', () => {
     const outra = await makeAccount({ verified: true })
     const outraAntes = await db.user.findUniqueOrThrow({ where: { id: outra.id }, select: { passwordHash: true } })
 
+    await db.$disconnect() // libera as conexões do processo de teste (reabrem sozinhas) enquanto os scripts rodam
     const fraca = runTs('scripts/rotate-demo-password.ts', [u.email], { ROTATE_PASSWORD: 'curta' })
     assert.equal(fraca.status, 2)
     const semEnv = runTs('scripts/rotate-demo-password.ts', [u.email], { ROTATE_PASSWORD: '' })
