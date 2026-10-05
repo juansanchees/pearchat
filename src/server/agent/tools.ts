@@ -95,7 +95,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: 'criar_agendamento',
     description:
-      'Cria o agendamento do cliente desta conversa. Só chame DEPOIS de o cliente confirmar serviço, dia e hora, e só com um horário devolvido por listar_horarios_livres.',
+      'Cria o agendamento do cliente desta conversa. Só chame quando o cliente tiver escolhido serviço, dia e hora (e confirmado, se as regras de AGENDAMENTO pedirem confirmação), e só com um horário devolvido por listar_horarios_livres.',
     parameters: {
       type: 'object',
       properties: {
@@ -340,7 +340,7 @@ export function createToolRunner(ctx: ToolContext) {
       }
     } catch (e) {
       console.error(`[agent:tools] ${name} falhou (${e instanceof Error ? e.name : 'erro'})`)
-      return finish(failRes('ERRO_INTERNO', 'Não foi possível concluir agora. Diga ao cliente que a equipe confirma o horário.'))
+      return finish(failRes('ERRO_INTERNO', 'Não foi possível concluir agora. Passe a conversa para a equipe confirmar o horário (uma frase curta e o marcador de passagem).'))
     }
   }
 

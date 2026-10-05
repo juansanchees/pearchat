@@ -20,6 +20,12 @@ export function registerMockMedia(providerMessageId: string, fx: MockFixture): v
 
 export const MOCK_NUMERO = '+55 11 98765-4321'
 
+/** Presenças ("digitando…") pedidas ao provedor de mentira, para os testes conferirem. */
+type MockPresence = { workspaceId: string; presence: string; delayMs: number; at: number }
+const gp = globalThis as unknown as { __pearchat_mock_presence?: MockPresence[] }
+const presenceLog = (gp.__pearchat_mock_presence ??= [])
+export const mockPresenceLog = (): readonly MockPresence[] => presenceLog
+
 // Provedor de mentira (WA_MOCK=true): navega o app sem Evolution nem Meta.
 // A "leitura do QR" acontece em POST /api/wa/mock/scan.
 export class MockProvider implements WhatsAppProvider {
@@ -78,6 +84,12 @@ export class MockProvider implements WhatsAppProvider {
     const digits = (to.telefone ?? '').replace(/\D/g, '')
     if (!base || !digits || digits.endsWith('0')) return null
     return `${base.replace(/\/+$/, '')}/${digits}`
+  }
+
+  /** "Digitando…" de mentira: só registra (os testes leem `mockPresenceLog`). */
+  async sendPresence(workspaceId: string, _to: ContactRef, opts: { presence: 'composing' | 'paused'; delayMs: number }): Promise<void> {
+    presenceLog.push({ workspaceId, presence: opts.presence, delayMs: opts.delayMs, at: Date.now() })
+    if (presenceLog.length > 200) presenceLog.shift()
   }
 
   async sendTemplate(workspaceId: string, to: ContactRef, _templateName: string, _vars: string[]) {

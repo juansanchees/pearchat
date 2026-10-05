@@ -103,30 +103,31 @@ export type FixedTexts = {
 
 export const FIXED: Record<Idioma, FixedTexts> = {
   pt: {
-    handoff: (r) => `Claro, já estou passando sua conversa para ${r}.`,
+    handoff: (r) => `Vou passar sua conversa para ${r}, que te responde por aqui.`,
     handoffDesconto: (r) => `Vou chamar ${r} para falar sobre condições especiais com você. Já já responde por aqui.`,
     handoffReclamacao: (r) => `Sinto muito por isso. Vou passar sua conversa para ${r}, que vai resolver com você o quanto antes.`,
     handoffValorAlto: (r) => `Para um pedido desse valor prefiro chamar ${r} para fechar os detalhes com você. Já já responde por aqui.`,
     limite: 'Vou chamar alguém da nossa equipe para continuar seu atendimento.',
-    valorSeguro: 'Esse valor eu preciso confirmar com a equipe e já te retorno, tá?',
+    // Promete ação da equipe: o acabamento (finish.ts) transforma em passagem, então alguém é de fato avisado.
+    valorSeguro: 'Esse valor eu não tenho aqui; vou passar pra equipe confirmar com você.',
     responsavel: 'o responsável',
   },
   en: {
-    handoff: (r) => `Of course, I'm passing your conversation to ${r} now.`,
+    handoff: (r) => `I'm passing your conversation to ${r}, who'll reply here.`,
     handoffDesconto: (r) => `I'm bringing in ${r} to talk with you about special conditions. They'll reply here shortly.`,
     handoffReclamacao: (r) => `I'm sorry about that. I'm passing your conversation to ${r}, who will sort it out with you as soon as possible.`,
     handoffValorAlto: (r) => `For an order of this size I'd rather bring in ${r} to finalize the details with you. They'll reply here shortly.`,
     limite: "I'll get someone from our team to continue helping you.",
-    valorSeguro: "I need to confirm that amount with the team and I'll get back to you, okay?",
+    valorSeguro: "I don't have that amount here; I'll pass this to the team to confirm with you.",
     responsavel: 'the person in charge',
   },
   es: {
-    handoff: (r) => `Claro, ya estoy pasando tu conversación a ${r}.`,
+    handoff: (r) => `Voy a pasar tu conversación a ${r}, que te responde por aquí.`,
     handoffDesconto: (r) => `Voy a avisar a ${r} para hablar contigo sobre condiciones especiales. En breve te responde por aquí.`,
     handoffReclamacao: (r) => `Lamento mucho eso. Voy a pasar tu conversación a ${r}, que lo resolverá contigo lo antes posible.`,
     handoffValorAlto: (r) => `Para un pedido de este valor prefiero avisar a ${r} para cerrar los detalles contigo. En breve te responde por aquí.`,
     limite: 'Voy a llamar a alguien de nuestro equipo para continuar tu atención.',
-    valorSeguro: 'Ese valor necesito confirmarlo con el equipo y te respondo enseguida, ¿vale?',
+    valorSeguro: 'Ese valor no lo tengo aquí; le paso tu consulta al equipo para que te lo confirme.',
     responsavel: 'la persona responsable',
   },
 }
