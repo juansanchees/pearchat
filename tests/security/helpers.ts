@@ -11,6 +11,19 @@ assert.equal(new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.
 /** O ambiente tem serviço de e-mail (simulado)? `node test-env.mjs --mail` liga; sem a flag, não há serviço. */
 export const MAIL_ON = Boolean(process.env.RESEND_API_KEY && process.env.MAIL_FROM)
 
+/** O banco de teste é um pooler remoto compartilhado: tenta de novo quando a conexão cai ou o pool esgota (erros transitórios). */
+export async function retryDb<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      const transient = /Can't reach database server|Timed out fetching a new connection|Transaction already closed/.test(e instanceof Error ? e.message : '')
+      if (!transient || i >= tries) throw e
+      await new Promise((r) => setTimeout(r, 1500 * i))
+    }
+  }
+}
+
 export const uniq = () => randomBytes(5).toString('hex')
 export const randomIp = () => `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`
 
@@ -24,27 +37,28 @@ export async function makeAccount(opts: { password?: string | null; verified?: b
   let organizationId = opts.orgId
   let workspaceId = opts.workspaceId
   if (!organizationId) {
-    const org = await db.organization.create({ data: { nome: `Org ${uniq()}` } })
+    const org = await retryDb(() => db.organization.create({ data: { nome: `Org ${uniq()}` } }))
     organizationId = org.id
     created.orgs.push(org.id)
   }
   if (!workspaceId) {
-    const ws = await db.workspace.create({ data: { nome: `Negócio ${uniq()}`, organizationId } })
+    const ws = await retryDb(() => db.workspace.create({ data: { nome: `Negócio ${uniq()}`, organizationId } }))
     workspaceId = ws.id
     created.workspaces.push(ws.id)
   }
   const email = opts.email ?? `t-${uniq()}@teste.local`
-  const u = await db.user.create({
+  const passwordHash = opts.password === null ? null : await bcrypt.hash(password, 4)
+  const u = await retryDb(() => db.user.create({
     data: {
       nome: 'Teste Segurança',
       email,
-      passwordHash: opts.password === null ? null : await bcrypt.hash(password, 4),
+      passwordHash,
       papel: opts.papel ?? 'owner',
       workspaceId,
       organizationId,
       emailVerified: opts.verified ? new Date() : null,
     },
-  })
+  }))
   created.users.push(u.id)
   return { id: u.id, email, password, workspaceId, organizationId }
 }

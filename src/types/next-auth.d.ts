@@ -18,6 +18,8 @@ declare module 'next-auth' {
       papel?: string
       /** true = sessão revogada (versão de sessão mudou); userId/workspaceId vêm vazios. */
       invalid?: boolean
+      /** true = o banco não respondeu (erro transitório): a sessão não foi invalidada, mas nada é autorizado agora (503 / "tente de novo"). */
+      unavailable?: boolean
     } & DefaultSession['user']
   }
 }

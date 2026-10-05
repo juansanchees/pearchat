@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
+import { unauthorizedResponse } from '@/server/auth/availability'
 
 // Workspace da sessão, ou null (a rota responde 401). Nunca aceita workspaceId do cliente.
 export async function sessionWorkspaceId(): Promise<string | null> {
@@ -15,7 +16,7 @@ export async function sessionIds(): Promise<{ userId: string; workspaceId: strin
   return userId && workspaceId ? { userId, workspaceId, organizationId: session?.user?.organizationId ?? null } : null
 }
 
-export const unauthorized = () => NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+export const unauthorized = unauthorizedResponse // 401, ou 503 se o banco não deixou conferir a sessão
 export const notFound = () => NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 })
 export const badRequest = (message: string) => NextResponse.json({ error: message }, { status: 400 })
 

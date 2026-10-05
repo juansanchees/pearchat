@@ -4,6 +4,7 @@ import { auth } from '@/auth'
 import { AuthShell } from '@/components/auth/auth-shell'
 import { VerificarForm } from '@/components/auth/verificar-form'
 import { db } from '@/lib/db'
+import { SessionUnavailableError } from '@/server/auth/availability'
 import { hasActiveCode, sendState } from '@/server/mail/email-verification'
 import { mailConfigured } from '@/server/mail/send'
 
@@ -12,6 +13,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function VerificarEmailPage() {
   const session = await auth()
+  if (session?.user?.unavailable) throw new SessionUnavailableError() // banco sem resposta: "tente de novo", sem ir ao /login
   const userId = session?.user?.userId
   if (!userId) redirect('/login')
   const user = await db.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } })

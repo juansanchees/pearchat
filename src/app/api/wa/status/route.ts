@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { unauthorizedResponse } from '@/server/auth/availability'
 import { statusToKind } from '@/lib/mappers'
 import { getApiSession } from '@/server/whatsapp/auth'
 import { getProvider } from '@/server/whatsapp'
@@ -11,7 +12,7 @@ const QR_TTL_MS = 20_000
 
 export async function GET() {
   const session = await getApiSession()
-  if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!session) return unauthorizedResponse()
   const { workspaceId } = session
 
   let row = await getSession(workspaceId)

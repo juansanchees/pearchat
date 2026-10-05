@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { emailGateBlocks } from '@/server/mail/email-verification'
+import { unauthorizedResponse } from './availability'
 import { can, PermissionError } from './permissions'
 import type { Action } from './permissions'
 
 export { requireSpaceAccess, userCanAccessSpace } from '@/server/team/access'
 
-const deny401 = () => NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+const deny401 = unauthorizedResponse // 401, ou 503 se o banco não deixou conferir a sessão (availability.ts)
 const deny403 = () => NextResponse.json({ error: 'Você não tem permissão para isso', code: 'SEM_PERMISSAO' }, { status: 403 })
 
 /**

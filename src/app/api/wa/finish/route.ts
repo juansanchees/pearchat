@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { unauthorizedResponse } from '@/server/auth/availability'
 import { denyUnless } from '@/server/auth/guard'
 import { z } from 'zod'
 import { getApiSession } from '@/server/whatsapp/auth'
@@ -16,7 +17,7 @@ const bodySchema = z.object({ importarHistorico: z.boolean() })
 export async function POST(req: Request) {
   const deny = await denyUnless('wa.manage'); if (deny) return deny
   const session = await getApiSession()
-  if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!session) return unauthorizedResponse()
   const parsed = bodySchema.safeParse(await readJson(req))
   if (!parsed.success) return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
   const { workspaceId } = session

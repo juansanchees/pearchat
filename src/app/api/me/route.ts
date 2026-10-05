@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { unauthorizedResponse } from '@/server/auth/availability'
 import { auth } from '@/auth'
 import { db } from '@/lib/db'
 import type { AppUser } from '@/components/app/app-state'
@@ -6,7 +7,7 @@ import type { AppUser } from '@/components/app/app-state'
 export async function GET() {
   const session = await auth()
   const userId = session?.user?.userId
-  if (!userId) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!userId) return unauthorizedResponse()
 
   const user = await db.user.findUnique({
     where: { id: userId },

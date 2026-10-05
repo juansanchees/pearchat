@@ -7,6 +7,7 @@ import { authConfig } from '@/auth.config'
 import { pearchatAdapter } from '@/lib/auth-adapter'
 import { authorizeGoogleSignIn, googleAccountHasTwoFactor } from '@/lib/auth-google'
 import { googleLoginCredentials } from '@/lib/google-login'
+import { judgeSession, markSessionCheckFailed } from '@/server/auth/availability'
 import { resolveActiveSpace } from '@/server/spaces/org'
 import { primaryLogin, secondFactorLogin } from '@/server/security/login'
 import { clientIpFromHeaders } from '@/server/security/hash'
@@ -41,9 +42,12 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
     ...authConfig.callbacks,
     async jwt(params) {
       const token = await authConfig.callbacks.jwt(params)
-      // Login novo: carimba a versão de sessão atual (incrementá-la no banco invalida os tokens antigos).
+      // Login novo: carimba a versão de sessão atual (incrementá-la no banco invalida os tokens antigos). Se o banco falhar
+      // aqui (erro transitório), o login falha e o usuário tenta de novo: carimbar 0 por engano criaria uma sessão que já
+      // nasce "revogada" para quem tem a versão maior que 0.
       if (params.user && token.userId) {
-        const v = await db.user.findUnique({ where: { id: token.userId }, select: { sessionVersion: true } }).catch(() => null)
+        const read = () => db.user.findUnique({ where: { id: token.userId }, select: { sessionVersion: true } })
+        const v = await read().catch(() => read())
         token.sessionVersion = v?.sessionVersion ?? 0
       }
       // Troca de espaço (unstable_update) ou renovação: relê o usuário no banco (o Edge não tem Prisma).
@@ -64,28 +68,30 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
     // espaço ativo vem do BANCO, e é sempre um workspace da organização do usuário.
     async session(params) {
       const session = authConfig.callbacks.session(params)
-      // Falha FECHADA: sem conseguir conferir no banco (queda, usuário apagado), a sessão não vale. O token sozinho não prova
-      // que a conta continua ativa nem que a sessão não foi revogada (sessionVersion, remoção da equipe).
-      const revoke = () => {
+      const blank = () => {
         session.user.userId = ''
         session.user.workspaceId = ''
         session.user.organizationId = null
-        session.user.invalid = true
       }
-      try {
-        const active = await resolveActiveSpace(params.token.userId)
-        if (!active) revoke()
-        if (active) {
-          session.user.workspaceId = active.workspaceId
-          session.user.organizationId = active.organizationId
-          session.user.papel = active.papel // Equipe: papel relido do banco a cada leitura (rebaixar vale na próxima requisição)
-          // "Sair de todos os dispositivos", troca de senha e desativação do 2FA: versão diferente = sessão revogada.
-          // Equipe: usuário removido da equipe (ou atendente sem espaço liberado) também perde a sessão.
-          if ((params.token.sessionVersion ?? 0) !== active.sessionVersion || active.blocked) revoke()
-        }
-      } catch (e) {
-        console.error('[auth] session:', e instanceof Error ? e.message : 'erro')
-        revoke()
+      // Dois casos distintos (ver src/server/auth/availability.ts):
+      //  - resposta DEFINITIVA do banco (usuário inexistente, desativado, versão de sessão diferente = "sair de todos os
+      //    dispositivos", troca de senha, removido da equipe): a sessão acabou (`invalid`);
+      //  - ERRO de infraestrutura ao ler o banco (timeout, pool esgotado, banco fora): a sessão NÃO é invalidada (o cookie
+      //    segue valendo) nem autoriza nada (`unavailable`: as APIs respondem 503 e as telas pedem para tentar de novo).
+      const verdict = await judgeSession(() => resolveActiveSpace(params.token.userId), params.token.sessionVersion ?? 0)
+      if (verdict.kind === 'ok') {
+        session.user.workspaceId = verdict.active.workspaceId
+        session.user.organizationId = verdict.active.organizationId
+        session.user.papel = verdict.active.papel // Equipe: papel relido do banco a cada leitura (rebaixar vale na próxima requisição)
+      } else if (verdict.kind === 'invalid') {
+        blank()
+        session.user.invalid = true
+      } else {
+        const why = verdict.error as { name?: string; code?: string } | null
+        console.error('[auth] session: banco sem resposta (sessão mantida, ação não autorizada):', why?.name ?? 'erro', why?.code ?? '')
+        markSessionCheckFailed()
+        blank()
+        session.user.unavailable = true
       }
       return session
     },

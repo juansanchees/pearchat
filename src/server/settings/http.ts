@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { ZodType } from 'zod'
 import { auth } from '@/auth'
+import { unauthorizedResponse } from '@/server/auth/availability'
 import { hasBadText, readJsonLimited, TOO_LARGE_MESSAGE } from '@/server/http/body'
 
 export type ApiSession = { userId: string; workspaceId: string; organizationId: string | null; papel: string }
@@ -15,7 +16,7 @@ export async function apiSession(): Promise<ApiSession | null> {
     : null
 }
 
-export const unauthorized = () => NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+export const unauthorized = unauthorizedResponse // 401, ou 503 se o banco não deixou conferir a sessão
 export const notFound = (what = 'Item') => NextResponse.json({ error: `${what} não encontrado` }, { status: 404 })
 export const fail = (message: string, status = 400) => NextResponse.json({ error: message }, { status })
 

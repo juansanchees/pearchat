@@ -4,58 +4,15 @@
 //   TEST_BASE_URL=http://127.0.0.1:3048 node test-env.mjs [--mail] -- npx tsx --test tests/security/http.test.ts
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
-import { cleanup, makeAccount, MAIL_ON, randomIp, uniq, type TestUser } from './helpers'
+import { cleanup, makeAccount, MAIL_ON, randomIp, uniq } from './helpers'
+import { APP_ORIGIN, BASE, call, chunked, login } from './http-helpers'
 import { db } from '../../src/lib/db'
 import { issueEmailCode } from '../../src/server/mail/email-verification'
 import { AGENT_TEST_PER_USER_HOUR } from '../../src/server/agent/limits'
 
-const BASE = process.env.TEST_BASE_URL
 const suite = BASE ? describe : describe.skip
-const APP_ORIGIN = 'http://onda1a.localhost:3048' // = AUTH_URL do lançador
 
 after(cleanup)
-
-type Res = { status: number; headers: Headers; json: () => Promise<Record<string, unknown>>; text: () => Promise<string> }
-
-/** Login por senha pela API do Auth.js. Tenta de novo se o servidor de teste (conexões do banco = 2) estiver ocupado. */
-async function login(u: TestUser): Promise<string> {
-  let cookie = ''
-  for (let attempt = 0; attempt < 3 && !/session-token/.test(cookie); attempt++) {
-    if (attempt) await new Promise((r) => setTimeout(r, 2000))
-    const csrfRes = await fetch(`${BASE}/api/auth/csrf`)
-    const jar = csrfRes.headers.getSetCookie().map((c) => c.split(';')[0]!)
-    const { csrfToken } = (await csrfRes.json()) as { csrfToken: string }
-    const res = await fetch(`${BASE}/api/auth/callback/credentials`, {
-      method: 'POST',
-      redirect: 'manual',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: jar.join('; '), 'x-forwarded-for': randomIp() },
-      body: new URLSearchParams({ csrfToken, email: u.email, password: u.password, json: 'true' }).toString(),
-    })
-    cookie = [...jar, ...res.headers.getSetCookie().map((c) => c.split(';')[0]!)].join('; ')
-  }
-  assert.match(cookie, /session-token/, 'login por senha deve emitir a sessão')
-  return cookie
-}
-
-const call = (cookie: string, method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> =>
-  fetch(`${BASE}${path}`, {
-    method,
-    headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), cookie, ...headers },
-    body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-  }) as Promise<Res>
-
-function chunked(totalBytes: number, headers: Record<string, string> = {}): RequestInit {
-  const piece = new Uint8Array(64 * 1024).fill(97)
-  let sent = 0
-  const body = new ReadableStream<Uint8Array>({
-    pull(c) {
-      if (sent >= totalBytes) return c.close()
-      c.enqueue(piece)
-      sent += piece.byteLength
-    },
-  })
-  return { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body, duplex: 'half' } as RequestInit
-}
 
 suite('M4: corpo grande em rotas ANÔNIMAS é cortado (413), mesmo "chunked"', () => {
   it('redefinição de senha: corpo declarado grande e corpo chunked sem content-length', async () => {

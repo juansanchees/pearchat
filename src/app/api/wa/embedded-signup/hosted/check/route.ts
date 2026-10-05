@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { unauthorizedResponse } from '@/server/auth/availability'
 import { denyUnless } from '@/server/auth/guard'
 import { z } from 'zod'
 import { db } from '@/lib/db'
@@ -22,7 +23,7 @@ const tail = (s: string) => digits(s).slice(-10)
 export async function POST(req: Request) {
   const deny = await denyUnless('wa.manage'); if (deny) return deny
   const session = await getApiSession()
-  if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!session) return unauthorizedResponse()
   const parsed = bodySchema.safeParse(await readJson(req))
   if (!parsed.success) return NextResponse.json({ error: 'Digite o número do WhatsApp com DDD' }, { status: 400 })
   const { state, numero } = parsed.data
