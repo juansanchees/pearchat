@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { Sidebar } from '@/components/sidebar'
 import { useRawSocketEvent } from '@/lib/socket-client'
 import { cn } from '@/lib/utils'
+import { NotificationSlot } from '@/components/notifications/notification-slot'
 import { BillingBanner } from './billing-banner'
 import { ShellCtx } from './shell-context'
 
@@ -64,7 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           ) : null}
           <BillingBanner />
-          {children}
+          <NotificationSlot>{children}</NotificationSlot>
         </main>
       </div>
     </ShellCtx.Provider>

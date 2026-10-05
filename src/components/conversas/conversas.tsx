@@ -37,6 +37,16 @@ export default function Conversas(): JSX.Element {
   const [dropped, setDropped] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
 
+  // Link do sininho: /whatsapp?filtro=com_ia | nao_lidas abre a lista já filtrada.
+  const filtroParam = sp.get('filtro')
+  useEffect(() => {
+    if (filtroParam !== 'com_ia' && filtroParam !== 'nao_lidas') return
+    c.setFilter(filtroParam)
+    setShowChat(false)
+    router.replace('/whatsapp')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroParam])
+
   const { loadingList, listError, items, activeId, select } = c
   useEffect(() => {
     if (!param || loadingList || listError) return
