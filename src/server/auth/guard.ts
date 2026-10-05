@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
+import { emailGateBlocks } from '@/server/mail/email-verification'
 import { can, PermissionError } from './permissions'
 import type { Action } from './permissions'
 
@@ -18,7 +19,34 @@ const deny403 = () => NextResponse.json({ error: 'Você não tem permissão para
 export async function denyUnless(action: Action): Promise<NextResponse | null> {
   const session = await auth()
   if (!session?.user?.userId || !session.user.workspaceId) return deny401()
-  return can(session.user, action) ? null : deny403()
+  if (!can(session.user, action)) return deny403()
+  // E-mail ainda não confirmado (só vale com serviço de e-mail configurado e para contas novas): ações que gastam IA,
+  // mandam mensagens, convidam pessoas ou conectam o WhatsApp ficam bloqueadas no servidor, não só na tela.
+  if (REQUIRES_VERIFIED_EMAIL.has(action) && (await emailGateBlocks(session.user.userId))) return denyUnverified()
+  return null
+}
+
+/** Ações que exigem e-mail confirmado (quando a confirmação é exigível para a conta). Leitura e ajustes locais não. */
+const REQUIRES_VERIFIED_EMAIL: ReadonlySet<Action> = new Set<Action>([
+  'conversations.use', // resposta da IA em uma conversa, atribuição
+  'agent.manage', // "Testar o agente" (custo de IA) e aprovação de respostas da IA
+  'automations.toggle',
+  'followup.manage',
+  'campaigns.manage', // disparos em massa
+  'wa.manage', // conectar WhatsApp
+  'team.manage', // convidar pessoas
+  'spaces.manage',
+  'booking.manage', // abre um link público que dispara WhatsApp
+  'calendar.manage',
+  'billing.manage',
+])
+
+export const denyUnverified = () =>
+  NextResponse.json({ error: 'Confirme seu e-mail para continuar.', code: 'EMAIL_NAO_VERIFICADO' }, { status: 403 })
+
+/** Para rotas que autenticam por `sessionIds()`/`apiSession()` e enviam mensagens: 403 se o e-mail precisa ser confirmado. */
+export async function denyIfEmailUnverified(userId: string): Promise<NextResponse | null> {
+  return (await emailGateBlocks(userId)) ? denyUnverified() : null
 }
 
 /** Resposta para um PermissionError lançado por requirePermission/requireRole/requireSpaceAccess. */

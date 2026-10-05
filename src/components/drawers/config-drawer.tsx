@@ -16,6 +16,7 @@ import { NOTIF_OPCOES } from './mock-data'
 import { QuickRepliesSection } from './quick-replies-section'
 import { SegurancaSection } from './seguranca-section'
 import { TeamSection } from './team-section'
+import { TrocaEmail } from './troca-email'
 import { DrawerShell, Field, SaveFooter, Section } from './parts'
 
 const connRow = 'flex items-center gap-3 rounded-md border border-light-divider px-[14px] py-3'
@@ -80,9 +81,10 @@ export function ConfigDrawer() {
             <input className="pc-input" value={user.nome} onChange={(e) => setUser({ nome: e.target.value })} />
           </Field>
           <Field label="E-mail" className="min-w-0 flex-[1_1_220px]">
-            <input className="pc-input" type="email" value={user.email} onChange={(e) => setUser({ email: e.target.value })} />
+            <input className="pc-input" type="email" value={user.email} readOnly />
           </Field>
         </div>
+        <TrocaEmail />
       </Section>
 
       {can('settings.workspace') && (

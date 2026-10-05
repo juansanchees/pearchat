@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { PLANS } from '@/lib/plans'
@@ -61,21 +60,17 @@ export async function getSettings(userId: string, workspaceId: string): Promise<
 }
 
 export async function updateSettings(userId: string, workspaceId: string, input: SettingsInput): Promise<SettingsDTO> {
-  const dup = await db.user.findFirst({ where: { email: input.email, NOT: { id: userId } }, select: { id: true } })
-  if (dup) throw new SettingsError('Este e-mail já está em uso', 409)
-  try {
-    await db.$transaction([
-      db.user.update({ where: { id: userId }, data: { nome: input.nome, email: input.email, notifs: input.notifs } }),
-      db.workspace.update({ where: { id: workspaceId }, data: { nome: input.empresa, horarioAtendimento: input.horarioAtendimento || null } }),
-    ])
-  } catch (e) {
-    // Dois salvamentos com o mesmo e-mail ao mesmo tempo: a checagem acima não pega, o índice único sim.
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-      throw new SettingsError('Este e-mail já está em uso', 409)
-    }
-    throw e
+  // O e-mail de login NÃO muda por aqui (tomada de conta com a sessão aberta por um instante): a troca exige a senha e a
+  // confirmação por código enviado ao endereço novo, em POST /api/me/email (src/server/mail/email-change.ts).
+  const cur = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { email: true } })
+  if (input.email !== cur.email.toLowerCase()) {
+    throw new SettingsError('Para trocar o e-mail, use "Trocar e-mail" em Perfil: pedimos sua senha e confirmamos o endereço novo.', 400)
   }
-  return { nome: input.nome, email: input.email, empresa: input.empresa, horarioAtendimento: input.horarioAtendimento, notifs: input.notifs }
+  await db.$transaction([
+    db.user.update({ where: { id: userId }, data: { nome: input.nome, notifs: input.notifs } }),
+    db.workspace.update({ where: { id: workspaceId }, data: { nome: input.empresa, horarioAtendimento: input.horarioAtendimento || null } }),
+  ])
+  return { nome: input.nome, email: cur.email, empresa: input.empresa, horarioAtendimento: input.horarioAtendimento, notifs: input.notifs }
 }
 
 // ---- Plano e pagamento ----

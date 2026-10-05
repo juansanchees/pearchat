@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
-import { badRequest, isValidId, notFound, readJson, sessionIds, unauthorized } from '@/server/messages/api'
+import { badRequest, isValidId, notFound, sessionIds, unauthorized } from '@/server/messages/api'
+import { readJson } from '@/server/http/body'
 import { SendError } from '@/server/messages/send'
 import { sendUserTemplate } from '@/server/messages/send-template'
+import { denyIfEmailUnverified } from '@/server/auth/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +20,8 @@ type Ctx = { params: { id: string } }
 export async function POST(req: NextRequest, { params }: Ctx) {
   const ids = await sessionIds()
   if (!ids) return unauthorized()
+  const unverified = await denyIfEmailUnverified(ids.userId) // e-mail ainda não confirmado: não envia mensagens
+  if (unverified) return unverified
   const { workspaceId, userId } = ids
   if (!isValidId(params.id)) return notFound()
   const parsed = postSchema.safeParse(await readJson(req))

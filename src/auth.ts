@@ -64,30 +64,36 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
     // espaço ativo vem do BANCO, e é sempre um workspace da organização do usuário.
     async session(params) {
       const session = authConfig.callbacks.session(params)
+      // Falha FECHADA: sem conseguir conferir no banco (queda, usuário apagado), a sessão não vale. O token sozinho não prova
+      // que a conta continua ativa nem que a sessão não foi revogada (sessionVersion, remoção da equipe).
+      const revoke = () => {
+        session.user.userId = ''
+        session.user.workspaceId = ''
+        session.user.organizationId = null
+        session.user.invalid = true
+      }
       try {
         const active = await resolveActiveSpace(params.token.userId)
+        if (!active) revoke()
         if (active) {
           session.user.workspaceId = active.workspaceId
           session.user.organizationId = active.organizationId
           session.user.papel = active.papel // Equipe: papel relido do banco a cada leitura (rebaixar vale na próxima requisição)
           // "Sair de todos os dispositivos", troca de senha e desativação do 2FA: versão diferente = sessão revogada.
           // Equipe: usuário removido da equipe (ou atendente sem espaço liberado) também perde a sessão.
-          if ((params.token.sessionVersion ?? 0) !== active.sessionVersion || active.blocked) {
-            session.user.userId = ''
-            session.user.workspaceId = ''
-            session.user.organizationId = null
-            session.user.invalid = true
-          }
+          if ((params.token.sessionVersion ?? 0) !== active.sessionVersion || active.blocked) revoke()
         }
       } catch (e) {
-        // Banco indisponível / migração ainda não aplicada: segue com o que o token traz.
         console.error('[auth] session:', e instanceof Error ? e.message : 'erro')
+        revoke()
       }
       return session
     },
     async signIn({ account, profile }) {
       if (account?.provider === 'google') {
-        if (!(await authorizeGoogleSignIn(account, profile))) return false
+        const decision = await authorizeGoogleSignIn(account, profile)
+        if (decision === 'needs-password') return '/login?error=GoogleSemVinculo' // conta existente sem e-mail provado: entre com a senha
+        if (decision !== 'allow') return false
         // Conta com 2FA ativo não entra só pelo Google (não pulamos o segundo fator em silêncio).
         if (await googleAccountHasTwoFactor(account, profile)) return '/login?error=GoogleMfa'
         return true

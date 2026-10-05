@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { denyIfEmailUnverified } from '@/server/auth/guard'
 import { can, normalizePapel } from '@/server/auth/permissions'
 import type { Action } from '@/server/auth/permissions'
 import { isValidId } from '@/server/messages/api'
@@ -13,6 +14,10 @@ export async function teamActor(action: Action): Promise<Actor | NextResponse> {
   const s = await apiSession()
   if (!s) return unauthorized()
   if (!can(s, action)) return NextResponse.json({ error: 'Você não tem permissão para isso', code: 'SEM_PERMISSAO' }, { status: 403 })
+  if (action === 'team.manage') {
+    const unverified = await denyIfEmailUnverified(s.userId) // convidar pessoas exige e-mail confirmado
+    if (unverified) return unverified
+  }
   const organizationId = s.organizationId ?? (await ensureOrganization(s.workspaceId))
   return { userId: s.userId, organizationId, papel: normalizePapel(s.papel) }
 }

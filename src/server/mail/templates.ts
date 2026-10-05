@@ -177,6 +177,52 @@ export function twoFactorChangedEmail({ ativada, nome }: { ativada: boolean; nom
   return { subject: ativada ? 'Verificação em duas etapas ativada no PearChat' : 'Verificação em duas etapas desativada no PearChat', html, text }
 }
 
+/** Código para confirmar o NOVO e-mail de login (vai ao endereço novo). */
+export function emailChangeCodeEmail({ code, nome }: { code: string; nome?: string }): MailContent {
+  const spaced = code.split('').join(' ')
+  const primeiro = nome?.trim().split(/\s+/)[0]
+  const oi = primeiro ? `Oi, ${escapeHtml(primeiro)}! ` : ''
+  const html = layout(
+    `Seu código para trocar o e-mail do PearChat: ${code}. Vale por 10 minutos.`,
+    h1('Confirme o novo e-mail') +
+      p(`${oi}Alguém pediu para usar este endereço como e-mail de login da conta no PearChat. Se foi você, digite este código no PearChat:`) +
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:6px 0 20px;"><tr>` +
+      `<td align="center" bgcolor="#f0faea" style="background:#f0faea;border:1px solid #b9e3a6;border-radius:12px;padding:20px 8px;font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:36px;line-height:1;font-weight:700;letter-spacing:10px;color:#1d2117;">${escapeHtml(code)}</td>` +
+      `</tr></table>` +
+      muted('O código vale por <strong>10 minutos</strong>. Por segurança, não o compartilhe com ninguém.') +
+      `<hr style="border:0;border-top:1px solid #eef0e3;margin:20px 0 14px;">` +
+      muted('Não foi você? Pode ignorar este e-mail: nada será alterado.'),
+  )
+  const text =
+    `Confirme o novo e-mail\n\n${primeiro ? `Oi, ${primeiro}! ` : ''}Alguém pediu para usar este endereço como e-mail de login da conta no PearChat. Se foi você, digite este código:\n\n    ${spaced}\n\n` +
+    `Ele vale por 10 minutos. Não o compartilhe com ninguém.\nNão foi você? Pode ignorar este e-mail: nada será alterado.\n` +
+    textFooter()
+  return { subject: `${code} é o código para trocar o e-mail do PearChat`, html, text }
+}
+
+/** Aviso ao e-mail ANTIGO: houve um pedido de troca do e-mail de login, ou a troca foi concluída. `novoEmail` já vem mascarado. */
+export function emailChangeNoticeEmail({ concluida, novoEmail, nome }: { concluida: boolean; novoEmail: string; nome?: string }): MailContent {
+  const primeiro = nome?.trim().split(/\s+/)[0]
+  const oi = primeiro ? `Oi, ${escapeHtml(primeiro)}! ` : ''
+  const titulo = concluida ? 'O e-mail da sua conta foi trocado' : 'Pedido para trocar o e-mail da sua conta'
+  const corpo = concluida
+    ? `O e-mail de login da sua conta no PearChat foi trocado para <strong>${escapeHtml(novoEmail)}</strong> e os outros dispositivos foram desconectados.`
+    : `Alguém pediu para trocar o e-mail de login da sua conta no PearChat para <strong>${escapeHtml(novoEmail)}</strong>. A troca só acontece depois que o código enviado a esse endereço for confirmado.`
+  const html = layout(
+    `${titulo}.`,
+    h1(titulo) +
+      p(`${oi}${corpo}`) +
+      `<hr style="border:0;border-top:1px solid #eef0e3;margin:20px 0 14px;">` +
+      muted('Não foi você? Redefina a sua senha agora em <strong>Esqueci minha senha</strong> e fale com o suporte indicado na política de privacidade.'),
+  )
+  const plano = corpo.replace(/<\/?strong>/g, '')
+  const text =
+    `${titulo}\n\n${primeiro ? `Oi, ${primeiro}! ` : ''}${plano}\n\n` +
+    `Não foi você? Redefina a sua senha em "Esqueci minha senha" e fale com o suporte indicado na política de privacidade.\n` +
+    textFooter()
+  return { subject: concluida ? 'O e-mail da sua conta do PearChat foi trocado' : 'Pedido para trocar o e-mail da sua conta do PearChat', html, text }
+}
+
 // ---- Cobrança (Asaas). Sem dados de pagamento no e-mail: só plano, datas e o link da conta. ----
 
 type BillingMailKind = 'trial_acabando' | 'pagamento_confirmado' | 'pagamento_atrasado' | 'assinatura_cancelada'

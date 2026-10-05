@@ -3,6 +3,7 @@ import { isValidId, notFound, sessionIds, unauthorized } from '@/server/messages
 import { MAX_OUTBOUND_BYTES } from '@/server/media/mime'
 import { SendError } from '@/server/messages/send'
 import { sendUserMedia } from '@/server/messages/send-media'
+import { denyIfEmailUnverified } from '@/server/auth/guard'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,6 +38,8 @@ const fail = (status: number, error: string, code?: string) => NextResponse.json
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const ids = await sessionIds()
   if (!ids) return unauthorized()
+  const unverified = await denyIfEmailUnverified(ids.userId) // e-mail ainda não confirmado: não envia mensagens
+  if (unverified) return unverified
   const { workspaceId, userId } = ids
   if (!isValidId(params.id)) return notFound()
 

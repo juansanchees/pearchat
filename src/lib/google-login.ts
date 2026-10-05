@@ -26,6 +26,8 @@ export function loginErrorMessage(code: string | undefined): string | undefined 
       return 'O acesso com o Google foi cancelado ou não pôde ser concluído. Tente de novo.'
     case 'OAuthAccountNotLinked':
       return 'Já existe uma conta com esse e-mail. Entre com seu e-mail e senha.'
+    case 'GoogleSemVinculo':
+      return 'Já existe uma conta com esse e-mail que ainda não confirmou o endereço. Entre com seu e-mail e senha.'
     case 'GoogleMfa':
       return 'Entre com e-mail e senha para usar a verificação em duas etapas.'
       // (A ativação exige uma senha na conta, então ninguém fica sem caminho de entrada.)
