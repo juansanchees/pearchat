@@ -3,12 +3,17 @@
 import { counted, queries } from './client'
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
+import bcrypt from 'bcryptjs'
 import { db } from '../../src/lib/db'
 import { addDays, spInstant, toSp } from '../../src/components/agenda/time'
 import type { Contexto } from '../../src/server/notifications/service'
 
 export { db }
 assert.equal(db, counted)
+
+/** Senha dos usuários de teste (só existem no schema de teste e são apagados no fim). */
+export const SENHA = 'Senha-Forte-1'
+const HASH = bcrypt.hashSync(SENHA, 4)
 
 /** Executa `fn` e devolve quantas consultas SQL o cliente fez (inclui BEGIN/COMMIT). */
 export async function contar<T>(fn: () => Promise<T>): Promise<{ valor: T; n: number; dados: number; sql: string[] }> {
@@ -38,7 +43,7 @@ export async function makeWorld() {
   const w2 = await db.workspace.create({ data: { nome: `Filial ${tag}`, organizationId: org.id, ordem: 1 } })
   createdWorkspaces.push(w1.id, w2.id)
   const mk = async (papel: string, nome: string, ws = w1.id, organizationId: string | null = org.id) => {
-    const u = await db.user.create({ data: { nome, email: `${papel}-${uniq()}@teste.local`, papel, workspaceId: ws, organizationId } })
+    const u = await db.user.create({ data: { nome, email: `${papel}-${uniq()}@teste.local`, papel, workspaceId: ws, organizationId, passwordHash: HASH } })
     createdUsers.push(u.id)
     return u
   }

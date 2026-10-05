@@ -2,8 +2,8 @@
 // (ver sources.ts) quando o cliente pede; nada aqui é chamado pelo motor, pela ingestão ou pelo envio.
 //
 // Garantias:
-//  - idempotente e seguro com duas abas: quem avança o cursor (compare-and-set) é o único que grava; chaves únicas por
-//    (usuário, espaço, dedupeKey) cobrem o resto;
+//  - idempotente e seguro com duas abas, sem transação: tudo é gravado com chaves determinísticas (únicas por usuário, espaço e
+//    dedupeKey) e a soma ignora ids já somados; o cursor só avança por compare-and-set depois de gravar;
 //  - tudo é filtrado por usuário E espaço vindos da sessão (nunca do cliente);
 //  - apagar zera o conteúdo e deixa só a marca (chave), então o que foi apagado não volta; o cursor nunca recua;
 //  - retenção: 7 dias (leitura filtra, e uma limpeza preguiçosa apaga de verdade).
@@ -195,8 +195,9 @@ export async function syncNotifications(ctx: Contexto, input: SyncInput): Promis
   return { naoLidas, itens, ausenteDesde: away ? iso(prevAtividade) : null, resumoAusente: resumo }
 }
 
+/** SQL direto (uma ida ao banco): o updateMany do Prisma abre e fecha uma transação por fora (BEGIN/COMMIT). */
 async function baterPresenca(userId: string, workspaceId: string, now: Date): Promise<void> {
-  await db.notificationCursor.updateMany({ where: { userId, workspaceId, ultimaAtividadeEm: { lt: now } }, data: { ultimaAtividadeEm: now } })
+  await db.$executeRaw`UPDATE "NotificationCursor" SET "ultimaAtividadeEm" = ${now} WHERE "userId" = ${userId} AND "workspaceId" = ${workspaceId} AND "ultimaAtividadeEm" < ${now}`
 }
 
 type GravarArgs = {
@@ -213,132 +214,127 @@ type GravarArgs = {
   presenca: Date
 }
 
-/** Avança o cursor (único ponto de "posse" da janela) e grava os itens. Devolve o resumo "enquanto você esteve fora", se houver. */
+/**
+ * Grava os itens e avança o cursor. Devolve o resumo "enquanto você esteve fora", se houver.
+ *
+ * SEM transação (o pool de conexões é pequeno e o banco pode estar longe): primeiro grava, depois reivindica a janela.
+ * Duas chamadas com o mesmo cursor gravam as MESMAS chaves (a chave da linha agregada usa o início da janela), a soma ignora
+ * ids já somados e a chave única ignora o resto; só quem avança o cursor (compare-and-set) devolve o aviso "enquanto você
+ * esteve fora". Falha no meio = o cursor não anda e a próxima chamada refaz a janela, sem duplicar nem perder.
+ */
 async function gravar(a: GravarArgs): Promise<string | null> {
   const { userId, workspaceId } = a.ctx
   const ehAusente = (at: Date) => a.away && at.getTime() > a.prevAtividade.getTime()
   const lerAoVivo = a.visivel ? new Set<NotifTipo>(VISTO_AO_VIVO[a.tela]) : new Set<NotifTipo>()
-  const estadoJson = a.col.estado as unknown as Prisma.InputJsonValue
+  const estadoTexto = JSON.stringify(a.col.estado)
   const dadosAusente = (ausente: boolean): NotifDados => (ausente ? { ausenteDesde: iso(a.prevAtividade) } : {})
 
   const unicos = a.col.unicos.slice(0, CAP_UNICOS)
   const grupos = agrupar(a.col.agg, ehAusente)
-  const nada = unicos.length === 0 && grupos.length === 0
 
-  const reivindicar = async (tx: Prisma.TransactionClient | typeof db): Promise<boolean> => {
+  /** Compare-and-set em SQL direto: só UMA chamada consegue avançar a partir deste cursor (a outra vê 0 linhas). */
+  const reivindicar = async (): Promise<boolean> => {
     if (!a.cursor) {
-      const c = await tx.notificationCursor.createMany({
-        data: [{ userId, workspaceId, sincronizadoAte: a.upTo, ultimaAtividadeEm: a.presenca, estado: estadoJson }],
-        skipDuplicates: true,
-      })
-      return c.count === 1
+      const n = await db.$executeRaw`INSERT INTO "NotificationCursor" ("userId", "workspaceId", "sincronizadoAte", "ultimaAtividadeEm", "estado")
+        VALUES (${userId}, ${workspaceId}, ${a.upTo}, ${a.presenca}, ${estadoTexto}::jsonb) ON CONFLICT ("userId", "workspaceId") DO NOTHING`
+      return n === 1
     }
-    const c = await tx.notificationCursor.updateMany({
-      where: { userId, workspaceId, sincronizadoAte: a.cursor.sincronizadoAte },
-      data: { sincronizadoAte: a.upTo, ultimaAtividadeEm: a.presenca, estado: estadoJson },
-    })
-    return c.count === 1
+    const n = await db.$executeRaw`UPDATE "NotificationCursor" SET "sincronizadoAte" = ${a.upTo}, "ultimaAtividadeEm" = ${a.presenca}, "estado" = ${estadoTexto}::jsonb
+      WHERE "userId" = ${userId} AND "workspaceId" = ${workspaceId} AND "sincronizadoAte" = ${a.cursor.sincronizadoAte}`
+    return n === 1
   }
 
-  if (nada) {
-    await reivindicar(db) // só avança o cursor e a presença (uma gravação)
+  if (unicos.length === 0 && grupos.length === 0) {
+    await reivindicar() // só avança o cursor e a presença (uma gravação)
     return null
   }
 
   const contagens: Partial<Record<NotifTipo, number>> = {}
   let nivelCota: number | undefined
-  const ganhou = await db.$transaction(
-    async (tx) => {
-      if (!(await reivindicar(tx))) return false // outra aba/chamada já tratou esta janela
+  const inicioJanela = a.cursor ? String(a.cursor.sincronizadoAte.getTime()) : 'primeira'
 
-      if (unicos.length > 0) {
-        await tx.notification.createMany({
-          data: unicos.map((u) => {
-            const ausente = ehAusente(u.at)
-            return {
-              userId,
-              workspaceId,
-              tipo: u.tipo,
-              titulo: u.titulo,
-              corpo: u.corpo,
-              contagem: 1,
-              link: u.link,
-              dados: { ...(u.dados ?? {}), ...dadosAusente(ausente) } as Prisma.InputJsonValue,
-              ausente,
-              dedupeKey: u.key,
-              ocorridoEm: u.at,
-              lidaEm: !ausente && lerAoVivo.has(u.tipo) ? a.now : null,
-            }
-          }),
-          skipDuplicates: true,
-        })
-        for (const u of unicos) {
-          if (ehAusente(u.at)) contagens[u.tipo] = (contagens[u.tipo] ?? 0) + 1
-          if (u.tipo === 'cota_ia') nivelCota = u.dados?.nivel
-        }
-      }
+  // Poucas idas ao banco: 1 leitura das linhas somáveis, 1 gravação em lote das novas e uma atualização por linha que recebeu soma.
+  const novas: Prisma.NotificationCreateManyInput[] = unicos.map((u) => {
+    const ausente = ehAusente(u.at)
+    if (ausente) contagens[u.tipo] = (contagens[u.tipo] ?? 0) + 1
+    if (u.tipo === 'cota_ia') nivelCota = u.dados?.nivel
+    return {
+      userId,
+      workspaceId,
+      tipo: u.tipo,
+      titulo: u.titulo,
+      corpo: u.corpo,
+      contagem: 1,
+      link: u.link,
+      dados: { ...(u.dados ?? {}), ...dadosAusente(ausente) } as Prisma.InputJsonValue,
+      ausente,
+      dedupeKey: u.key,
+      ocorridoEm: u.at,
+      lidaEm: !ausente && lerAoVivo.has(u.tipo) ? a.now : null,
+    }
+  })
 
-      for (const g of grupos) {
-        const lidaAgora = !g.ausente && lerAoVivo.has(g.tipo) ? a.now : null
-        const maisRecente = g.fatos.reduce((m, f) => maxDate(m, f.at), g.fatos[0].at)
-        const existente = await tx.notification.findFirst({
+  const somaveis =
+    grupos.length === 0
+      ? []
+      : await db.notification.findMany({
           where: {
             userId,
             workspaceId,
-            tipo: g.tipo,
-            ausente: g.ausente,
+            tipo: { in: Array.from(new Set(grupos.map((g) => g.tipo))) },
             lidaEm: null,
             apagadaEm: null,
             dedupeKey: { startsWith: 'agg:' },
             createdAt: { gt: new Date(a.now.getTime() - JANELA_SOMA_MS) },
           },
           orderBy: { createdAt: 'desc' },
-          select: { id: true, refIds: true, ocorridoEm: true, dados: true },
+          select: { id: true, tipo: true, ausente: true, refIds: true, ocorridoEm: true },
         })
-        const est = existente ? lerEstado(existente.refIds) : estadoVazio()
-        const novos = somar(est, g.fatos)
-        if (novos === 0) continue
-        if (g.ausente) contagens[g.tipo] = (contagens[g.tipo] ?? 0) + novos
-        const { titulo, corpo } = textoAgregado(g.tipo, est)
-        const link = linkAgregado(g.tipo, est)
-        if (existente) {
-          await tx.notification.update({
-            where: { id: existente.id },
-            data: {
-              titulo,
-              corpo,
-              contagem: totalDe(est),
-              link,
-              refIds: est as unknown as Prisma.InputJsonValue,
-              ocorridoEm: maxDate(existente.ocorridoEm, maisRecente),
-              ...(lidaAgora ? { lidaEm: lidaAgora } : {}),
-            },
-          })
-        } else {
-          await tx.notification.create({
-            data: {
-              userId,
-              workspaceId,
-              tipo: g.tipo,
-              titulo,
-              corpo,
-              contagem: totalDe(est),
-              link,
-              refIds: est as unknown as Prisma.InputJsonValue,
-              dados: dadosAusente(g.ausente) as Prisma.InputJsonValue,
-              ausente: g.ausente,
-              dedupeKey: `agg:${g.tipo}:${g.ausente ? 'a' : 'p'}:${a.upTo.getTime()}`,
-              ocorridoEm: maisRecente,
-              lidaEm: lidaAgora,
-            },
-          })
-        }
-      }
-      return true
-    },
-    { timeout: 10_000, maxWait: 5_000 },
-  )
-  if (!ganhou) return null
+
+  for (const g of grupos) {
+    const lidaAgora = !g.ausente && lerAoVivo.has(g.tipo) ? a.now : null
+    const maisRecente = g.fatos.reduce((m, f) => maxDate(m, f.at), g.fatos[0].at)
+    const existente = somaveis.find((s) => s.tipo === g.tipo && s.ausente === g.ausente)
+    const est = existente ? lerEstado(existente.refIds) : estadoVazio()
+    const novos = somar(est, g.fatos)
+    if (novos === 0) continue
+    if (g.ausente) contagens[g.tipo] = (contagens[g.tipo] ?? 0) + novos
+    const { titulo, corpo } = textoAgregado(g.tipo, est)
+    const link = linkAgregado(g.tipo, est)
+    if (existente) {
+      await db.notification.update({
+        where: { id: existente.id },
+        data: {
+          titulo,
+          corpo,
+          contagem: totalDe(est),
+          link,
+          refIds: est as unknown as Prisma.InputJsonValue,
+          ocorridoEm: maxDate(existente.ocorridoEm, maisRecente),
+          ...(lidaAgora ? { lidaEm: lidaAgora } : {}),
+        },
+      })
+    } else {
+      novas.push({
+        userId,
+        workspaceId,
+        tipo: g.tipo,
+        titulo,
+        corpo,
+        contagem: totalDe(est),
+        link,
+        refIds: est as unknown as Prisma.InputJsonValue,
+        dados: dadosAusente(g.ausente) as Prisma.InputJsonValue,
+        ausente: g.ausente,
+        dedupeKey: `agg:${g.tipo}:${g.ausente ? 'a' : 'p'}:${inicioJanela}`,
+        ocorridoEm: maisRecente,
+        lidaEm: lidaAgora,
+      })
+    }
+  }
+  if (novas.length > 0) await db.notification.createMany({ data: novas, skipDuplicates: true })
+
+  if (!(await reivindicar())) return null // outra aba/chamada já tratou esta janela
   return a.away ? resumoAusente(contagens, nivelCota) : null
 }
 
@@ -351,13 +347,16 @@ export async function heartbeat(ctx: Contexto, now: Date = new Date()): Promise<
   await baterPresenca(ctx.userId, ctx.workspaceId, now)
 }
 
+/** Os últimos itens E a contagem de não lidas numa consulta só (a função de janela conta antes do LIMIT). */
 async function lerLista(userId: string, workspaceId: string, now: Date, take: number): Promise<{ itens: NotificationDTO[]; naoLidas: number }> {
-  const base: Prisma.NotificationWhereInput = { userId, workspaceId, apagadaEm: null, createdAt: { gte: corte(now) } }
-  const [rows, naoLidas] = await Promise.all([
-    db.notification.findMany({ where: base, orderBy: [{ ocorridoEm: 'desc' }, { id: 'desc' }], take, select: SELECT_DTO }),
-    db.notification.count({ where: { ...base, lidaEm: null } }),
-  ])
-  return { itens: rows.map(toDTO), naoLidas }
+  const rows = await db.$queryRaw<(Parameters<typeof toDTO>[0] & { naoLidas: number })[]>(Prisma.sql`
+    SELECT n."id", n."tipo", n."titulo", n."corpo", n."contagem", n."link", n."ausente", n."ocorridoEm", n."lidaEm", n."dados",
+           (COUNT(*) FILTER (WHERE n."lidaEm" IS NULL) OVER ())::int AS "naoLidas"
+    FROM "Notification" n
+    WHERE n."userId" = ${userId} AND n."workspaceId" = ${workspaceId} AND n."apagadaEm" IS NULL AND n."createdAt" >= ${corte(now)}
+    ORDER BY n."ocorridoEm" DESC, n."id" DESC
+    LIMIT ${take}`)
+  return { itens: rows.map(toDTO), naoLidas: rows[0]?.naoLidas ?? 0 }
 }
 
 /** Histórico paginado (7 dias). `antes` é o `proximo` devolvido pela página anterior. */

@@ -53,8 +53,9 @@ export function AgendaTopBar({
           </span>
         </button>
       )}
-      <Link href="/whatsapp" className="pc-btn pc-btn-ghost whitespace-nowrap text-[12px] no-underline">
-        <WhatsappLogo size={14} /> Voltar às conversas
+      {/* O sininho reserva 52 px à direita desta barra: entre 900 e 1100 px o texto vira só o ícone para a barra caber numa linha. */}
+      <Link href="/whatsapp" title="Voltar às conversas" className="pc-btn pc-btn-ghost whitespace-nowrap text-[12px] no-underline">
+        <WhatsappLogo size={14} /> <span className="min-[900px]:max-[1099px]:sr-only">Voltar às conversas</span>
       </Link>
     </div>
   )

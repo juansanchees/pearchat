@@ -173,17 +173,22 @@ const ORDEM_RESUMO: NotifTipo[] = [
 
 /** "A IA respondeu 3 conversas e há 1 agendamento novo" (até 3 trechos), ou null se não houve nada. */
 export function resumoAusente(contagens: Partial<Record<NotifTipo, number>>, nivelCota?: number): string | null {
-  const partes: string[] = []
+  const partes: { texto: string; n: number }[] = []
   for (const t of ORDEM_RESUMO) {
     const n = contagens[t]
     if (!n) continue
-    const p = trecho(t, n, nivelCota)
-    if (p) partes.push(p)
+    const texto = trecho(t, n, nivelCota)
+    if (texto) partes.push({ texto, n })
   }
   if (partes.length === 0) return null
-  const usadas = partes.slice(0, 3)
-  const resto = partes.length - usadas.length
-  const texto = usadas.length === 1 ? usadas[0] : `${usadas.slice(0, -1).join(', ')} e ${usadas[usadas.length - 1]}`
-  const completo = resto > 0 ? `${texto} e mais ${resto}` : texto
+  // Curto: até 3 trechos; com mais que isso, os 2 mais urgentes e "e mais N novidades" (N = soma do que ficou de fora).
+  let completo: string
+  if (partes.length <= 3) {
+    const t = partes.map((p) => p.texto)
+    completo = t.length === 1 ? t[0] : `${t.slice(0, -1).join(', ')} e ${t[t.length - 1]}`
+  } else {
+    const resto = partes.slice(2).reduce((s, p) => s + p.n, 0)
+    completo = `${partes[0].texto}, ${partes[1].texto} e mais ${resto} ${resto === 1 ? 'novidade' : 'novidades'}`
+  }
   return completo.charAt(0).toUpperCase() + completo.slice(1)
 }

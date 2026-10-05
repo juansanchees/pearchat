@@ -73,10 +73,10 @@ async function semearTudo(w: Awaited<ReturnType<typeof makeWorld>>, agora: numbe
   await seedEvent(ws, ana.id, { origem: 'MANUAL', canal: 'link', criadoMin: 11 }, agora)
   await seedEvent(ws, bia.id, { origem: 'MANUAL', criadoMin: 10 }, agora) // criado pela equipe: sem aviso
   await seedEvent(ws, gil.id, { origem: 'GOOGLE', criadoMin: 10 }, agora) // veio do Google: sem aviso
-  await seedEvent(ws, caio.id, { origem: 'IA', criadoMin: 300, status: 'cancelado', canceladoMin: 13, canceladoPor: 'cliente', atualizadoMin: 13 }, agora)
-  await seedEvent(ws, dani.id, { origem: 'IA', criadoMin: 300, confirmacao: 'confirmado', confirmadoMin: 14, atualizadoMin: 14 }, agora)
-  await seedEvent(ws, edu.id, { origem: 'IA', criadoMin: 300, confirmacao: 'recusado', atualizadoMin: 15 }, agora)
-  await seedEvent(ws, fabi.contact.id, { origem: 'IA', criadoMin: 300, atualizadoMin: 5 }, agora)
+  await seedEvent(ws, caio.id, { origem: 'IA', criadoMin: 3000, status: 'cancelado', canceladoMin: 13, canceladoPor: 'cliente', atualizadoMin: 13 }, agora)
+  await seedEvent(ws, dani.id, { origem: 'IA', criadoMin: 3000, confirmacao: 'confirmado', confirmadoMin: 14, atualizadoMin: 14 }, agora)
+  await seedEvent(ws, edu.id, { origem: 'IA', criadoMin: 3000, confirmacao: 'recusado', atualizadoMin: 15 }, agora)
+  await seedEvent(ws, fabi.contact.id, { origem: 'IA', criadoMin: 3000, atualizadoMin: 5 }, agora)
   await seedAiJob(ws, fabi.conv.id, { runMin: 5.5, ferramentas: [{ nome: 'remarcar_agendamento', ok: true }] }, agora)
   // Campanha concluída (2 enviadas, 1 falha)
   const camp = await db.campaign.create({ data: { workspaceId: ws, lista: 'Clientes VIP', mensagem: 'MENSAGEM-SECRETA', intervaloMin: 1, intervaloMax: 2, status: 'concluida', total: 3, enviadas: 2, createdAt: ago(60, agora), updatedAt: ago(9, agora) } })
@@ -693,7 +693,7 @@ describe('textos e utilitários', () => {
     assert.equal(resumoAusente({ ia_respondeu: 3, agenda_novo: 1 }), 'A IA respondeu 3 conversas e há 1 agendamento novo')
     assert.equal(resumoAusente({ passou_para_voce: 1 }), 'A IA passou 1 conversa para a equipe')
     assert.equal(resumoAusente({}), null)
-    assert.match(resumoAusente({ ia_respondeu: 2, passou_para_voce: 1, agenda_novo: 2, followup: 4 }) ?? '', /e mais 1$/)
+    assert.equal(resumoAusente({ ia_respondeu: 2, passou_para_voce: 1, agenda_novo: 2, followup: 4 }), 'A IA passou 1 conversa para a equipe, a IA respondeu 2 conversas e mais 6 novidades')
   })
 
   it('limite de taxa por usuário: estoura e depois libera', () => {

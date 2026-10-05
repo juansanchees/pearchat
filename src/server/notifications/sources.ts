@@ -423,7 +423,10 @@ async function coletarConvites(ctx: Contexto, j: Janela, unicos: UnicoFato[]): P
 
 async function coletarWhatsApp(ctx: Contexto, j: Janela, estado: Estado, unicos: UnicoFato[]): Promise<void> {
   const s = await db.whatsAppSession.findUnique({ where: { workspaceId: ctx.workspaceId }, select: { status: true, connectedAt: true, updatedAt: true } })
-  if (!s) return
+  if (!s) {
+    estado.wa = 'off' // espaço sem registro de conexão = nunca conectou
+    return
+  }
   const on = s.status === 'CONECTADO'
   const prev = estado.wa
   const noW = s.updatedAt > j.since && s.updatedAt <= j.upTo
