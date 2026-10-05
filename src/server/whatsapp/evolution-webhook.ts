@@ -8,7 +8,7 @@ import { queueHistoryMessages } from './history-import'
 import { normalizeEvolutionEvent } from './normalize'
 import type { EvolutionEvent } from './normalize'
 import { disableAutomationsDefinitively, setStatus } from './session'
-import { BatchFailure, eachIsolated, phoneReplyTakesOver } from './webhook-common'
+import { arrivalForOrdering, BatchFailure, eachIsolated, phoneReplyTakesOver } from './webhook-common'
 
 // Processamento dos eventos da Evolution (a partir da caixa de entrada: webhook-inbox). Nunca loga corpo nem telefone.
 
@@ -89,7 +89,7 @@ export async function handleEvolutionEvent(event: EvolutionEvent, ctx: { receive
             body: m.body,
             providerMessageId: m.providerMessageId,
             timestamp: m.timestamp,
-            receivedAt: ctx.receivedAt,
+            receivedAt: arrivalForOrdering(ctx.receivedAt),
             media: m.media,
           })
         },
@@ -105,7 +105,7 @@ export async function handleEvolutionEvent(event: EvolutionEvent, ctx: { receive
             body: m.body,
             providerMessageId: m.providerMessageId,
             timestamp: m.timestamp,
-            receivedAt: ctx.receivedAt,
+            receivedAt: arrivalForOrdering(ctx.receivedAt),
             takeOver: phoneReplyTakesOver(m.timestamp, session.connectedAt),
             media: m.media,
           })

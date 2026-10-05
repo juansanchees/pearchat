@@ -12,6 +12,7 @@ import { NOT_CONFIRMED_REASON, reconcileUncertainSends } from '../../src/server/
 import { OutboundAlreadySentError, sendAndRecord } from '../../src/server/engine/outbound'
 import { getConnected } from '../../src/server/engine/util'
 import { ingestInboundMessage } from '../../src/server/messages/ingest'
+import { drainInbox, storeInbox } from '../../src/server/whatsapp/inbox'
 import { evoId, evoSendMessage, evoUpsert, startFakeEvolution } from '../_fakes/fake-evolution'
 import type { FakeEvolution } from '../_fakes/fake-evolution'
 import { startFakeLlm } from '../_fakes/fake-llm'
@@ -258,6 +259,27 @@ describe('idempotência e ordem', () => {
     const [fixed] = await outs(conv.id)
     assert.equal(fixed!.status, 'ENVIADA')
     assert.equal(fixed!.providerMessageId, evo.deliveredTo(digits(phone))[0]!.id)
+  })
+
+  it('mensagem que falhou e foi reprocessada DEPOIS de uma resposta nossa não é dada por respondida', async () => {
+    const { workspaceId, instance } = await createBiz()
+    const phone = newPhone()
+    await inbound(workspaceId, phone, 'Primeira')
+    const conv = (await convOf(workspaceId, phone))!
+    // A segunda chegou antes da nossa resposta, mas a gravação falhou: ficou na caixa de entrada.
+    const stored = await storeInbox('evolution', JSON.stringify(evoUpsert(instance, { remoteJid: jidOf(phone), message: { conversation: 'Segunda (atrasada)' } })))
+    await db.webhookInbox.update({ where: { id: stored.id }, data: { receivedAt: new Date(Date.now() - 2_000) } })
+    await runAi(workspaceId) // responde a primeira
+    await drainInbox() // a segunda entra agora
+    assert.deepEqual(
+      (await msgsOf(conv.id)).map((m) => m.direction),
+      ['IN', 'OUT', 'IN'],
+    )
+    await runAi(workspaceId)
+    assert.deepEqual(
+      (await msgsOf(conv.id)).map((m) => m.direction),
+      ['IN', 'OUT', 'IN', 'OUT'],
+    )
   })
 
   it('A2: mensagem do cliente que chega DURANTE o nosso envio fica depois dele (hora de chegada) e é respondida', async () => {

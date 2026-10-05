@@ -7,7 +7,7 @@ import type { MetaChange } from './normalize'
 import { onlyDigits, toE164 } from './phone'
 import { disableAutomationsDefinitively, readSessionData, setStatus } from './session'
 import { applyTemplateStatusEvent } from './templates'
-import { BatchFailure, eachIsolated, phoneReplyTakesOver } from './webhook-common'
+import { arrivalForOrdering, BatchFailure, eachIsolated, phoneReplyTakesOver } from './webhook-common'
 
 // Processamento dos webhooks da Meta a partir da caixa de entrada (WebhookInbox: a rota grava antes de responder 200).
 // Nunca loga corpo de mensagem, telefone nem token.
@@ -33,7 +33,7 @@ export async function handleMetaPayload(json: unknown, ctx: { receivedAt: Date }
 export async function processMetaPayload(json: unknown, ctx: { receivedAt?: Date } = {}): Promise<void> {
   const failures: unknown[] = []
   let total = 0
-  const receivedAt = ctx.receivedAt ?? new Date()
+  const receivedAt = arrivalForOrdering(ctx.receivedAt ?? new Date())
   // 1) mensagens, status e ecos do celular
   for (const batch of normalizeMetaPayload(json)) {
     total += batch.inbound.length + batch.echoes.length + batch.statuses.length

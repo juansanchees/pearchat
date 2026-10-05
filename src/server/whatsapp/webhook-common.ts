@@ -13,6 +13,18 @@ export function phoneReplyTakesOver(timestamp: Date, connectedAt: Date | null, n
   return age < OUTBOUND_TAKEOVER_MAX_AGE_MS && afterConnect
 }
 
+/** Processamento mais atrasado que isto em relação à chegada = reprocessamento (falha anterior, fila, queda). */
+const LATE_PROCESSING_MS = 5_000
+
+/**
+ * Hora de "chegada" usada para ordenar a mensagem na conversa. Processada na hora: a chegada ao servidor. Processada
+ * DEPOIS (reprocessamento da caixa de entrada): agora — senão uma mensagem que ficou para trás seria gravada antes de
+ * uma resposta nossa dada nesse meio-tempo e a IA/varredura a dariam por respondida.
+ */
+export function arrivalForOrdering(receivedAt: Date, now = Date.now()): Date {
+  return now - receivedAt.getTime() > LATE_PROCESSING_MS ? new Date(now) : receivedAt
+}
+
 /** Junta as falhas de um lote: processa TODOS os itens e só no fim lança (a caixa de entrada repete; tudo é idempotente). */
 export class BatchFailure extends Error {
   constructor(
