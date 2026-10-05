@@ -9,6 +9,7 @@ import { Server } from 'socket.io'
 import { getToken } from 'next-auth/jwt'
 import { attentionRoom, orgRoom, userRoom, workspaceRoom } from '@/server/realtime/events'
 import type { ClientToServerEvents, ServerToClientEvents } from '@/server/realtime/events'
+import { judgeHandshake, SOCKET_UNAUTHORIZED, SOCKET_UNAVAILABLE } from '@/server/realtime/handshake'
 
 const dev = !process.argv.includes('--prod') && process.env.NODE_ENV !== 'production'
 ;(process.env as Record<string, string | undefined>).NODE_ENV = dev ? 'development' : 'production'
@@ -26,12 +27,18 @@ let resolveActive: (userId: string) => Promise<{ workspaceId: string; organizati
 // Equipe: espaços liberados para atendentes (carregada no main()).
 let agentSpaces: (userId: string) => Promise<string[]> = async () => []
 
-async function spaceFromCookie(cookieHeader: string | undefined): Promise<{ workspaceId: string; organizationId: string; userId: string; papel: string } | null> {
+type SocketSpace = { workspaceId: string; organizationId: string; userId: string; papel: string }
+
+/**
+ * Espaço do socket a partir do cookie de sessão. `unauthorized` = sem sessão ou resposta definitiva do banco (o cliente
+ * não insiste); `unavailable` = o banco não respondeu agora (a sessão continua válida; o cliente tenta de novo).
+ */
+async function spaceFromCookie(cookieHeader: string | undefined): Promise<SocketSpace | typeof SOCKET_UNAUTHORIZED | typeof SOCKET_UNAVAILABLE> {
   const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET
-  if (!cookieHeader || !secret) return null
+  if (!cookieHeader || !secret) return SOCKET_UNAUTHORIZED
   // Cookie de sessão pode estar em partes (.0, .1...) quando grande; o prefixo basta para detectar.
   const cookieName = COOKIE_NAMES.find((n) => cookieHeader.includes(`${n}=`) || cookieHeader.includes(`${n}.0=`))
-  if (!cookieName) return null
+  if (!cookieName) return SOCKET_UNAUTHORIZED
   const token = await getToken({
     req: { headers: { cookie: cookieHeader } },
     secret,
@@ -40,20 +47,18 @@ async function spaceFromCookie(cookieHeader: string | undefined): Promise<{ work
     secureCookie: cookieName.startsWith('__Secure-'),
   })
   const userId = token?.userId
-  if (typeof userId !== 'string' || !userId) return null
+  if (typeof userId !== 'string' || !userId) return SOCKET_UNAUTHORIZED
   // O espaço ativo vem do BANCO (o token pode estar desatualizado depois de uma troca de WhatsApp) e é sempre
-  // um workspace da organização do usuário. O import é tardio porque o db só pode carregar depois do loadEnvConfig.
-  try {
-    const active = await resolveActive(userId)
-    // Sessão revogada ("sair de todos os dispositivos"): a versão do token não bate com a do banco.
-    if (active && (token?.sessionVersion ?? 0) !== active.sessionVersion) return null
-    // Equipe: usuário desativado / atendente sem espaço liberado não abre socket.
-    if (active?.blocked) return null
-    return active ? { workspaceId: active.workspaceId, organizationId: active.organizationId, userId, papel: active.papel } : null
-  } catch {
-    // Banco fora do ar / migração ainda não aplicada: NEGA (sem o banco não dá para conferir papel nem espaço).
-    return null
+  // um workspace da organização do usuário. Sessão revogada (versão diferente), usuário desativado ou atendente sem
+  // espaço liberado = recusa definitiva. Banco fora do ar = recusa TEMPORÁRIA (nada é autorizado sem conferir).
+  const verdict = await judgeHandshake(() => resolveActive(userId), Number(token?.sessionVersion ?? 0))
+  if (verdict.kind === SOCKET_UNAVAILABLE) {
+    logLine('warn', 'socket-sessao-indisponivel', errInfo(verdict.error))
+    return SOCKET_UNAVAILABLE
   }
+  if (verdict.kind === SOCKET_UNAUTHORIZED) return SOCKET_UNAUTHORIZED
+  const { active } = verdict
+  return { workspaceId: active.workspaceId, organizationId: active.organizationId, userId, papel: active.papel }
 }
 
 async function main() {
@@ -78,14 +83,16 @@ async function main() {
   io.use(async (socket, nextFn) => {
     try {
       const space = await spaceFromCookie(socket.handshake.headers.cookie)
-      if (!space) return nextFn(new Error('unauthorized'))
+      if (typeof space === 'string') return nextFn(new Error(space))
       socket.data.workspaceId = space.workspaceId
       socket.data.organizationId = space.organizationId
       socket.data.userId = space.userId
       socket.data.papel = space.papel
       nextFn()
-    } catch {
-      nextFn(new Error('unauthorized'))
+    } catch (e) {
+      // Falha inesperada (ex.: ao decodificar o cookie com o banco fora): temporária, o cliente tenta de novo.
+      logLine('warn', 'socket-handshake-falhou', errInfo(e))
+      nextFn(new Error(SOCKET_UNAVAILABLE))
     }
   })
 
