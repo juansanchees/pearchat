@@ -199,9 +199,15 @@ describe('recusa real e eco do celular', () => {
 
   it('recusas seguidas esgotam as tentativas: job "erro", conversa passa para uma pessoa e a equipe é avisada', async () => {
     const { workspaceId, conv, phone } = await uncertainScenario({ kind: 'status', status: 500 })
-    evo.queue({ kind: 'status', status: 500 }, { kind: 'status', status: 500 })
-    await runAi(workspaceId)
-    await runAi(workspaceId)
+    evo.queue({ kind: 'status', status: 500 }, { kind: 'status', status: 500 }, { kind: 'status', status: 500 })
+    await runAi(workspaceId) // 2ª
+    const [waiting] = await jobsOf(conv.id)
+    assert.equal(waiting!.status, 'pendente')
+    await runAi(workspaceId) // 3ª: a próxima espera é longa (5 min)
+    const [late] = await jobsOf(conv.id)
+    assert.equal(late!.status, 'pendente')
+    assert.ok(late!.runAt.getTime() - Date.now() > 4 * 60_000, 'última tentativa só depois de ~5 min')
+    await runAi(workspaceId) // 4ª e última
     assert.equal(evo.deliveredTo(digits(phone)).length, 0)
     assert.equal((await jobsOf(conv.id))[0]!.status, 'erro')
     assert.equal((await convOf(workspaceId, phone))!.mode, 'HUMANO')

@@ -30,8 +30,11 @@ import { bumpUsage, displayName, engineDisabled, getConnected, log, logError, sh
 
 export const AI_DEBOUNCE_MS = 4_000
 const SWEEP_SPACING_MS = 1_200
-const MAX_ATTEMPTS = 3
-const RETRY_DELAYS_MS = [15_000, 45_000]
+// Tentativas: 15 s, 45 s e uma última depois de 5 min (queda passageira do modelo/WhatsApp se resolve sozinha e o
+// cliente é respondido). Esgotou: a conversa passa para uma pessoa e a equipe é avisada (escalateAfterFailure).
+// Mensagem nova do cliente durante a espera antecipa a tentativa (scheduleAiReply empurra o job pendente).
+const MAX_ATTEMPTS = 4
+const RETRY_DELAYS_MS = [15_000, 45_000, 5 * 60_000]
 const HISTORY_LIMIT = 30
 const MAX_MESSAGE_CHARS = 1500 // trava o custo se o cliente colar um texto enorme
 // Job pode levar ~2,5 min (modelo 70 s + nova tentativa de preço 70 s + ferramentas): 5 min sem terminar = processo caiu.
