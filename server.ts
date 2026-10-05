@@ -192,17 +192,24 @@ process.on('uncaughtException', (err) => {
  */
 async function reconcileOnStartup(): Promise<void> {
   if (process.env.ENGINE_DISABLED === 'true') return
-  try {
-    if (process.env.ENGINE_SINGLE_INSTANCE !== 'false') {
-      const { recoverOrphanAiJobs } = await import('@/server/engine/ai-reply')
-      await recoverOrphanAiJobs(processStart)
+  // Até 3 tentativas (oscilação do banco na subida). A drenagem tem teto de tempo: o que sobrar o agendador drena a
+  // cada ciclo, e a subida não fica minutos sem atender HTTP.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      if (process.env.ENGINE_SINGLE_INSTANCE !== 'false') {
+        const { recoverOrphanAiJobs } = await import('@/server/engine/ai-reply')
+        await recoverOrphanAiJobs(processStart)
+      }
+      const { drainInbox } = await import('@/server/whatsapp/inbox')
+      const deadline = Date.now() + 15_000
+      const n = await drainInbox({ limit: 100, shouldStop: () => Date.now() > deadline })
+      if (n > 0) logLine('info', 'caixa-de-entrada-drenada', { eventos: n })
+      return
+    } catch (e) {
+      // Banco fora na subida: tenta de novo; depois disso o agendador (e o prazo de job preso) cuidam.
+      logLine('warn', 'reconciliacao-na-subida-falhou', { tentativa: attempt, ...errInfo(e) })
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 2_000))
     }
-    const { drainInbox } = await import('@/server/whatsapp/inbox')
-    const n = await drainInbox({ limit: 200 })
-    if (n > 0) logLine('info', 'caixa-de-entrada-drenada', { eventos: n })
-  } catch (e) {
-    // Banco fora na subida: o agendador tenta de novo a cada ciclo.
-    logLine('warn', 'reconciliacao-na-subida-falhou', errInfo(e))
   }
 }
 
