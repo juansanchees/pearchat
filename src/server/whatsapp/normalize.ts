@@ -44,15 +44,7 @@ export type NormalizedOutbound = {
 }
 /** Status que vêm dos provedores; 'pendente' é só interno e nunca chega por webhook. */
 export type DeliveryStatus = Exclude<MessageStatusKind, 'pendente'>
-export type NormalizedStatus = {
-  providerMessageId: string
-  status: DeliveryStatus
-  errorCode?: number
-  errorTitle?: string
-  /** Evolution: chat da mensagem e se é nossa (ajuda a reconciliar envio sem confirmação, cujo id ainda não conhecemos). */
-  remoteJid?: string
-  fromMe?: boolean
-}
+export type NormalizedStatus = { providerMessageId: string; status: DeliveryStatus; errorCode?: number; errorTitle?: string }
 
 const obj = z.object({}).passthrough()
 const str = z.string()
@@ -395,9 +387,6 @@ function jidToRef(jid: string, alt?: string): ContactRef | null {
 
 const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : v == null ? [] : [v])
 
-/** JID da Evolution -> contato (mesma regra do webhook). null = grupo/broadcast/inválido. */
-export const contactRefFromJid = (jid: string, alt?: string): ContactRef | null => jidToRef(jid, alt)
-
 /** Mensagem nossa (fromMe do celular ou eco SEND_MESSAGE da API) -> NormalizedOutbound. null = sem conteúdo/destino. */
 function ownMessageOf(d: z.infer<typeof evoMessage>): NormalizedOutbound | null {
   const media = extractEvolutionMedia(d.message, d.key.remoteJid)
@@ -492,21 +481,13 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
     const updates: NormalizedStatus[] = []
     for (const raw of asArray(data)) {
       const d = z
-        .object({
-          keyId: str.optional(),
-          status: str.optional(),
-          fromMe: z.boolean().optional(),
-          remoteJid: str.optional(),
-          key: z.object({ id: str, remoteJid: str.optional(), fromMe: z.boolean().optional() }).passthrough().optional(),
-        })
+        .object({ keyId: str.optional(), status: str.optional(), fromMe: z.boolean().optional(), key: z.object({ id: str }).passthrough().optional() })
         .passthrough()
         .safeParse(raw)
       if (!d.success) continue
       const id = d.data.keyId ?? d.data.key?.id
       const status = d.data.status ? mapEvolutionMessageStatus(d.data.status) : null
-      const remoteJid = d.data.remoteJid ?? d.data.key?.remoteJid
-      const fromMe = d.data.fromMe ?? d.data.key?.fromMe
-      if (id && status) updates.push({ providerMessageId: id, status, ...(remoteJid ? { remoteJid } : {}), ...(fromMe !== undefined ? { fromMe } : {}) })
+      if (id && status) updates.push({ providerMessageId: id, status })
     }
     return updates.length ? { kind: 'status', instance, updates } : { kind: 'ignored' }
   }

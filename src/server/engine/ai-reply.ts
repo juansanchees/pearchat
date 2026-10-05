@@ -165,8 +165,8 @@ export async function sweepPending(): Promise<number> {
   let total = 0
   for (const a of agents) {
     if (engineStopping()) break
-    // Uma vaga do motor por workspace varrido (não monopoliza o pool).
-    total += await engineLimiter().run(() => enqueuePendingForWorkspace(a.workspaceId))
+    // Uma vaga das tarefas do motor por workspace varrido (não monopoliza o pool nem as vagas da IA).
+    total += await engineLimiter('tarefas').run(() => enqueuePendingForWorkspace(a.workspaceId))
   }
   return total
 }
@@ -322,9 +322,16 @@ async function execute(job: AiJob): Promise<JobResult> {
   if (!session) return { kind: 'done', note: 'cancelado: WhatsApp desconectado' }
 
   // Este job já enviou (retomada depois de queda/reinício, ou envio sem confirmação): nunca gera/envia de novo às cegas.
-  const prior = await db.message.findFirst({ where: { conversationId, sendKey: aiSendKey(job.id) }, select: { status: true } })
+  const prior = await db.message.findFirst({ where: { conversationId, sendKey: aiSendKey(job.id) }, select: { status: true, createdAt: true } })
   if (prior && prior.status === 'PENDENTE') return deliveryWait(job)
-  if (prior && prior.status !== 'FALHOU') return { kind: 'done', note: 'já enviada por este job' }
+  if (prior && prior.status !== 'FALHOU') {
+    // O cliente escreveu de novo enquanto este envio era conferido: a nova mensagem ganha um job próprio já.
+    const newest = await db.message.findFirst({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { direction: true, createdAt: true } })
+    if (newest?.direction === 'IN' && newest.createdAt > prior.createdAt) {
+      await db.aiJob.create({ data: { workspaceId, conversationId, status: AI_JOB.pendente, runAt: new Date(Date.now() + AI_DEBOUNCE_MS) } })
+    }
+    return { kind: 'done', note: 'já enviada por este job' }
+  }
 
   // Envios que falharam (OUT/FALHOU) não contam: senão a nova tentativa acharia que a conversa já foi respondida.
   const recent = await db.message.findMany({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: HISTORY_LIMIT })
@@ -674,8 +681,8 @@ export async function runDueAiJobs(): Promise<number> {
     for (const j of due) tried.add(j.id)
     for (let i = 0; i < due.length && !engineStopping(); i += concurrency) {
       const batch = due.slice(i, i + concurrency)
-      // Cada job ocupa uma vaga do semáforo global do motor (dimensionado pelo connection_limit).
-      const res = await Promise.allSettled(batch.map((j) => engineLimiter().run(() => runJob(j))))
+      // Cada job ocupa uma vaga da faixa da IA no semáforo do motor (dimensionado pelo connection_limit).
+      const res = await Promise.allSettled(batch.map((j) => engineLimiter('ia').run(() => runJob(j))))
       for (const r of res) {
         if (r.status === 'fulfilled' && r.value) ran++
         else if (r.status === 'rejected') logError('ai', 'job falhou', r.reason)

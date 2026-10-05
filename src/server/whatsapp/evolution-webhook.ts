@@ -117,7 +117,7 @@ export async function handleEvolutionEvent(event: EvolutionEvent, ctx: { receive
       total = event.updates.length
       await eachIsolated(
         event.updates,
-        (u) => updateMessageStatus({ workspaceId, providerMessageId: u.providerMessageId, status: u.status, remoteJid: u.remoteJid, fromMe: u.fromMe }),
+        (u) => updateMessageStatus({ workspaceId, providerMessageId: u.providerMessageId, status: u.status }),
         failures,
       )
       break

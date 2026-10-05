@@ -18,8 +18,9 @@ import { engineDisabled, log, logError } from './util'
 // Cada unidade de trabalho é reivindicada com UPDATE condicional (veja os módulos), então duas
 // instâncias não duplicam envios. Exceções são capturadas por tarefa: o motor nunca derruba o servidor.
 //
-// Concorrência (pool do banco): cada tarefa ocupa uma vaga do semáforo global do motor (limiter.ts, dimensionado pelo
-// connection_limit); os jobs de IA ocupam uma vaga cada. Um tick NÃO se sobrepõe ao anterior: enquanto um tick está em
+// Concorrência (pool do banco): cada tarefa ocupa uma vaga da faixa "tarefas" do semáforo do motor (limiter.ts,
+// dimensionado pelo connection_limit); cada job de IA ocupa uma vaga da faixa "ia" (uma tarefa lenta nunca deixa a IA
+// sem vaga). Um tick NÃO se sobrepõe ao anterior: enquanto um tick está em
 // andamento o próximo é pulado; uma tarefa lenta (> 60 s) deixa de segurar o tick (continua com a sua trava e o
 // próximo tick a pula até ela terminar).
 
@@ -93,7 +94,7 @@ async function task<T>(name: string, fallback: T, fn: () => Promise<T>, skipped:
   running.add(name)
   const p: Promise<T> = (async () => {
     // `slot: false`: a tarefa não ocupa vaga (os itens dela ocupam, ex.: cada job de IA).
-    const release = opts.slot === false ? null : await engineLimiter().acquire()
+    const release = opts.slot === false ? null : await engineLimiter('tarefas').acquire()
     try {
       return await fn()
     } finally {
@@ -212,7 +213,7 @@ export function startEngine(): void {
   const timer = setInterval(() => void guardedTick(), TICK_MS)
   timer.unref()
   g.__pearchat_engine = { timer }
-  log('scheduler', `iniciado (tick de ${TICK_MS / 1000}s, ${engineLimiter().max} vaga(s) no motor)`)
+  log('scheduler', `iniciado (tick de ${TICK_MS / 1000}s, ${engineLimiter('ia').max} vaga(s) para a IA e ${engineLimiter('tarefas').max} para as tarefas)`)
 }
 
 /**

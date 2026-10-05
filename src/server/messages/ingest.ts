@@ -21,7 +21,7 @@ import { notifySpaceAttention } from '@/server/spaces/attention'
 import { handleReminderReply } from '@/server/calendar/confirmation'
 import { isNonReplyableBody } from '@/server/whatsapp/labels'
 import { maybeQueuePhoto } from '@/server/contacts/photo'
-import { attachProviderId, correlateStatus } from '@/server/engine/delivery'
+import { attachProviderId } from '@/server/engine/delivery'
 
 /** Campos de mídia de uma Message nova (metadados do webhook; o arquivo vem depois). */
 function mediaColumns(media: NormalizedMedia, opts: { imported: boolean; direction: 'IN' | 'OUT' }) {
@@ -336,20 +336,12 @@ export async function updateMessageStatus(input: {
   status: 'enviada' | 'entregue' | 'lida' | 'falhou'
   /** Motivo da falha informado pelo provedor (só quando status = falhou). */
   reason?: string
-  /** Evolution: chat e "é nossa": status de um envio nosso cujo id ainda não conhecemos (envio sem confirmação). */
-  remoteJid?: string
-  fromMe?: boolean
 }): Promise<void> {
   const { workspaceId, providerMessageId, status } = input
   const msg = await db.message.findFirst({
     where: { providerMessageId, conversation: { workspaceId } },
   })
-  if (!msg) {
-    if (input.fromMe && input.remoteJid) {
-      await correlateStatus(workspaceId, { providerMessageId, status, remoteJid: input.remoteJid, fromMe: true })
-    }
-    return
-  }
+  if (!msg) return
 
   const next = status.toUpperCase() as 'ENVIADA' | 'ENTREGUE' | 'LIDA' | 'FALHOU'
   if (msg.status === next) return

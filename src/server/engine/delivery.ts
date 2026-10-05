@@ -5,8 +5,8 @@ import { phoneCandidates } from '@/server/contacts/phone'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { EvolutionProvider } from '@/server/whatsapp/evolution'
 import { isMock } from '@/server/whatsapp'
-import { contactRefFromJid, parseHistoryMessage } from '@/server/whatsapp/normalize'
-import type { NormalizedOutbound, NormalizedStatus } from '@/server/whatsapp/normalize'
+import { parseHistoryMessage } from '@/server/whatsapp/normalize'
+import type { NormalizedOutbound } from '@/server/whatsapp/normalize'
 import { lidDigits, onlyDigits } from '@/server/whatsapp/phone'
 import type { ContactRef } from '@/server/whatsapp/provider'
 import { forgetUnrecordedSend, takeUnrecordedSends } from './delivery-memory'
@@ -15,8 +15,9 @@ import { getConnected, log, logError } from './util'
 // Reconciliação de envios sem confirmação (Message OUT PENDENTE com `uncertainSince`, ou PENDENTE antiga sem id porque o
 // processo caiu no meio do envio). Regra: NUNCA reenviar às cegas. Evidências de entrega, em ordem:
 //   1) eco SEND_MESSAGE da Evolution / eco `fromMe` com o mesmo texto (reconcileOwnEcho);
-//   2) status (messages.update) de uma mensagem nossa naquele chat quando há UMA só incerta (correlateStatus);
-//   3) consulta ativa ao banco da Evolution (findMessages fromMe do chat) com o mesmo texto depois do envio.
+//   2) consulta ativa ao banco da Evolution (findMessages fromMe do chat) com o mesmo texto depois do envio.
+// Status (messages.update) sem id conhecido NÃO é usado como evidência: sem o texto, poderia ser de uma mensagem que o
+// dono mandou pelo celular, e vinculá-lo esconderia a resposta dele.
 // Sem evidência depois do prazo: FALHOU com motivo ("não confirmado") e quem enviou (job da IA) pode reenviar UMA vez.
 
 /** Prazo para confirmar um envio incerto antes de dá-lo como falho (o job da IA então pode reenviar). */
@@ -98,25 +99,6 @@ export async function reconcileOwnEcho(workspaceId: string, echo: NormalizedOutb
   })
   if (!candidate) return false
   return attachProviderId(workspaceId, candidate, echo.providerMessageId)
-}
-
-/**
- * Status (messages.update) de uma mensagem nossa cujo id não conhecemos: se o chat tem UMA só mensagem incerta recente,
- * é ela (correlação). Com duas ou mais, não adivinha (a consulta ativa resolve).
- */
-export async function correlateStatus(workspaceId: string, u: NormalizedStatus): Promise<boolean> {
-  if (!u.fromMe || !u.remoteJid || u.status === 'falhou') return false
-  const ref = contactRefFromJid(u.remoteJid)
-  if (!ref) return false
-  const conversationId = await conversationOf(workspaceId, ref)
-  if (!conversationId) return false
-  const list = await db.message.findMany({
-    where: { ...unconfirmedOut(conversationId, new Date(Date.now() - ECHO_WINDOW_MS)), uncertainSince: { not: null } },
-    select: { id: true, conversationId: true },
-    take: 2,
-  })
-  if (list.length !== 1) return false
-  return attachProviderId(workspaceId, list[0]!, u.providerMessageId, u.status)
 }
 
 /** JIDs em que a Evolution pode ter gravado o chat do contato (telefone e variantes do 9º dígito; LID). */

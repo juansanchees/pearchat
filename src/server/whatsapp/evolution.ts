@@ -30,19 +30,28 @@ function webhookUrl(): string {
 const NOT_SENT_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT'])
 
 /**
- * Falha do fetch -> erro do provedor. Conexão recusada/DNS = nada foi enviado (falha comum). Timeout ou conexão caída
- * no meio = a Evolution PODE ter enviado: erro "incerto" (o envio não é repetido às cegas).
+ * Falha do fetch -> erro do provedor. Conexão recusada/DNS = nada foi enviado (falha comum). Num ENVIO (POST
+ * /message/*), timeout ou conexão caída no meio = a Evolution PODE ter enviado: erro "incerto" (o envio não é repetido
+ * às cegas). Nas demais chamadas (status, histórico...) é só uma falha comum.
  */
-export function evolutionFetchFailure(e: unknown): WhatsAppProviderError {
+export function evolutionFetchFailure(e: unknown, isSend = true): WhatsAppProviderError {
   const name = e instanceof Error ? e.name : ''
   const cause = e instanceof Error ? (e as Error & { cause?: { code?: unknown } }).cause : undefined
   const code = typeof cause?.code === 'string' ? cause.code : ''
-  if (name === 'TimeoutError' || name === 'AbortError') return uncertainError('A Evolution não respondeu a tempo (envio sem confirmação)')
+  const timedOut = name === 'TimeoutError' || name === 'AbortError'
   if (NOT_SENT_CODES.has(code)) return new WhatsAppProviderError('Evolution API inacessível', 0, null)
+  if (!isSend) return new WhatsAppProviderError(timedOut ? 'A Evolution não respondeu a tempo' : 'Evolution API inacessível', 0, null)
+  if (timedOut) return uncertainError('A Evolution não respondeu a tempo (envio sem confirmação)')
   return uncertainError('A conexão com a Evolution caiu durante o envio (envio sem confirmação)')
 }
 
-async function evo(method: string, path: string, body?: unknown, timeoutMs = 15_000): Promise<unknown> {
+/** Prazo padrão das chamadas à Evolution (envio de texto incluído). EVOLUTION_TIMEOUT_MS sobrescreve (testes). */
+const DEFAULT_TIMEOUT_MS = (() => {
+  const n = Number(process.env.EVOLUTION_TIMEOUT_MS)
+  return Number.isFinite(n) && n >= 100 ? n : 15_000
+})()
+
+async function evo(method: string, path: string, body?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<unknown> {
   const apiKey = process.env.EVOLUTION_API_KEY
   if (!apiKey) throw new Error('EVOLUTION_API_KEY não configurada')
   let res: Response
@@ -57,7 +66,7 @@ async function evo(method: string, path: string, body?: unknown, timeoutMs = 15_
     })
     text = await res.text()
   } catch (e) {
-    throw evolutionFetchFailure(e)
+    throw evolutionFetchFailure(e, method === 'POST' && path.startsWith('/message/'))
   }
   let parsed: unknown = text
   try {
