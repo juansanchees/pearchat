@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // LID do WhatsApp (@lid): recebimento, envio pela Evolution (servidor falso local) e conversas pendentes.
-// Precisa de um schema de TESTE do Postgres (confere abaixo) e de ENGINE_DISABLED=true. Rodar (porta 3045 para o servidor falso):
+// Precisa de um schema de TESTE do Postgres (confere abaixo) e de ENGINE_DISABLED=true. Rodar (porta do servidor falso: FAKE_EVO_PORT, padrão 3045):
 //   node .claude/tmp/diag-envio/test-env.mjs npx tsx --test tests/lid-contacts.test.ts
 // Os números e LIDs abaixo são inventados (nenhum dado de cliente).
 import assert from 'node:assert/strict'
@@ -66,8 +66,9 @@ async function newWorkspace(rapida = true) {
 }
 
 before(async () => {
-  await startFakeEvolution(3045)
-  process.env.EVOLUTION_API_URL = 'http://127.0.0.1:3045'
+  const port = Number(process.env.FAKE_EVO_PORT || 3045)
+  await startFakeEvolution(port)
+  process.env.EVOLUTION_API_URL = `http://127.0.0.1:${port}`
   process.env.EVOLUTION_API_KEY = 'chave-de-teste'
 })
 after(async () => {

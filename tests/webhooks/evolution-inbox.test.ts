@@ -128,16 +128,16 @@ describe('caixa de entrada da Evolution', () => {
     const { workspaceId, instance } = await createBiz()
     const phone = newPhone()
     const payload = evoUpsert(instance, { remoteJid: jidOf(phone), message: { conversation: 'Chegou?' } })
-    const delegate = db.webhookInbox as unknown as { create: (...a: unknown[]) => unknown }
-    const original = delegate.create
-    delegate.create = () => {
+    const delegate = db.webhookInbox as unknown as { createManyAndReturn: (...a: unknown[]) => unknown }
+    const original = delegate.createManyAndReturn
+    delegate.createManyAndReturn = () => {
       throw new Error("Can't reach database server (simulado)")
     }
     let res: Response
     try {
       res = await post(payload)
     } finally {
-      delegate.create = original
+      delegate.createManyAndReturn = original
     }
     assert.equal(res.status, 503)
     assert.equal(await convOf(workspaceId, phone), null)

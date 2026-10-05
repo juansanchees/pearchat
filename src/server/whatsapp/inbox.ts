@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto'
-import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { decrypt, encrypt } from './crypto'
 
 // Caixa de entrada durável dos webhooks (tabela WebhookInbox). Regra: um evento de mensagem/status/conexão só é dado
 // como recebido (2xx ao provedor) DEPOIS de gravado aqui. O processamento acontece a partir da caixa (na própria
 // requisição, ou pelo agendador para o que ficou pendente: falha, queda do processo, deploy). Reentrega idêntica do
-// provedor (mesmo corpo) cai na mesma linha: não duplica. O corpo fica cifrado e NUNCA vai para log.
+// provedor (mesmo corpo) cai na mesma linha (não duplica a linha) e é processada de novo: os tratadores são
+// idempotentes (id da mensagem do provedor, status que não regride), e um evento legítimo com corpo igual a um antigo
+// nunca é descartado. O corpo fica cifrado e NUNCA vai para log.
 
 export type InboxProvider = 'evolution' | 'meta'
 export type InboxHandler = (json: unknown, ctx: { receivedAt: Date; inboxId: string }) => Promise<void>
@@ -53,23 +54,23 @@ export const inboxDedupeKey = (raw: string): string => createHash('sha256').upda
 
 /**
  * Grava o corpo cru do webhook. Lança se o banco falhar (a rota responde 5xx e o provedor reentrega).
- * Reentrega idêntica devolve a linha existente (`duplicate`).
+ * Corpo idêntico a uma linha existente devolve essa linha (`duplicate`); se ela já tinha sido processada (ou dada como
+ * morta), é reaberta para ser processada outra vez (ver o comentário do topo). `done` fica sempre false: quem chama
+ * processa (uma linha que outra execução está processando devolve `busy` no processInboxRow).
  */
 export async function storeInbox(provider: InboxProvider, raw: string): Promise<{ id: string; duplicate: boolean; done: boolean }> {
   const dedupeKey = inboxDedupeKey(raw)
-  try {
-    const row = await db.webhookInbox.create({ data: { provider, dedupeKey, payload: encrypt(raw) }, select: { id: true } })
-    return { id: row.id, duplicate: false, done: false }
-  } catch (e) {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-      const ex = await db.webhookInbox.findUnique({
-        where: { provider_dedupeKey: { provider, dedupeKey } },
-        select: { id: true, processedAt: true, deadAt: true },
-      })
-      if (ex) return { id: ex.id, duplicate: true, done: !!ex.processedAt || !!ex.deadAt }
-    }
-    throw e
-  }
+  // ON CONFLICT DO NOTHING: reentrega não gera erro (nem linha de erro no log do Prisma).
+  const [row] = await db.webhookInbox.createManyAndReturn({ data: [{ provider, dedupeKey, payload: encrypt(raw) }], skipDuplicates: true, select: { id: true } })
+  if (row) return { id: row.id, duplicate: false, done: false }
+  const ex = await db.webhookInbox.findUnique({ where: { provider_dedupeKey: { provider, dedupeKey } }, select: { id: true } })
+  if (!ex) throw new Error('caixa de entrada: linha duplicada sumiu (retenção no mesmo instante)')
+  const now = new Date()
+  await db.webhookInbox.updateMany({
+    where: { id: ex.id, OR: [{ processedAt: { not: null } }, { deadAt: { not: null } }] },
+    data: { processedAt: null, deadAt: null, attempts: 0, nextAttemptAt: now, lockedUntil: null, lastError: null, receivedAt: now },
+  })
+  return { id: ex.id, duplicate: true, done: false }
 }
 
 export type InboxOutcome = 'processed' | 'retry' | 'dead' | 'busy' | 'missing'

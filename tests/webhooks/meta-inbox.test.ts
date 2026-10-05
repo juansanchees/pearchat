@@ -128,18 +128,38 @@ describe('caixa de entrada da Meta', () => {
     assert.ok((await db.webhookInbox.findUnique({ where: { id: row.id } }))?.processedAt)
   })
 
+  it('corpo idêntico a um evento JÁ processado é processado de novo (nunca descartado só por ser igual)', async () => {
+    const { workspaceId, phoneNumberId } = await metaBiz()
+    const phone = newPhone()
+    const raw = JSON.stringify(payload(phoneNumberId, [{ from: phone, body: 'Evento repetido' }]))
+    assert.equal((await post(raw)).status, 200)
+    await inboxQueueIdle()
+    const conv = (await convOf(workspaceId, phone))!
+    assert.equal((await msgsOf(conv.id)).length, 1)
+    // Sem a mensagem (ex.: apagada), a mesma entrega precisa ter efeito outra vez; com ela, a idempotência segura.
+    await db.message.deleteMany({ where: { conversationId: conv.id } })
+    assert.equal((await post(raw)).status, 200)
+    await inboxQueueIdle()
+    assert.equal((await msgsOf(conv.id)).length, 1)
+    assert.equal((await post(raw)).status, 200)
+    await inboxQueueIdle()
+    assert.equal((await msgsOf(conv.id)).length, 1)
+    const dedupeKey = (await lastMetaRow()).dedupeKey
+    assert.equal(await db.webhookInbox.count({ where: { provider: 'meta', dedupeKey } }), 1, 'uma linha só')
+  })
+
   it('gravação falha: 503 (a Meta reentrega por até 7 dias)', async () => {
     const { phoneNumberId } = await metaBiz()
     const raw = JSON.stringify(payload(phoneNumberId, [{ from: newPhone(), body: 'x' }]))
-    const delegate = db.webhookInbox as unknown as { create: (...a: unknown[]) => unknown }
-    const original = delegate.create
-    delegate.create = () => {
+    const delegate = db.webhookInbox as unknown as { createManyAndReturn: (...a: unknown[]) => unknown }
+    const original = delegate.createManyAndReturn
+    delegate.createManyAndReturn = () => {
       throw new Error("Can't reach database server (simulado)")
     }
     try {
       assert.equal((await post(raw)).status, 503)
     } finally {
-      delegate.create = original
+      delegate.createManyAndReturn = original
     }
   })
 
