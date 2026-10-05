@@ -25,6 +25,10 @@ const ERROS: Record<string, { title: string; text: string }> = {
     text: 'Remova o PearChat em myaccount.google.com/permissions e conecte de novo.',
   },
   sem_agendas: { title: 'Nenhuma agenda encontrada', text: 'Essa conta do Google não tem agendas disponíveis.' },
+  permissao: {
+    title: 'Faltou liberar uma permissão',
+    text: 'Na tela do Google, deixe marcadas todas as permissões do Google Agenda e tente de novo.',
+  },
   google: { title: 'Não foi possível conectar', text: 'O Google não concluiu a conexão. Tente de novo.' },
 }
 

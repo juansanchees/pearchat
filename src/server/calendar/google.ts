@@ -6,10 +6,35 @@ import { TZ_NAME, spToDate } from './time'
 
 // Integração Google Agenda via fetch (sem SDK). Nunca logar tokens.
 
-export const GOOGLE_SCOPES = [
-  'https://www.googleapis.com/auth/calendar.events',
-  'https://www.googleapis.com/auth/calendar.readonly',
-]
+// Escopos mínimos, um por finalidade (conferidos método a método na tabela oficial de escopos da API do Calendar):
+// - calendar.events: events.list / insert / patch / delete (ver e gerenciar os eventos);
+// - calendar.calendarlist.readonly: calendarList.list (lista de agendas);
+// - calendar.freebusy: freebusy.query (horários ocupados, sem detalhes).
+export const SCOPE_EVENTS = 'https://www.googleapis.com/auth/calendar.events'
+export const SCOPE_CALENDARLIST = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly'
+export const SCOPE_FREEBUSY = 'https://www.googleapis.com/auth/calendar.freebusy'
+export const GOOGLE_SCOPES = [SCOPE_EVENTS, SCOPE_CALENDARLIST, SCOPE_FREEBUSY]
+
+// Escopos antigos (e o geral) são superconjuntos: contas já conectadas continuam funcionando sem reconectar.
+const SCOPE_READONLY = 'https://www.googleapis.com/auth/calendar.readonly'
+const SCOPE_CALENDAR_FULL = 'https://www.googleapis.com/auth/calendar'
+const SCOPE_CALENDARLIST_FULL = 'https://www.googleapis.com/auth/calendar.calendarlist'
+
+export type PermissaoFaltando = 'eventos' | 'agendas' | 'horarios'
+
+/**
+ * Confere os escopos que o usuário REALMENTE concedeu (o Google deixa desmarcar caixas na tela de permissão).
+ * Aceita o escopo novo ou um superconjunto que também autoriza o mesmo método.
+ */
+export function checkGrantedScopes(granted: readonly string[]): { ok: true } | { ok: false; faltando: PermissaoFaltando[] } {
+  const has = (...any: string[]) => any.some((s) => granted.includes(s))
+  const faltando: PermissaoFaltando[] = []
+  if (!has(SCOPE_EVENTS, SCOPE_CALENDAR_FULL)) faltando.push('eventos')
+  if (!has(SCOPE_CALENDARLIST, SCOPE_CALENDARLIST_FULL, SCOPE_READONLY, SCOPE_CALENDAR_FULL)) faltando.push('agendas')
+  if (!has(SCOPE_FREEBUSY, SCOPE_READONLY, SCOPE_CALENDAR_FULL)) faltando.push('horarios')
+  return faltando.length === 0 ? { ok: true } : { ok: false, faltando }
+}
+
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke'
@@ -126,18 +151,23 @@ export interface StoredTokens {
   refreshToken: string
   /** epoch ms */
   expiresAt: number
+  /** Escopos concedidos na autorização (ausente em conexões antigas, que têm calendar.events + calendar.readonly). */
+  scopes?: string[]
 }
 
 const storedSchema = z.object({
   accessToken: z.string(),
   refreshToken: z.string(),
   expiresAt: z.number(),
+  scopes: z.array(z.string()).optional(),
 })
 
 const tokenResponse = z.object({
   access_token: z.string(),
   expires_in: z.number(),
   refresh_token: z.string().optional(),
+  /** Escopos concedidos, separados por espaço (o Google omite só se forem exatamente os pedidos). */
+  scope: z.string().optional(),
 })
 
 async function postToken(params: Record<string, string>): Promise<z.infer<typeof tokenResponse>> {
@@ -166,7 +196,7 @@ async function postToken(params: Record<string, string>): Promise<z.infer<typeof
 export async function exchangeCode(
   code: string,
   fallbackBase: string,
-): Promise<{ accessToken: string; refreshToken: string | null; expiresAt: number }> {
+): Promise<{ accessToken: string; refreshToken: string | null; expiresAt: number; scopes: string[] }> {
   const { id, secret } = clientCreds()
   const r = await postToken({
     code,
@@ -179,7 +209,24 @@ export async function exchangeCode(
     accessToken: r.access_token,
     refreshToken: r.refresh_token ?? null,
     expiresAt: Date.now() + r.expires_in * 1000,
+    // Sem o campo `scope` valem os escopos pedidos (RFC 6749, 5.1).
+    scopes: r.scope === undefined ? [...GOOGLE_SCOPES] : r.scope.split(/\s+/).filter(Boolean),
   }
+}
+
+export type CodeExchange = Awaited<ReturnType<typeof exchangeCode>>
+
+/**
+ * Callback do OAuth: troca o code e confere os escopos efetivamente concedidos. Sem as três permissões
+ * devolve `ok: false` (o caller não grava nada e pede para tentar de novo).
+ */
+export async function exchangeCodeChecked(
+  code: string,
+  fallbackBase: string,
+): Promise<{ ok: true; exchanged: CodeExchange } | { ok: false; faltando: PermissaoFaltando[] }> {
+  const exchanged = await exchangeCode(code, fallbackBase)
+  const granted = checkGrantedScopes(exchanged.scopes)
+  return granted.ok ? { ok: true, exchanged } : { ok: false, faltando: granted.faltando }
 }
 
 /** Troca o refresh_token por um novo access_token (não persiste). */
@@ -207,7 +254,7 @@ export function readTokens(encrypted: string): StoredTokens | null {
   }
 }
 
-/** Revoga o token no Google (best-effort: nunca lança). */
+/** Revoga o token no Google (best-effort: nunca lança; sem resposta em 5 s, desiste). */
 export async function revokeToken(token: string): Promise<boolean> {
   try {
     const res = await fetch(REVOKE_URL, {
@@ -215,6 +262,7 @@ export async function revokeToken(token: string): Promise<boolean> {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ token }).toString(),
       cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
     })
     return res.ok
   } catch {
