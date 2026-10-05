@@ -1,11 +1,27 @@
 # Conferência do site contra os requisitos do Google
 
-Data: 05/10/2026. Método: GET anônimo (sem login, sem cookie) em https://pearchat.online/, /privacidade e /termos, mais leitura do código (`src/`). Resultado para o orquestrador decidir e mandar corrigir; nada no site foi alterado.
+Data: 05/10/2026. Método: GET anônimo (sem login, sem cookie) em https://pearchat.online/, /privacidade e /termos, mais leitura do código (`src/`). A conferência original não alterou nada no site; os itens da seção 2 foram corrigidos depois no código (ver o quadro abaixo). Falta apenas publicar (deploy) a versão nova.
 
 Requisitos conferidos (todas as fontes são oficiais do Google):
 - Marca: https://support.google.com/cloud/answer/13464321 e https://support.google.com/cloud/answer/15549049
 - Política de Dados do Usuário (uso limitado, avisos dentro do produto): https://developers.google.com/terms/api-services-user-data-policy
 - Botão do Google: https://developers.google.com/identity/branding-guidelines
+
+## 0. Situação dos itens da seção 2 (atualizado em 05/10/2026)
+
+Os itens 1 a 6 foram corrigidos no código da branch de trabalho. Ficam valendo depois do deploy; o item 8 e as pendências da seção 3 continuam do dono.
+
+| Item | Situação | O que foi feito |
+|---|---|---|
+| 1. Aviso de privacidade no app | RESOLVIDO | Tela "Conecte sua agenda" tem um aviso antes do botão (o que acessa e para quê, o que não faz, que dá para desconectar) e link para `/privacidade#google` (`src/components/agenda/connect-flow.tsx`) |
+| 2. Botões do Google fora da marca | RESOLVIDO | "G" oficial colorido em SVG; botão claro das diretrizes (fundo branco, traço `#747775`, texto `#1F1F1F`, Roboto Medium 14); textos "Continuar com o Google" e "Cadastrar-se com o Google"; o cartão "Google Agenda" usa o mesmo "G" (`src/components/brand/google-g.tsx`, `src/components/auth/fields.tsx`) |
+| 3. Política genérica demais | RESOLVIDO | Seção "Uso de dados do Google" reescrita: dados lidos, o que é guardado e por quanto tempo, o que a IA recebe, quem pode ver, desconectar/revogar/excluir, escopos novos e declaração de Uso Limitado em inglês. Seções de compartilhamento e retenção ajustadas. Data: 5 de outubro de 2026 |
+| 4. Home pouco explícita | RESOLVIDO | Nova dúvida frequente "Como o PearChat usa o meu Google Agenda?", com link para `/privacidade#google` (`src/components/site/sections/faq.tsx`) |
+| 5. Permissões parciais | RESOLVIDO | O callback lê os escopos concedidos. Sem as três permissões, não conecta, não grava nada e a Agenda avisa "Faltou liberar uma permissão" (`erro=permissao`) |
+| 6. Só em português | MITIGADO | A frase de Uso Limitado agora aparece também em inglês na política. Não há exigência oficial de página em inglês |
+| 7 a 9 (baixa) | SEM MUDANÇA | Não afetam a verificação |
+
+Escopos: o app agora pede `calendar.events`, `calendar.calendarlist.readonly` e `calendar.freebusy` (saiu o `calendar.readonly`). Contas já conectadas continuam funcionando sem reconectar.
 
 ## 1. O que está certo (verificado)
 
@@ -25,7 +41,7 @@ Requisitos conferidos (todas as fontes são oficiais do Google):
 
 ## 2. O que falta ou pode gerar recusa (em ordem de prioridade)
 
-### Alta (corrigir antes de enviar)
+### Alta (corrigir antes de enviar) - RESOLVIDO, ver quadro da seção 0
 
 1. Sem aviso de privacidade dentro do app, no momento de conectar o Google Agenda.
    - Regra: a política do Google exige avisos no produto "bem visíveis, no momento certo e em contexto"; a página de marca repete "in-product privacy notifications must be prominently displayed".
@@ -66,4 +82,4 @@ Requisitos conferidos (todas as fontes são oficiais do Google):
 - Domínio `pearchat.online` ainda não verificado no Search Console (passo 1 do `passo-a-passo.md`). O Google exige para marca e escopos sensíveis.
 - Cliente OAuth: o Google pede que o vídeo cubra todos os clientes do projeto e recomenda remover os que não são de produção. O login "Continuar com Google" usa o MESMO cliente da Agenda (`src/lib/google-login.ts`). Conferir em "Clientes" se existe outro cliente e se há endereços de redirecionamento `http://localhost` (o Console pode esconder escopos quando há URLs não HTTPS; separar um projeto de desenvolvimento resolve).
 - Endereços de redirecionamento esperados no cliente de produção: `https://pearchat.online/api/calendar/google/callback` (Agenda) e `https://pearchat.online/api/auth/callback/google` (login). Confirmar no Console; não foi possível ver de fora.
-- Escopos no código (`src/server/calendar/google.ts`): hoje `calendar.events` e `calendar.readonly`; o login pede só `openid email profile`. O Console precisa listar exatamente o que o código pede, senão aparece a tela de aviso mesmo após aprovar. Há uma alternativa mais estreita em `textos-para-colar.md` (seção 2B).
+- Escopos no código (`src/server/calendar/google.ts`): agora `calendar.events`, `calendar.calendarlist.readonly` e `calendar.freebusy`; o login pede só `openid email profile`. O Console precisa listar exatamente o que o código pede, senão aparece a tela de aviso mesmo após aprovar: ver o passo 3 do `passo-a-passo.md` (adicionar os dois novos e remover `calendar.readonly`).

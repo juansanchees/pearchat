@@ -8,7 +8,7 @@ Regras:
 - Enquanto o Google analisa, não mude nome, logo, links, site nem permissões. Mudar trava a análise.
 - Os nomes dos botões podem variar um pouco. Se não achar algo, tire um print e mande ao orquestrador.
 
-Palavras: "escopo" = permissão que o app pede ao Google. O PearChat pede 2: ler/editar eventos e ler a lista de agendas.
+Palavras: "escopo" = permissão que o app pede ao Google. O PearChat pede 3: ver e editar os eventos (`calendar.events`), ver a lista de agendas (`calendar.calendarlist.readonly`) e ver só os horários ocupados/livres (`calendar.freebusy`). A lista é esta e está final.
 
 ---
 
@@ -56,18 +56,22 @@ Pronto quando: marca publicada. Só então o nome PearChat e o logo passam a apa
 
 ## Passo 3. Declarar as permissões (10 min)
 
-Antes, espere o orquestrador confirmar a lista final de escopos (ele pode trocar um por outro mais estreito antes de você gravar o vídeo).
+Faça este passo DEPOIS que a versão nova do PearChat (com os 3 escopos) estiver no ar em pearchat.online, e ANTES de gravar o vídeo. O Console precisa listar exatamente o que o app pede, senão a tela de aviso continua.
 
 1. Menu → "Acesso a dados" (Data Access) → "Adicionar ou remover escopos".
-2. Em "Adicionar escopos manualmente" (Manually add scopes), cole, um por linha:
+2. Se na lista aparecer `.../auth/calendar.readonly`, desmarque ou remova (o app não pede mais). Não mexa nos escopos básicos (`openid`, e-mail e perfil), que são do login com Google.
+3. Em "Adicionar escopos manualmente" (Manually add scopes), cole, um por linha:
    ```
    https://www.googleapis.com/auth/calendar.events
-   https://www.googleapis.com/auth/calendar.readonly
+   https://www.googleapis.com/auth/calendar.calendarlist.readonly
+   https://www.googleapis.com/auth/calendar.freebusy
    ```
-3. Clique em "Adicionar à tabela" → "Atualizar" → "Salvar".
-4. Confira em qual seção cada um caiu (sensíveis ou não sensíveis) e mande um print ao orquestrador.
+4. Clique em "Adicionar à tabela" → "Atualizar" → "Salvar".
+5. Confira que ficaram só esses três do Calendar, em qual seção cada um caiu (sensíveis ou não sensíveis), e mande um print ao orquestrador.
 
 O texto de justificativa de cada escopo está pronto em `textos-para-colar.md`, seção 2. Você cola no passo 5.
+
+As contas que já estavam conectadas continuam funcionando sem reconectar. Quem conectar daqui para a frente vê a tela de permissão com as 3 caixas (e pode desmarcar; se desmarcar, o PearChat avisa para marcar todas e tentar de novo).
 
 ## Passo 4. Gravar o vídeo e subir no YouTube (1 h)
 
@@ -81,7 +85,7 @@ O texto de justificativa de cada escopo está pronto em `textos-para-colar.md`, 
 1. Menu → "Central de verificação" (Verification Center).
 2. Confira que a marca aparece como publicada. Em "Acesso a dados", clique no botão de preparar/enviar para verificação.
 3. Confira os dados mostrados e continue.
-4. Justificativa: cole o texto de cada escopo (`textos-para-colar.md`, seção 2).
+4. Justificativa: cole o texto dos 3 escopos (`textos-para-colar.md`, seções 2.1, 2.2 e 2.3).
 5. Links de documentação (até 3):
    - `https://pearchat.online/#funcionalidades`
    - `https://pearchat.online/privacidade#google`
@@ -94,5 +98,5 @@ O texto de justificativa de cada escopo está pronto em `textos-para-colar.md`, 
 - Prazo informado pelo Google: marca 2 a 3 dias úteis; permissões sensíveis cerca de 10 dias úteis (outra página do Google diz 3 a 5). Sem garantia, e depende de você responder rápido. Se houver idas e voltas, conte de 1 a 4 semanas (estimativa nossa, não do Google).
 - Até aprovar, a tela de aviso continua. Cada cliente clica em "Avançado" → "Acessar pearchat.online (não seguro)" e segue.
 - Limite de 100 novos usuários: vale enquanto não aprovar, não zera nunca e conta quem autoriza o Google Agenda. Veja o contador em "Público-alvo" (Audience). Perto de 80, avise o orquestrador.
-- Pedidos comuns do Google: vídeo sem o ID do cliente na barra de endereço ou com a tela de permissão fora do inglês; justificativa vaga ou pedido para usar escopo mais estreito; domínio não verificado; link do vídeo "Particular".
+- Pedidos comuns do Google: vídeo sem o ID do cliente na barra de endereço ou com a tela de permissão fora do inglês; justificativa vaga ou pedido para usar escopo mais estreito (já usamos os mais estreitos); domínio não verificado; link do vídeo "Particular".
 - Quando aprovar: o aviso some em algumas horas. Teste conectando com a conta Gmail de outra pessoa.
