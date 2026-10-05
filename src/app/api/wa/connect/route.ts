@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { unauthorizedResponse } from '@/server/auth/availability'
 import { denyUnless } from '@/server/auth/guard'
 import { z } from 'zod'
 import { getApiSession } from '@/server/whatsapp/auth'
@@ -8,6 +9,7 @@ import { instanceNameFor } from '@/server/whatsapp/evolution'
 import { assertOficialAllowed, ConnectError } from '@/server/whatsapp/meta-connect'
 import { onlyDigits } from '@/server/whatsapp/phone'
 import { setStatus, toStatusDTO } from '@/server/whatsapp/session'
+import { readJson } from '@/server/http/body'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -20,9 +22,9 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const deny = await denyUnless('wa.manage'); if (deny) return deny
   const session = await getApiSession()
-  if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!session) return unauthorizedResponse()
 
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null))
+  const parsed = bodySchema.safeParse(await readJson(req))
   if (!parsed.success) return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
   const { provider, numero } = parsed.data
   const { workspaceId } = session

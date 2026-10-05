@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { clientIpFromHeaders } from '@/server/security/hash'
 
 // Peças de segurança da página pública: hashes de IP/telefone, token de formulário com tempo e token do .ics.
 // Tudo é HMAC com AUTH_SECRET (o IP e o telefone nunca são gravados em claro nos limites de abuso).
@@ -27,13 +28,7 @@ export const hashPhone = (workspaceId: string, e164: string): string => mac('tel
 
 /** IP do cliente atrás do proxy confiável (Caddy/nginx): a ÚLTIMA entrada do x-forwarded-for é a que o proxy viu. */
 export function clientIp(headers: Headers): string {
-  const xff = headers.get('x-forwarded-for')
-  if (xff) {
-    const parts = xff.split(',').map((p) => p.trim()).filter(Boolean)
-    const last = parts[parts.length - 1]
-    if (last) return last.slice(0, 64)
-  }
-  return (headers.get('x-real-ip') ?? 'desconhecido').slice(0, 64)
+  return clientIpFromHeaders(headers) // mesma regra do login (inclui IPv6 por /64)
 }
 
 /** Token do formulário: emitido no GET, vale de 3 s a 30 min depois, preso ao workspace. */

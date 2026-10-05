@@ -9,7 +9,7 @@ import { Section } from './parts'
 
 type State = { enabled: boolean; hasPassword: boolean; recoveryLeft: number }
 type Setup = { secret: string; qr: string }
-type Mode = 'idle' | 'setup' | 'codes' | 'disable' | 'regen'
+type Mode = 'idle' | 'askpwd' | 'setup' | 'codes' | 'disable' | 'regen'
 
 const box = 'flex flex-col gap-3 rounded-md border border-light-divider px-[14px] py-3'
 const hint = 'text-[11.5px] text-light-neutral-500'
@@ -60,8 +60,9 @@ export function SegurancaSection() {
   const post = <T,>(body: unknown) => api<T>('/api/security/2fa', { method: 'POST', body })
 
   async function start() {
-    const r = await run(() => post<Setup>({ action: 'setup' }))
+    const r = await run(() => post<Setup>({ action: 'setup', password: password || undefined }))
     if (r) {
+      setPassword('')
       setSetup(r)
       setMode('setup')
     }
@@ -160,10 +161,39 @@ export function SegurancaSection() {
 
         {mode === 'idle' && st && !st.enabled && (
           <div className="flex flex-col gap-2">
-            <button type="button" className="pc-btn pc-btn-primary self-start" onClick={() => void start()} disabled={busy}>
+            <button type="button" className="pc-btn pc-btn-primary self-start" onClick={() => (st.hasPassword ? setMode('askpwd') : void start())} disabled={busy}>
               Ativar verificação em duas etapas
             </button>
             {errorLine}
+          </div>
+        )}
+
+        {mode === 'askpwd' && (
+          <div className="flex flex-col gap-3">
+            <p className={hint}>Por segurança, confirme sua senha para ativar a verificação em duas etapas.</p>
+            <div>
+              <label htmlFor="seg-pwd-setup" className="pc-label">
+                Senha
+              </label>
+              <input
+                id="seg-pwd-setup"
+                type="password"
+                className="pc-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && password && void start()}
+                autoComplete="current-password"
+              />
+            </div>
+            {errorLine}
+            <div className="flex gap-2">
+              <button type="button" className="pc-btn pc-btn-primary" onClick={() => void start()} disabled={busy || !password}>
+                Continuar
+              </button>
+              <button type="button" className="pc-btn pc-btn-secondary" onClick={reset} disabled={busy}>
+                Cancelar
+              </button>
+            </div>
           </div>
         )}
 

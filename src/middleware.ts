@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth'
 import { NextResponse } from 'next/server'
 import { authConfig } from '@/auth.config'
+import { apiGuardVerdict } from '@/server/http/api-guard'
 
 const { auth } = NextAuth(authConfig)
 
@@ -16,6 +17,11 @@ export default auth((req) => {
   if (pathname.startsWith('/a/') || pathname.startsWith('/api/public/')) return NextResponse.next()
   // Convite da equipe: página pública (quem recebe ainda não tem conta; a página e o token fazem a conferência).
   if (pathname.startsWith('/convite/')) return NextResponse.next()
+  // Rotas /api autenticadas: origem própria nas que mudam estado (CSRF) e 413 para corpo grande declarado.
+  if (pathname.startsWith('/api/')) {
+    const verdict = apiGuardVerdict(req)
+    if (verdict) return NextResponse.json({ error: verdict.error }, { status: verdict.status })
+  }
   const isPublic = PUBLIC_PAGES.includes(pathname)
   const loggedIn = !!req.auth
 
@@ -39,6 +45,7 @@ export default auth((req) => {
 })
 
 export const config = {
-  // Exclui: /api/auth, /api/wa/* (webhooks), _next e arquivos estáticos.
-  matcher: ['/((?!api/auth|api/wa|api/billing/asaas|api/health|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
+  // Exclui: /api/auth, os webhooks (/api/wa/evolution, /api/wa/meta, /api/billing/asaas: cada um se autentica sozinho), _next e
+  // arquivos estáticos. As demais rotas /api/wa/* (conectar, desconectar...) são do app e passam pela conferência de origem.
+  matcher: ['/((?!api/auth|api/wa/evolution|api/wa/meta|api/billing/asaas|api/health|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 }

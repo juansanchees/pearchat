@@ -2,9 +2,11 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { badRequest, isValidId, notFound, readJson, sessionIds, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, isValidId, notFound, sessionIds, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { readJson } from '@/server/http/body'
 import { senderFirstNames, toMessageDTO } from '@/server/messages/dto'
 import { SendError, sendUserMessage } from '@/server/messages/send'
+import { denyIfEmailUnverified } from '@/server/auth/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +47,8 @@ export async function GET(req: NextRequest, { params }: Ctx) {
 export async function POST(req: NextRequest, { params }: Ctx) {
   const ids = await sessionIds()
   if (!ids) return unauthorized()
+  const unverified = await denyIfEmailUnverified(ids.userId) // e-mail ainda não confirmado: não envia mensagens
+  if (unverified) return unverified
   const { workspaceId, userId } = ids
   if (!isValidId(params.id)) return notFound()
 

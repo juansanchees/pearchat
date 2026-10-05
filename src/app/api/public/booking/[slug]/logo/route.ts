@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { throttled } from '@/server/booking/http'
 import { getPublicWorkspace } from '@/server/booking/public'
 import { avatarMime, logoIdFromUrl, openLogo } from '@/server/media/avatars'
 
@@ -11,7 +12,8 @@ const notFound = () => new NextResponse(null, { status: 404, headers: { 'Cache-C
 
 // Logo na página pública de agendamento. Sem login, mas SÓ por slug de link ativo (o id do espaço nunca aparece):
 // slug inexistente, link desativado, negócio arquivado e negócio sem logo respondem igual (404). Só devolve a imagem.
-export async function GET(_req: Request, { params }: { params: { slug: string } }) {
+export async function GET(req: Request, { params }: { params: { slug: string } }) {
+  if (throttled(req, 'pub-logo', 120, 10 * 60_000)) return new NextResponse(null, { status: 429, headers: { 'Cache-Control': 'no-store' } })
   const pub = await getPublicWorkspace(params.slug)
   if (!pub) return notFound()
   const ws = await db.workspace.findUnique({ where: { id: pub.id }, select: { logoUrl: true } })

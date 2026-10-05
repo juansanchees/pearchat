@@ -3,7 +3,8 @@ import { denyUnless } from '@/server/auth/guard'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { badRequest, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { readJson } from '@/server/http/body'
 import { apiError } from '@/server/calendar/service'
 import {
   COR_RE,

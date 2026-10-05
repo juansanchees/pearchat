@@ -10,6 +10,7 @@ import { contactRef, ensureConversation, sendAndRecord } from '@/server/engine/o
 import { displayName, getConnected, logError, spParts, templateFirstName } from '@/server/engine/util'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { isDateInWindow, loadBusy, slotsForDay } from './availability'
+import { CONFIRMACAO, avisarTeto, cabeConfirmacao, linkEstourado } from './caps'
 import { signEventToken } from './security'
 
 // Núcleo da página pública de agendamento. Nada aqui devolve dado de outros eventos ou de outros negócios.
@@ -98,6 +99,8 @@ export type BookingResult =
   | { kind: 'ok'; resumo: BookingSummary; eventId: string }
   | { kind: 'conflict' }
   | { kind: 'limit' }
+  /** Teto do NEGÓCIO (por hora/dia) estourado: o link responde "indisponível no momento" e o dono é avisado. */
+  | { kind: 'cap' }
   | { kind: 'invalid'; message: string }
 
 export type BookingSummary = {
@@ -161,6 +164,8 @@ export async function createPublicBooking(input: BookingInput): Promise<BookingR
 
   const outcome = await withBookingLock(ws.id, async (tx) => {
     // Limites de abuso dentro do lock do negócio: dez pedidos simultâneos não furam o teto.
+    // Teto do NEGÓCIO (qualquer IP/telefone): impede lotar a agenda e usar o link como canhão com IPs rotativos.
+    if (await linkEstourado(tx, ws.id, now)) return { kind: 'cap' } as const
     const [porIp, porTel] = await Promise.all([
       tx.bookingAttempt.count({ where: { workspaceId: ws.id, ipHash: input.ipHash, createdAt: { gte: since } } }),
       tx.bookingAttempt.count({ where: { workspaceId: ws.id, telefoneHash: telHash, createdAt: { gte: since } } }),
@@ -186,6 +191,7 @@ export async function createPublicBooking(input: BookingInput): Promise<BookingR
       ? `[Agendamento pelo link, ${diaLabel(inicio)} ${horaLabel(inicio)}] ${input.observacao}`
       : null
     let contact = existentes[0]
+    const numeroNovo = !contact
     if (contact) {
       // Nunca sobrescreve o nome que o dono já tem; a observação entra nas notas.
       if (nota) {
@@ -214,14 +220,15 @@ export async function createPublicBooking(input: BookingInput): Promise<BookingR
       },
       select: { id: true },
     })
-    await tx.bookingAttempt.create({ data: { workspaceId: ws.id, ipHash: input.ipHash, telefoneHash: telHash } })
+    const attempt = await tx.bookingAttempt.create({ data: { workspaceId: ws.id, ipHash: input.ipHash, telefoneHash: telHash }, select: { id: true } })
     // Faxina oportunista dos registros de limite (valem 1 h; guardamos 2 dias).
     await tx.bookingAttempt.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - 2 * 86_400_000) } } })
-    return { kind: 'ok', eventId: row.id, contact } as const
+    return { kind: 'ok', eventId: row.id, contact, attemptId: attempt.id, numeroNovo } as const
   })
 
+  if (outcome.kind === 'cap') void avisarTeto(ws.id, 'agendamentos', now)
   if (outcome.kind !== 'ok') return outcome
-  const { eventId, contact } = outcome
+  const { eventId, contact, attemptId, numeroNovo } = outcome
   // Nome para falar com a pessoa: o do contato, ou o digitado quando o do contato é só um número.
   const contactNome = displayName(contact.nome, { telefone }) ? contact.nome : input.nome
 
@@ -254,7 +261,14 @@ export async function createPublicBooking(input: BookingInput): Promise<BookingR
       if (!contact.optOut) {
         const full = await db.contact.findUniqueOrThrow({ where: { id: contact.id }, select: { id: true, nome: true, waUserId: true, telefone: true } })
         const to = contactRef(full)
-        if (await canSendFreeformTo(session, to)) {
+        // Teto por negócio de mensagens disparadas pelo link (bem mais apertado para números novos): acima dele o agendamento
+        // vale, mas sem mensagem automática (o cliente ainda recebe o botão para falar com o negócio).
+        const tipo = numeroNovo ? CONFIRMACAO.NOVO : CONFIRMACAO.EXISTENTE
+        const cabe = await cabeConfirmacao(ws.id, tipo, now)
+        if (!cabe) void avisarTeto(ws.id, 'mensagens', now)
+        if (cabe && (await canSendFreeformTo(session, to))) {
+          // Conta o envio ANTES de mandar (uma falha na entrega também gasta o teto).
+          await db.bookingAttempt.update({ where: { id: attemptId }, data: { confirmacaoWa: tipo } })
           const conv = await ensureConversation(ws.id, full.id)
           await sendAndRecord({
             session,

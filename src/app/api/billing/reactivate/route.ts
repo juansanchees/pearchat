@@ -4,7 +4,7 @@ import { billingRoute } from '@/server/billing/http'
 import { BILLING_TYPES } from '@/server/billing/provider'
 import type { BillingType } from '@/server/billing/provider'
 import { reactivateSubscription } from '@/server/billing/service'
-import { readJson } from '@/server/messages/api'
+import { readJson } from '@/server/http/body'
 
 export const dynamic = 'force-dynamic'
 

@@ -17,7 +17,7 @@ const row = 'flex flex-wrap items-center gap-3 rounded-md border border-light-di
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 type Activity = { id: string; acao: string; alvo: string | null; quem: string | null; quando: string }
-type InviteResult = { convite: InviteDTO; link: string; emailEnviado: boolean; emailConfigurado: boolean }
+type InviteResult = { convite: InviteDTO; link: string | null; emailEnviado: boolean; emailConfigurado: boolean }
 
 const PAPEL_OPTS: Record<string, Papel> = { Administrador: 'admin', Atendente: 'agent', Dono: 'owner' }
 const labelOf = (p: Papel) => PAPEL_LABEL[p]
@@ -107,7 +107,7 @@ export function TeamSection() {
       const r = await api<InviteResult>(`/api/team/invites/${i.id}/resend`, { method: 'POST', body: { enviarEmail } })
       if (enviarEmail && r.emailEnviado) toast({ icon: <EnvelopeSimple size={18} weight="fill" />, title: 'Convite reenviado', text: i.email })
       else if (enviarEmail) setResult(r)
-      if (!enviarEmail) await copy(r.link)
+      if (!enviarEmail && r.link) await copy(r.link)
       await load()
     } catch (e) {
       fail(e, 'Não foi possível reenviar')
@@ -312,16 +312,20 @@ export function TeamSection() {
           </div>
           <div className="text-[11.5px] leading-[1.4] text-light-neutral-500">
             {result.emailEnviado
-              ? 'Se preferir, você também pode mandar o link por conta própria.'
+              ? 'O link foi enviado só para o e-mail da pessoa (vale por 7 dias). Se ela não receber, use "Reenviar" na lista de convites.'
               : result.emailConfigurado
                 ? 'Não foi possível enviar o e-mail agora. Copie o link e mande para a pessoa.'
                 : 'O envio de e-mail ainda não está configurado. Copie o link e mande para a pessoa (vale por 7 dias).'}
           </div>
           <div className="flex gap-2">
-            <input readOnly aria-label="Link do convite" className="pc-input min-w-0 flex-1" value={result.link} onFocus={(e) => e.currentTarget.select()} />
-            <button type="button" className="pc-btn pc-btn-secondary !text-[12px]" onClick={() => void copy(result.link)}>
-              <LinkSimple size={14} /> Copiar link
-            </button>
+            {result.link && (
+              <>
+                <input readOnly aria-label="Link do convite" className="pc-input min-w-0 flex-1" value={result.link} onFocus={(e) => e.currentTarget.select()} />
+                <button type="button" className="pc-btn pc-btn-secondary !text-[12px]" onClick={() => void copy(result.link ?? '')}>
+                  <LinkSimple size={14} /> Copiar link
+                </button>
+              </>
+            )}
             <button type="button" className="pc-btn pc-btn-ghost !text-[12px]" onClick={() => setResult(null)}>
               Fechar
             </button>

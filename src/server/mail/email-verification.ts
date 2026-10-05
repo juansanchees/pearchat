@@ -145,3 +145,30 @@ export async function needsEmailVerification(userId: string): Promise<boolean> {
   const pending = await db.verificationToken.findFirst({ where: { identifier: codeId(userId) }, select: { identifier: true } })
   return !!pending
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Barreira no SERVIDOR (as rotas /api que enviam mensagens, gastam IA, convidam pessoas ou conectam o WhatsApp).
+// Mesma regra de needsEmailVerification (e-mail configurado + conta sem verificação + criada desde
+// EMAIL_VERIFICATION_SINCE ou com código pendente), então contas antigas e a do dono NUNCA são trancadas e, sem
+// serviço de e-mail (hoje em produção), a verificação não é exigida: criar conta e usar o app seguem como antes.
+// ---------------------------------------------------------------------------------------------------------------
+
+const clearUntil = new Map<string, number>()
+const CLEAR_TTL_MS = 60_000
+
+/** needsEmailVerification com cache curto só do "não precisa" (uma consulta por minuto por usuário). "Precisa" nunca é cacheado. */
+export async function emailGateBlocks(userId: string): Promise<boolean> {
+  const now = Date.now()
+  const until = clearUntil.get(userId)
+  if (until && until > now) return false
+  const needs = await needsEmailVerification(userId)
+  if (!needs) {
+    if (clearUntil.size > 5000) for (const [k, v] of Array.from(clearUntil)) if (v <= now) clearUntil.delete(k)
+    clearUntil.set(userId, now + CLEAR_TTL_MS)
+  }
+  return needs
+}
+
+export function forgetEmailGate(userId: string): void {
+  clearUntil.delete(userId)
+}

@@ -6,6 +6,7 @@ import { normalizePhone } from '@/server/contacts/phone'
 import { MEDIA_LABEL } from '@/server/media/mime'
 import { ingestInboundMessage } from '@/server/messages/ingest'
 import { registerMockMedia } from '@/server/whatsapp/mock'
+import { readJson } from '@/server/http/body'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
   const workspaceId = await sessionWorkspaceId()
   if (!workspaceId) return unauthorized()
 
-  const parsed = schema.safeParse(await req.json().catch(() => null))
+  const parsed = schema.safeParse(await readJson(req))
   if (!parsed.success) return badRequest('Corpo inválido')
   if (!parsed.data.body && !parsed.data.media) return badRequest('Corpo inválido')
 

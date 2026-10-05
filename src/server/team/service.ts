@@ -7,6 +7,7 @@ import { audit, maskEmail } from '@/server/audit/log'
 import { entitlements } from '@/server/billing/entitlements'
 import { canManageTarget, normalizePapel, PAPEL_LABEL } from '@/server/auth/permissions'
 import type { Papel } from '@/server/auth/permissions'
+import { issueEmailCode } from '@/server/mail/email-verification'
 import { mailConfigured, sendMail } from '@/server/mail/send'
 import { appBaseUrl, teamInviteEmail } from '@/server/mail/templates'
 import { disconnectUser, removeUserFromRooms } from '@/server/realtime/emit'
@@ -131,7 +132,18 @@ async function deliverInvite(actorUserId: string, organizationId: string, email:
   return r.ok
 }
 
-export type InviteResult = { convite: InviteDTO; link: string; emailEnviado: boolean; emailConfigurado: boolean }
+/** `link` é null quando o convite foi ao e-mail da pessoa: o link NUNCA é mostrado a quem convidou (senão o aceite não prova a posse do e-mail). */
+export type InviteResult = { convite: InviteDTO; link: string | null; emailEnviado: boolean; emailConfigurado: boolean }
+
+/**
+ * Registra se o link foi entregue só ao e-mail do convidado. Entregue = o aceite prova a posse do e-mail (conta nasce
+ * verificada) e o link não é devolvido a quem convidou. Não entregue (sem serviço de e-mail, falha de envio ou "copiar
+ * link") = quem convidou vê o link, então o aceite NÃO prova nada e a conta nasce com e-mail não verificado.
+ */
+async function finishInvite(id: string, inv: InviteRow, token: string, emailEnviado: boolean): Promise<InviteResult> {
+  await db.invite.update({ where: { id }, data: { emailEntregue: emailEnviado } })
+  return { convite: toInviteDTO(inv), link: emailEnviado ? null : inviteLink(token), emailEnviado, emailConfigurado: mailConfigured() }
+}
 
 export async function createInvite(actor: Actor, input: { email: string; papel: 'admin' | 'agent'; workspaceIds: string[] }): Promise<InviteResult> {
   const email = input.email.trim().toLowerCase()
@@ -164,7 +176,7 @@ export async function createInvite(actor: Actor, input: { email: string; papel: 
   })
   await audit({ organizationId: actor.organizationId, userId: actor.userId, acao: 'invite.created', alvo: maskEmail(email), meta: { papel: input.papel } })
   const emailEnviado = await deliverInvite(actor.userId, actor.organizationId, email, input.papel, token)
-  return { convite: toInviteDTO(inv), link: inviteLink(token), emailEnviado, emailConfigurado: mailConfigured() }
+  return finishInvite(inv.id, inv, token, emailEnviado)
 }
 
 /** Limite de pessoas do plano: usuários ativos + convites pendentes (não expirados). 403 LIMITE_PLANO. */
@@ -209,7 +221,7 @@ export async function resendInvite(actor: Actor, id: string, opts: { enviarEmail
   })
   await audit({ organizationId: actor.organizationId, userId: actor.userId, acao: 'invite.resent', alvo: maskEmail(inv.email) })
   const emailEnviado = opts.enviarEmail ? await deliverInvite(actor.userId, actor.organizationId, inv.email, normalizePapel(inv.papel), token) : false
-  return { convite: toInviteDTO(updated), link: inviteLink(token), emailEnviado, emailConfigurado: mailConfigured() }
+  return finishInvite(id, updated, token, emailEnviado)
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -270,6 +282,8 @@ async function joinFromInvite(
   tx: Prisma.TransactionClient,
   inv: InviteRow,
   data: { nome: string; passwordHash: string | null; image?: string | null },
+  /** O e-mail foi provado (link entregue só ao e-mail do convidado, ou login Google com e-mail verificado)? */
+  verified: boolean,
 ): Promise<{ id: string; reactivated: boolean }> {
   const access = await accessFor(tx, inv)
   const existing = await tx.user.findUnique({ where: { email: inv.email }, select: { id: true, organizationId: true, desativadoEm: true } })
@@ -286,7 +300,7 @@ async function joinFromInvite(
         nome: data.nome,
         ...(data.passwordHash ? { passwordHash: data.passwordHash } : {}),
         workspaceId: access.activeId,
-        emailVerified: new Date(),
+        ...(verified ? { emailVerified: new Date() } : {}),
         sessionVersion: { increment: 1 },
       },
     })
@@ -301,7 +315,7 @@ async function joinFromInvite(
         email: inv.email,
         passwordHash: data.passwordHash,
         papel: access.papel,
-        emailVerified: new Date(), // o convite chegou ao e-mail: prova de posse
+        emailVerified: verified ? new Date() : null, // só prova de posse se o link foi entregue apenas ao e-mail do convidado
         image: data.image ?? null,
       },
       select: { id: true },
@@ -335,9 +349,11 @@ export async function acceptInvite(token: string, input: { nome: string; senha: 
     const joined = await db.$transaction(async (tx) => {
       await lockTeam(tx, inv.organizationId)
       if (!(await claimInvite(tx, inv.id))) throw new TeamError(FRIENDLY.usado, 409, 'usado')
-      return joinFromInvite(tx, inv, { nome: input.nome, passwordHash })
+      return joinFromInvite(tx, inv, { nome: input.nome, passwordHash }, inv.emailEntregue)
     })
     invalidateActiveSpace(joined.id)
+    // Link que passou por quem convidou: a conta nasce NÃO verificada. Com e-mail configurado, o convidado confirma por código.
+    if (!inv.emailEntregue && mailConfigured()) await issueEmailCode({ id: joined.id, email: inv.email, nome: input.nome }).catch(() => undefined)
     await audit({ organizationId: inv.organizationId, userId: joined.id, acao: 'invite.accepted', alvo: maskEmail(inv.email), meta: { papel: normalizePapel(inv.papel) } })
     return { ok: true, email: inv.email }
   } catch (e) {
@@ -359,7 +375,7 @@ export async function createUserFromPendingInvite(email: string, data: { nome: s
     const joined = await db.$transaction(async (tx) => {
       await lockTeam(tx, inv.organizationId)
       if (!(await claimInvite(tx, inv.id))) throw new TeamError(FRIENDLY.usado, 409, 'usado')
-      return joinFromInvite(tx, inv, { nome: data.nome, passwordHash: null, image: data.image })
+      return joinFromInvite(tx, inv, { nome: data.nome, passwordHash: null, image: data.image }, true) // Google já verificou o e-mail
     })
     invalidateActiveSpace(joined.id)
     await audit({ organizationId: inv.organizationId, userId: joined.id, acao: 'invite.accepted', alvo: maskEmail(mail), meta: { papel: normalizePapel(inv.papel), via: 'google' } })

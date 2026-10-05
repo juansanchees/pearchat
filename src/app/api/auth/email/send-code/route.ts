@@ -3,15 +3,19 @@ import { db } from '@/lib/db'
 import { apiSession, unauthorized } from '@/server/settings/http'
 import { issueEmailCode } from '@/server/mail/email-verification'
 import { mailConfigured } from '@/server/mail/send'
+import { BLOCKED_MESSAGE, consume } from '@/server/security/rate-limit'
+import { clientIpFromHeaders } from '@/server/security/hash'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /** Envia (ou reenvia) o código de 6 dígitos ao e-mail da conta logada. Limites: 1 a cada 60 s e 5 por hora. */
-export async function POST() {
+export async function POST(req: Request) {
   const s = await apiSession()
   if (!s) return unauthorized()
   if (!mailConfigured()) return NextResponse.json({ error: 'O envio de e-mail não está disponível.' }, { status: 503 })
+  // Além do limite por conta (60 s / 5 por hora), um teto por IP: várias contas novas não viram canhão de e-mail.
+  if ((await consume('emailSend', { ip: clientIpFromHeaders(req.headers) })).blocked) return NextResponse.json({ error: BLOCKED_MESSAGE, code: 'rate_limited' }, { status: 429 })
 
   const user = await db.user.findUnique({ where: { id: s.userId }, select: { id: true, email: true, nome: true, emailVerified: true } })
   if (!user) return unauthorized()

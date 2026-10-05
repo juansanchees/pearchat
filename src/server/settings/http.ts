@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import type { ZodType } from 'zod'
 import { auth } from '@/auth'
-import { readJson } from '@/server/messages/api'
+import { unauthorizedResponse } from '@/server/auth/availability'
+import { hasBadText, readJsonLimited, TOO_LARGE_MESSAGE } from '@/server/http/body'
 
 export type ApiSession = { userId: string; workspaceId: string; organizationId: string | null; papel: string }
 
@@ -15,13 +16,15 @@ export async function apiSession(): Promise<ApiSession | null> {
     : null
 }
 
-export const unauthorized = () => NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+export const unauthorized = unauthorizedResponse // 401, ou 503 se o banco não deixou conferir a sessão
 export const notFound = (what = 'Item') => NextResponse.json({ error: `${what} não encontrado` }, { status: 404 })
 export const fail = (message: string, status = 400) => NextResponse.json({ error: message }, { status })
 
-/** Lê e valida o corpo JSON. Devolve os dados ou uma resposta 400 pronta. */
-export async function parseBody<T>(req: Request, schema: ZodType<T>): Promise<{ data: T } | { error: NextResponse }> {
-  const raw = await readJson(req) // JSON quebrado ou com NUL/surrogate solto vira 400, nunca 500
+/** Lê e valida o corpo JSON (com limite de tamanho). Devolve os dados ou uma resposta 413/400 pronta. */
+export async function parseBody<T>(req: Request, schema: ZodType<T>, max?: number): Promise<{ data: T } | { error: NextResponse }> {
+  const r = await readJsonLimited(req, max)
+  if (!r.ok) return { error: fail(r.status === 413 ? TOO_LARGE_MESSAGE : 'Corpo inválido', r.status) }
+  const raw = hasBadText(r.body) ? null : r.body // NUL/surrogate solto vira 400, nunca 500
   const parsed = schema.safeParse(raw)
   if (!parsed.success) return { error: fail(parsed.error.issues[0]?.message ?? 'Corpo inválido') }
   return { data: parsed.data }

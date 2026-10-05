@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { BLOCKED_MESSAGE, consume } from '@/server/security/rate-limit'
 import { RESET_PREFIX, clientIp, hashToken } from '../_lib/shared'
+import { readJsonLimited, SMALL_LIMIT_BYTES, TOO_LARGE_MESSAGE } from '@/server/http/body'
 
 export const runtime = 'nodejs'
 
@@ -18,7 +19,9 @@ export async function POST(req: NextRequest) {
   if ((await consume('resetConfirm', { ip: clientIp(req) })).blocked) {
     return NextResponse.json({ error: BLOCKED_MESSAGE }, { status: 429 })
   }
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null))
+  const raw = await readJsonLimited(req, SMALL_LIMIT_BYTES)
+  if (!raw.ok && raw.status === 413) return NextResponse.json({ error: TOO_LARGE_MESSAGE }, { status: 413 })
+  const parsed = bodySchema.safeParse(raw.ok ? raw.body : null)
   if (!parsed.success) {
     const msg = parsed.error.issues.find((i) => i.path[0] === 'password')?.message
     return NextResponse.json(msg ? { error: msg } : INVALID, { status: 400 })

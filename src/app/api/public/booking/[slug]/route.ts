@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { hasBadText } from '@/server/messages/api'
 import { clientIp, hashIp, hashPhone, signFormToken, verifyFormToken } from '@/server/booking/security'
-import { generico, json, linkIndisponivel, readSmallJson, throttled, tooMany } from '@/server/booking/http'
+import { generico, json, linkIndisponivel, linkPausado, readSmallJson, throttled, tooMany } from '@/server/booking/http'
 import {
   MAX_OBS,
   cleanLine,
@@ -108,6 +108,9 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       return json({ error: 'CONFLITO', message: 'Esse horário acabou de ser reservado, escolha outro.' }, 409)
     case 'limit':
       return generico(429)
+    case 'cap':
+      // Teto do negócio: o dono já foi avisado. 503 + Retry-After; a página mostra a mensagem.
+      return linkPausado()
     case 'invalid':
       return json({ error: 'INVALIDO', message: result.message }, 422)
   }

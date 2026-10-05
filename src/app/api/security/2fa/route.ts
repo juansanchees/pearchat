@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
@@ -6,7 +7,7 @@ import { invalidateActiveSpace } from '@/server/spaces/org'
 import { apiSession, fail, parseBody, unauthorized } from '@/server/settings/http'
 import { clientIpFromHeaders } from '@/server/security/hash'
 import { MfaError, beginSetup, confirmSetup, disableMfa, mfaState, regenerateRecovery } from '@/server/security/mfa'
-import { BLOCKED_MESSAGE, failureDelayMs, markSuccess, reserve, sleep } from '@/server/security/rate-limit'
+import { BLOCKED_MESSAGE, failureDelayMs, markSuccess, release, reserve, sleep } from '@/server/security/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,7 +15,7 @@ export const dynamic = 'force-dynamic'
 const noStore = { 'cache-control': 'no-store' }
 
 const bodySchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('setup') }),
+  z.object({ action: z.literal('setup'), password: z.string().max(200).optional() }),
   z.object({ action: z.literal('enable'), code: z.string().min(1).max(40) }),
   z.object({ action: z.literal('disable'), code: z.string().min(1).max(40), password: z.string().max(200).optional() }),
   z.object({ action: z.literal('recovery'), code: z.string().min(1).max(40) }),
@@ -34,12 +35,23 @@ export async function POST(req: Request) {
   if ('error' in body) return body.error
   const input = body.data
 
-  const user = await db.user.findUnique({ where: { id: s.userId }, select: { email: true } })
+  const user = await db.user.findUnique({ where: { id: s.userId }, select: { email: true, passwordHash: true } })
   if (!user) return unauthorized()
   const subject = { email: user.email, ip: clientIpFromHeaders(req.headers) }
 
   try {
     if (input.action === 'setup') {
+      // Ativar o 2FA exige a senha atual: quem tem só a sessão aberta por um instante não tranca o dono para fora.
+      // (Conta sem senha cai no erro de beginSetup: "crie uma senha antes".) Erros de senha contam no limite do login.
+      if (user.passwordHash) {
+        const res = await reserve('login', subject)
+        if (res.blocked) return fail(BLOCKED_MESSAGE, 429)
+        if (!input.password || !(await bcrypt.compare(input.password, user.passwordHash))) {
+          await sleep(failureDelayMs(res.failures))
+          return fail('Senha incorreta.', 400)
+        }
+        await release(res)
+      }
       return NextResponse.json(await beginSetup(s.userId), { headers: noStore })
     }
     const res = await reserve('login', subject)

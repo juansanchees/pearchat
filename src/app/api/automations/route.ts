@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
+import { unauthorizedResponse } from '@/server/auth/availability'
 import { denyUnless } from '@/server/auth/guard'
 import { z } from 'zod'
 import { auth } from '@/auth'
 import { db } from '@/lib/db'
 import { setDisparosAtivos } from '@/server/campaigns/service'
+import { readJson } from '@/server/http/body'
 
 const bodySchema = z.object({
   key: z.enum(['ia', 'disparos', 'followup']),
@@ -15,9 +17,9 @@ export async function PATCH(req: Request) {
   const deny = await denyUnless('automations.toggle'); if (deny) return deny
   const session = await auth()
   const workspaceId = session?.user?.workspaceId
-  if (!workspaceId) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!workspaceId) return unauthorizedResponse()
 
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null))
+  const parsed = bodySchema.safeParse(await readJson(req))
   if (!parsed.success) return NextResponse.json({ error: 'Corpo inválido' }, { status: 400 })
   const { key, on } = parsed.data
 

@@ -673,9 +673,12 @@ model BookingAttempt {
   ipHash       String
   telefoneHash String
   createdAt    DateTime @default(now())
+  // Migração 0020: confirmação enviada pelo WhatsApp do negócio (0 = nenhuma, 1 = contato existente, 2 = número novo): teto por negócio.
+  confirmacaoWa Int @default(0)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
+  @@index([workspaceId, createdAt])
   @@index([workspaceId, ipHash, createdAt])
   @@index([workspaceId, telefoneHash, createdAt])
   @@index([createdAt])
@@ -787,6 +790,8 @@ model Invite {
   aceitoEm       DateTime?
   revogadoEm     DateTime?
   createdAt      DateTime  @default(now())
+  // Migração 0020: o link foi entregue só ao e-mail do convidado (nunca exposto a quem convidou) = o aceite prova a posse do e-mail.
+  emailEntregue  Boolean   @default(false)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   convidadoPor User?        @relation(fields: [convidadoPorId], references: [id], onDelete: SetNull)

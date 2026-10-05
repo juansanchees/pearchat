@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 
-export { sessionWorkspaceId, unauthorized, badRequest, readJson, isValidId } from '@/server/messages/api'
+export { sessionWorkspaceId, unauthorized, badRequest, isValidId } from '@/server/messages/api'
+export { readJson } from '@/server/http/body' // com limite de tamanho
 
 export const contactNotFound = () => NextResponse.json({ error: 'Contato não encontrado' }, { status: 404 })
 export const conflict = (message: string) => NextResponse.json({ error: message }, { status: 409 })

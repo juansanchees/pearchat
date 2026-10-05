@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
+import { BodyTooLargeError, readTextLimited } from '@/server/http/body'
 import { enqueueMetaPayload } from '@/server/whatsapp/meta-webhook'
 
 export const runtime = 'nodejs'
@@ -36,7 +37,13 @@ function validSignature(raw: string, header: string | null): boolean {
 export async function POST(req: Request) {
   const declared = Number(req.headers.get('content-length') ?? 0)
   if (declared > MAX_BODY_BYTES) return new NextResponse(null, { status: 413 })
-  const raw = await req.text()
+  // Leitura em streaming com teto: corpo chunked (sem content-length) não enche a memória antes da assinatura.
+  let raw: string
+  try {
+    raw = await readTextLimited(req, MAX_BODY_BYTES)
+  } catch (e) {
+    return new NextResponse(null, { status: e instanceof BodyTooLargeError ? 413 : 400 })
+  }
   if (raw.length > MAX_BODY_BYTES || !validSignature(raw, req.headers.get('x-hub-signature-256'))) {
     return new NextResponse(null, { status: 401 })
   }
