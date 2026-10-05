@@ -171,3 +171,43 @@ suite('A4/M6: "Testar o agente" no servidor', () => {
     assert.equal(r.status, 401)
   })
 })
+
+suite('Costura da onda 1A com o sininho e o Google Agenda: o bloqueio de e-mail não confirmado e os limites NÃO atingem o que não deve', () => {
+  it('conta com e-mail pendente: sininho, leitura da Agenda e retorno (callback) do Google seguem; só INICIAR a conexão com o Google é barrada (quando há serviço de e-mail)', async () => {
+    const u = await makeAccount({ verified: false })
+    const cookie = await login(u)
+    if (MAIL_ON) await issueEmailCode({ id: u.id, email: u.email, nome: 'Teste' }) // o que o cadastro faz
+    const own = { origin: new URL(BASE!).origin } // o que o navegador manda nas chamadas que mudam estado
+    const day = new Date().toISOString().slice(0, 10)
+    const to = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10)
+    for (const [method, path, body] of [
+      ['POST', '/api/notifications/sync', { visivel: true, tela: 'agenda' }],
+      ['POST', '/api/notifications/heartbeat', undefined],
+      ['GET', '/api/notifications', undefined],
+      ['POST', '/api/notifications/read', {}],
+      ['GET', '/api/calendar', undefined],
+      ['GET', `/api/events?from=${day}&to=${to}`, undefined],
+    ] as const) {
+      const r = await call(cookie, method, path, body, own)
+      assert.equal(r.status, 200, `${method} ${path}`)
+    }
+    // O retorno do Google é um GET vindo de outro site (cross-site) e não passa por denyUnless: nunca 403 por Origin nem por e-mail.
+    const cb = await fetch(`${BASE}/api/calendar/google/callback?code=x&state=invalido`, { headers: { cookie, origin: 'https://accounts.google.com', 'sec-fetch-site': 'cross-site' }, redirect: 'manual' })
+    assert.equal(cb.status, 302)
+    assert.match(cb.headers.get('location') ?? '', /\/agenda\?erro=/)
+    // Iniciar a conexão (abre integração externa): barrada para conta com e-mail pendente SÓ quando há serviço de e-mail; sem Google configurado, 501.
+    const start = await call(cookie, 'GET', '/api/calendar/google/start')
+    if (MAIL_ON) {
+      assert.equal(start.status, 403)
+      assert.equal(((await start.json()) as { code?: string }).code, 'EMAIL_NAO_VERIFICADO')
+    } else {
+      assert.equal(start.status, 501)
+    }
+  })
+
+  it('conta verificada: iniciar a conexão com o Google não é barrada por e-mail nem por limite de taxa (sem Google configurado no teste = 501)', async () => {
+    const u = await makeAccount({ verified: true })
+    const cookie = await login(u)
+    for (let i = 0; i < 3; i++) assert.equal((await call(cookie, 'GET', '/api/calendar/google/start')).status, 501)
+  })
+})
