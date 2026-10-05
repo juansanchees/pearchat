@@ -1,17 +1,137 @@
+# Borda do PearChat (Caddy v2). Montado por volume em /etc/caddy/Caddyfile (somente leitura).
+# Aplicar mudanças: docker compose -p pearchat -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d caddy
+# (ou: docker exec pearchat-caddy-1 caddy reload --config /etc/caddy/Caddyfile)
+#
+# Sem o e-mail da conta ACME de propósito: o Caddy reaproveita a conta já registrada no volume pearchat_caddy_data.
+#
+# Rate limit por IP NÃO está aqui: a imagem oficial do Caddy não traz o módulo (caddy-ratelimit). Ver docs/operacao/servidor.md.
+
 {
-    email j.dslsanches@gmail.com
+	servers {
+		timeouts {
+			# Conexões lentas/penduradas não seguram o processo Node. NÃO há "write": mídia grande e Socket.io precisam de tempo.
+			read_header 10s
+			read_body 120s
+			idle 2m
+		}
+	}
+}
+
+# Proxy para o app (mesmo comportamento para todas as rotas). O Caddy sobrescreve X-Forwarded-For (o app lê a ÚLTIMA entrada).
+(proxy) {
+	reverse_proxy app:3000 {
+		header_up Host {host}
+		header_up X-Forwarded-Host {host}
+		transport http {
+			dial_timeout 5s
+			# Respostas que esperam a IA/Graph API podem levar dezenas de segundos.
+			response_header_timeout 2m
+		}
+	}
 }
 
 pearchat.online {
-    encode zstd gzip
-    header {
-        Strict-Transport-Security "max-age=31536000"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
-    reverse_proxy app:3000
+	encode zstd gzip
+
+	# Cabeçalhos: o app já envia X-Frame-Options, Referrer-Policy, Permissions-Policy e a CSP mínima (next.config.mjs).
+	# Aqui só o que depende de HTTPS na borda. O ">" aplica no fim e SUBSTITUI (nunca duplica o do app); vale também
+	# para respostas geradas pelo próprio Caddy (404/413).
+	header {
+		>Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		>Cross-Origin-Opener-Policy "same-origin-allow-popups"
+		>X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	# O app nunca deve confiar neste cabeçalho vindo de fora (middleware do Next; defesa em profundidade).
+	request_header -x-middleware-subrequest
+
+	# Log de acesso para investigação, SEM dados pessoais sensíveis: sem cookies, sem tokens, sem query string.
+	# Fica no volume pearchat_caddy_logs, com rotação (10 MB x 5 arquivos, no máximo 30 dias).
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 10mb
+			roll_keep 5
+			roll_keep_for 720h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+				request>headers>X-Health-Token delete
+				request>headers>X-Api-Key delete
+				request>headers>Apikey delete
+				resp_headers>Set-Cookie delete
+				request>uri regexp "\?.*$" ""
+			}
+		}
+	}
+
+	# Tudo abaixo roda em ORDEM, dentro de "route" (o Caddyfile não reordena o que está em route).
+	route {
+		# 1) Rotas internas, de teste e de simulação: nunca públicas. (A Evolution chama o app por dentro da rede do compose.)
+		@interno path /api/dev /api/dev/* /api/wa/evolution /api/wa/evolution/* /api/wa/mock /api/wa/mock/*
+		respond @interno 404
+
+		# 2) Otimizador de imagens do Next: desligado no app e bloqueado aqui (avisos do Next 14.2.x; ver publicacao.md).
+		@imagem path /_next/image /_next/image/*
+		respond @imagem 404
+
+		# 3) Upgrade de protocolo (WebSocket) SÓ no Socket.io. Qualquer outro caminho com cabeçalho Upgrade é recusado.
+		@upgrade_fora {
+			header Upgrade *
+			not path /api/socket /api/socket/*
+		}
+		respond @upgrade_fora 400
+
+		# 4) Limites de corpo por rota. Cada "handle" é exclusivo (o primeiro que casar vale); o padrão é pequeno.
+		# Envio de mídia da conversa: 16 MB (MAX_OUTBOUND_BYTES) + folga do multipart.
+		@midia path_regexp midia ^/api/conversations/[^/]+/media/?$
+		handle @midia {
+			request_body {
+				max_size 18MB
+			}
+			import proxy
+		}
+
+		# Foto de perfil e logo do espaço: 2 MB + folga.
+		@imagens_perfil path_regexp perfil ^/api/(me/avatar|spaces/[^/]+/logo)/?$
+		handle @imagens_perfil {
+			request_body {
+				max_size 3MB
+			}
+			import proxy
+		}
+
+		# Importação de contatos (CSV/planilha): 8 MB + folga.
+		@importacao path /api/contacts/import /api/contacts/import/
+		handle @importacao {
+			request_body {
+				max_size 9MB
+			}
+			import proxy
+		}
+
+		# Webhook da Meta: o app aceita até 8 MB, mas os eventos reais têm poucos KB.
+		@meta path /api/wa/meta /api/wa/meta/
+		handle @meta {
+			request_body {
+				max_size 2MB
+			}
+			import proxy
+		}
+
+		# Todo o resto (páginas, Server Actions, APIs JSON, webhooks pequenos, Socket.io por polling): 1 MB.
+		handle {
+			request_body {
+				max_size 1MB
+			}
+			import proxy
+		}
+	}
 }
 
 www.pearchat.online {
-    redir https://pearchat.online{uri} permanent
+	redir https://pearchat.online{uri} permanent
 }
