@@ -9,7 +9,7 @@ export const EMPRESA = {
   email: 'j.dslsanches@gmail.com',
   foro: 'Comarca de Benevides, Estado do Pará',
 }
-export const ULTIMA_ATUALIZACAO = '3 de outubro de 2026'
+export const ULTIMA_ATUALIZACAO = '5 de outubro de 2026'
 
 export type LegalSection = { id: string; titulo: string; corpo: ReactNode }
 

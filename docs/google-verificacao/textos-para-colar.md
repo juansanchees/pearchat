@@ -1,7 +1,7 @@
 # Textos para colar no formulário do Google
 
 Os blocos em inglês (dentro das caixas) são o que você cola. A tradução em português logo abaixo é só para você entender o que está enviando; não cole a tradução.
-Tudo aqui foi conferido no código do PearChat (`src/server/calendar/**`, `src/app/api/calendar/**`, `src/server/agent/tools.ts`). Se o app mudar, este arquivo precisa mudar junto.
+Tudo aqui foi conferido no código do PearChat (`src/server/calendar/**`, `src/app/api/calendar/**`, `src/server/agent/tools.ts`) e vale para a versão com os escopos novos (calendar.events, calendar.calendarlist.readonly e calendar.freebusy). Se o app mudar, este arquivo precisa mudar junto.
 
 Fontes oficiais do formato exigido:
 - https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification (justificativa por escopo e "por que um escopo menor não basta")
@@ -24,20 +24,26 @@ Tradução: O PearChat é um aplicativo web para pequenos negócios que atendem 
 
 ---
 
-## 2. Justificativa de cada escopo
+## 2. Escopos e justificativa de cada um (lista final)
 
-Quando o Google pedir "scope justification", cole o bloco do escopo correspondente. Há duas versões da lista de escopos; o orquestrador diz qual usar (a 2A reflete o código de hoje).
+O app pede exatamente estes três escopos (está em `src/server/calendar/google.ts`). O Console (Acesso a dados) precisa listar os mesmos três, e só eles, para o Calendar. Quando o Google pedir "scope justification", cole o bloco do escopo correspondente.
 
-### 2A. Escopos do código de hoje: `calendar.events` e `calendar.readonly`
+| Escopo | Para que serve (em uma frase) |
+|---|---|
+| `https://www.googleapis.com/auth/calendar.events` | Ver os eventos das agendas marcadas e criar, atualizar e apagar os agendamentos feitos no PearChat |
+| `https://www.googleapis.com/auth/calendar.calendarlist.readonly` | Ver a lista de agendas da conta (só leitura), para o usuário escolher quais usar |
+| `https://www.googleapis.com/auth/calendar.freebusy` | Ver só os horários ocupados/livres (sem título nem detalhes), para oferecer apenas horários livres |
 
-#### `https://www.googleapis.com/auth/calendar.events`
+O escopo `calendar.readonly` NÃO é mais pedido. Ele foi trocado pelos dois de baixo, que são mais estreitos (cada um serve a um único método da API). As contas que já estavam conectadas continuam funcionando sem reconectar.
+
+### 2.1. `https://www.googleapis.com/auth/calendar.events`
 
 ```text
 Scope: https://www.googleapis.com/auth/calendar.events
 
 How PearChat uses it
 - Create / update / delete: when an appointment is booked in PearChat (by the owner or staff on the Agenda screen, by a customer on the business's public booking page, or by the AI assistant when the owner has turned on "IA pode agendar"), PearChat creates the matching event in the user's primary Google Calendar. The title is the appointment title (normally the service name) and the description contains the customer's name and phone number as entered by the business, plus "Criado pelo PearChat" ("Created by PearChat"). When the appointment is rescheduled or cancelled in PearChat, the same event is updated or deleted. PearChat only changes or deletes events that it created itself (it keeps their IDs) and never edits other events.
-- Read: PearChat reads the events (title, start, end, all-day flag) of the calendars the user ticked, only for the period shown on screen, and displays them read-only in the Agenda next to the PearChat appointments, so the user sees one schedule and avoids conflicts. About every 2 minutes it also checks the change feed of the calendar where it created events and applies only the changes to the events it created, so that if the user moves or deletes one directly in Google Calendar, the appointment in PearChat is updated to match; all other events are ignored and not stored.
+- Read: PearChat reads the events (title, start, end, all-day flag; declined and cancelled events are hidden) of the calendars the user ticked, only for the period shown on screen, and displays them read-only in the Agenda next to the PearChat appointments, so the user sees one schedule and avoids conflicts. About every 2 minutes it also checks the change feed of the calendar where it created events and applies only the changes to the events it created, so that if the user moves or deletes one directly in Google Calendar, the appointment in PearChat is updated to match; all other events are ignored and not stored.
 
 Where the user sees it
 Agenda screen (https://pearchat.online/agenda): the weekly grid shows the Google events; the "Novo agendamento" (New appointment) panel creates the event and shows a message that it was sent to Google Agenda; editing or deleting an appointment updates or removes it in Google.
@@ -46,29 +52,9 @@ Why a narrower scope is not enough
 Creating, changing and deleting events requires one of calendar, calendar.events, calendar.events.owned or calendar.app.created (events.insert / events.patch / events.delete reference). calendar.app.created only covers secondary calendars created by the app itself, so it cannot put appointments in the user's own calendar or read the user's existing events, and reading those events to prevent double-booking is the core of the feature. calendar.events.owned and calendar.events.owned.readonly only cover calendars the user owns, but PearChat lets the user tick any calendar in their calendar list (including calendars shared with them) so that those events also block time and appear in the Agenda. The read-only variants (calendar.events.readonly) cannot create or change events.
 ```
 
-Tradução: Uso: criar/atualizar/apagar: ao marcar um horário no PearChat (pelo dono/equipe na Agenda, pelo cliente na página pública, ou pela IA quando o dono ligou "IA pode agendar"), o PearChat cria o evento correspondente na agenda principal do Google do usuário (título = nome do serviço; descrição = nome e telefone do cliente informados pelo negócio + "Criado pelo PearChat"). Remarcar ou cancelar no PearChat atualiza ou apaga o mesmo evento. O PearChat só altera ou apaga eventos que ele mesmo criou. Ler: lê os eventos (título, início, fim, dia inteiro) das agendas marcadas pelo usuário, só do período na tela, e mostra somente leitura na Agenda; a cada ~2 minutos confere o histórico de mudanças da agenda onde criou eventos e aplica só as mudanças nos eventos que ele criou (se o usuário mover/apagar no Google, o PearChat acompanha); os demais eventos são ignorados e não ficam guardados. Onde o usuário vê: tela Agenda. Por que não um escopo menor: `calendar.app.created` só cobre agendas secundárias criadas pelo próprio app (não escreve na agenda real nem lê os compromissos existentes); `calendar.events.owned` só cobre agendas que o usuário é dono, mas ele pode marcar qualquer agenda da lista (inclusive compartilhadas); `calendar.events.readonly` não cria nem altera.
+Tradução: Uso: criar/atualizar/apagar: ao marcar um horário no PearChat (pelo dono/equipe na Agenda, pelo cliente na página pública, ou pela IA quando o dono ligou "IA pode agendar"), o PearChat cria o evento correspondente na agenda principal do Google do usuário (título = nome do serviço; descrição = nome e telefone do cliente informados pelo negócio + "Criado pelo PearChat"). Remarcar ou cancelar no PearChat atualiza ou apaga o mesmo evento. O PearChat só altera ou apaga eventos que ele mesmo criou. Ler: lê os eventos (título, início, fim, dia inteiro; recusados e cancelados ficam ocultos) das agendas marcadas pelo usuário, só do período na tela, e mostra somente leitura na Agenda; a cada ~2 minutos confere o histórico de mudanças da agenda onde criou eventos e aplica só as mudanças nos eventos que ele criou (se o usuário mover/apagar no Google, o PearChat acompanha); os demais eventos são ignorados e não ficam guardados. Onde o usuário vê: tela Agenda. Por que não um escopo menor: `calendar.app.created` só cobre agendas secundárias criadas pelo próprio app (não escreve na agenda real nem lê os compromissos existentes); `calendar.events.owned` só cobre agendas que o usuário é dono, mas ele pode marcar qualquer agenda da lista (inclusive compartilhadas); `calendar.events.readonly` não cria nem altera.
 
-#### `https://www.googleapis.com/auth/calendar.readonly`
-
-```text
-Scope: https://www.googleapis.com/auth/calendar.readonly
-
-How PearChat uses it (two read-only requests)
-1. calendarList.list: right after the user grants access, PearChat lists the user's calendars (name, colour, access role) and shows them on the "Quais agendas o PearChat pode usar?" (Which calendars can PearChat use?) screen, so the user chooses which calendars block time slots and appear in the Agenda. The list (IDs, names, colours, selection) is stored so the screen can be shown again.
-2. freeBusy.query: to compute free time slots, PearChat asks Google which time ranges are busy in the ticked calendars and offers only free slots in the Agenda's "New appointment" panel, on the business's public booking page and to the AI assistant. Only busy intervals (start and end) are used for this; no event details are involved.
-
-Where the user sees it
-Right after connecting (calendar selection screen) and every time free times are shown (Agenda > New appointment > "Horários livres" list; public booking page).
-
-Why a narrower scope is not enough
-calendarList.list and freeBusy.query do not accept calendar.events. Both accept calendar.readonly, and the Calendar API reference also lists narrower scopes for each one (calendar.calendarlist.readonly and calendar.freebusy). We chose calendar.readonly because it is the smallest single scope accepted by both methods, so the user sees one read-only permission line instead of two. We will switch to the two narrower scopes if Google prefers.
-```
-
-Tradução: Uso: (1) `calendarList.list`: depois que o usuário autoriza, lista as agendas dele (nome, cor, papel) para ele marcar quais bloqueiam horário e aparecem na Agenda; a lista é guardada para reexibir a tela. (2) `freeBusy.query`: para calcular horários livres, pergunta ao Google quais intervalos estão ocupados nas agendas marcadas e oferece só horários livres (painel Novo agendamento, página pública, IA). Só usa início e fim dos intervalos ocupados. Por que não um escopo menor: esses dois métodos não aceitam `calendar.events`; ambos aceitam `calendar.readonly`, e a documentação também lista escopos mais estreitos para cada um (`calendar.calendarlist.readonly` e `calendar.freebusy`). Escolhemos `calendar.readonly` por ser o menor escopo único aceito pelos dois (uma linha de permissão em vez de duas), e nos comprometemos a trocar se o Google preferir. Atenção: esta é a justificativa mais fraca (os escopos mais estreitos existem de fato); por isso existe a versão 2B.
-
-### 2B. Alternativa mais estreita: trocar `calendar.readonly` por `calendar.calendarlist.readonly` + `calendar.freebusy`
-
-Só use depois que o orquestrador mudar `GOOGLE_SCOPES` em `src/server/calendar/google.ts`, publicar, registrar os escopos novos no Console e antes de gravar o vídeo (o vídeo precisa mostrar na tela de permissão os mesmos escopos que você declarou). O escopo `calendar.events` continua com o bloco da seção 2A. Os dois blocos novos:
+### 2.2. `https://www.googleapis.com/auth/calendar.calendarlist.readonly`
 
 ```text
 Scope: https://www.googleapis.com/auth/calendar.calendarlist.readonly
@@ -76,9 +62,16 @@ Scope: https://www.googleapis.com/auth/calendar.calendarlist.readonly
 How PearChat uses it
 Only for calendarList.list. Right after the user grants access, PearChat lists the user's calendars (name, colour, access role) and shows them on the "Quais agendas o PearChat pode usar?" (Which calendars can PearChat use?) screen, so the user chooses which calendars block time slots and appear in the Agenda. The list (IDs, names, colours, selection) is stored so the screen can be shown again.
 
+Where the user sees it
+Right after connecting, on the calendar selection screen.
+
 Why a narrower scope is not enough
-calendarList.list is the only call we make with this scope, and this is the read-only scope designed for it. We do not need to add or remove calendars, so we do not request calendar.calendarlist.
+calendarList.list is the only call we make with this scope, and this is the read-only scope designed for it. We do not need to add or remove calendars, so we do not request calendar.calendarlist, and we do not request the broader calendar.readonly.
 ```
+
+Tradução: Só para `calendarList.list`: depois que o usuário autoriza, lista as agendas dele (nome, cor, papel) na tela "Quais agendas o PearChat pode usar?"; a lista é guardada para reexibir a tela. É o escopo de leitura feito para isso; não pedimos o `calendar.calendarlist` (que também altera a lista) nem o `calendar.readonly` (mais amplo).
+
+### 2.3. `https://www.googleapis.com/auth/calendar.freebusy`
 
 ```text
 Scope: https://www.googleapis.com/auth/calendar.freebusy
@@ -86,23 +79,31 @@ Scope: https://www.googleapis.com/auth/calendar.freebusy
 How PearChat uses it
 Only for freeBusy.query. To compute free time slots, PearChat asks Google which time ranges are busy in the calendars the user ticked, and offers only free slots in the Agenda's "New appointment" panel, on the business's public booking page and to the AI assistant. Only busy intervals (start and end) are used; no event details are involved.
 
+Where the user sees it
+Agenda > New appointment > "Horários livres" (free times) list; the business's public booking page.
+
 Why a narrower scope is not enough
 freeBusy.query is the only call we make with this scope, and it returns availability only. We do not need event contents for this purpose.
 ```
 
-Tradução: os dois blocos dizem que cada escopo novo é usado para um único método (lista de agendas; horários ocupados), só leitura, sem detalhes de evento.
+Tradução: Só para `freeBusy.query`: pergunta ao Google quais intervalos estão ocupados nas agendas marcadas e oferece só horários livres (painel Novo agendamento, página pública, IA). Só usa início e fim dos intervalos; nenhum detalhe de evento.
 
-Prós da 2B: o Google exige o escopo mais estreito e manda trocar quando o pedido passa do necessário, e cada ida e volta custa dias; os dois métodos continuam funcionando sem perder função (conferido nas tabelas oficiais de escopo por método, atualizadas em maio e julho de 2026). Contras: mexe no código (`GOOGLE_SCOPES`), exige deploy antes do vídeo; a classificação (sensível ou não) desses dois escopos só aparece no Console (Acesso a dados), não está nas páginas públicas do Google; vale ver lá antes de decidir. Se `calendar.events` continuar sensível, a verificação continua sendo necessária de qualquer jeito.
+### 2.4. Se o Google perguntar "por que não `calendar.readonly`?"
 
-### 2C. Outras alternativas (só relato; não recomendadas sem decisão de produto)
+```text
+We do not request calendar.readonly. The two read-only needs that it would cover are served by narrower scopes, one per API method: calendar.calendarlist.readonly for calendarList.list and calendar.freebusy for freebusy.query. Events are read with calendar.events, which we need anyway to create, update and delete the appointments booked through PearChat.
+```
 
-Base: tabelas "Authorization" das páginas de referência do Calendar API (`events/list`, `events/insert`, `events/patch`, `events/delete`, `calendarList/list`, `freebusy/query`).
+Tradução: Não pedimos `calendar.readonly`: cada necessidade de leitura usa o escopo mais estreito do método correspondente, e os eventos são lidos com `calendar.events`, que já precisamos para criar, atualizar e apagar.
+
+### 2.5. Outras alternativas (descartadas por enquanto; só relato)
+
+Base: tabelas "Authorization" das páginas de referência do Calendar API (`events/list`, `events/insert`, `events/patch`, `events/delete`, `calendarList/list`, `freebusy/query`, conferidas em 05/10/2026).
 
 | Alternativa | O que muda no app | Pró | Contra |
 |---|---|---|---|
 | `calendar.events.owned` no lugar de `calendar.events` | Só agendas das quais o usuário é dono | Escopo mais estreito | Agendas compartilhadas deixam de bloquear horário; ler eventos continua sendo "sensível" (o Google cita "ler eventos do Calendar" como exemplo de escopo sensível), então a verificação não some |
-| `calendar.app.created` + `calendar.calendarlist.readonly` + `calendar.freebusy` (ou `calendar.events.freebusy`) | O PearChat passaria a criar uma agenda secundária própria para os agendamentos e só enxergaria horários ocupados (sem títulos) | Pode eliminar escopos sensíveis, se o Console classificar os três como não sensíveis (não confirmado); sem 100 usuários nem tela de aviso | Muda o produto: agendamentos não vão para a agenda principal, a Agenda do PearChat deixa de mostrar os títulos dos compromissos do usuário, perde a edição de eventos já criados; decisão do dono |
-
+| `calendar.app.created` no lugar de `calendar.events` (mantendo os dois de leitura) | O PearChat passaria a criar uma agenda secundária própria para os agendamentos e só enxergaria horários ocupados (sem títulos) | Pode eliminar escopos sensíveis, se o Console classificar os três como não sensíveis (não confirmado); sem 100 usuários nem tela de aviso | Muda o produto: agendamentos não vão para a agenda principal, a Agenda do PearChat deixa de mostrar os títulos dos compromissos do usuário, perde a edição de eventos já criados; decisão do dono |
 
 ---
 
@@ -138,10 +139,10 @@ Tradução: Não vende nem repassa dados do Google e não usa para publicidade. 
 ### 3.4. Pessoas leem os dados do Google?
 
 ```text
-PearChat staff do not read users' Google Calendar data. Because event details from Google are not stored, there is nothing to browse. Access would happen only with the user's explicit consent (for example, a support request), for security or abuse investigation, to comply with law, or on aggregated and anonymised data for internal operations, as the Limited Use requirements allow.
+PearChat staff do not read users' Google Calendar data. Because event details from Google are not stored, there is nothing to browse. Access would happen only with the user's explicit consent (for example, a support request), for security or abuse investigation, or to comply with law, as the Limited Use requirements allow.
 ```
 
-Tradução: A equipe não lê os dados do Google Agenda dos usuários; como os detalhes não são guardados, não há o que ler. Só com consentimento expresso, por segurança/abuso, por lei, ou em dados agregados e anônimos. Atenção: isso é um compromisso; a política de privacidade deve dizer o mesmo (ver `conferencia-do-site.md`).
+Tradução: A equipe não lê os dados do Google Agenda dos usuários; como os detalhes não são guardados, não há o que ler. Só com consentimento expresso, por segurança/abuso ou por lei. A política de privacidade (seção "Uso de dados do Google") diz exatamente o mesmo.
 
 ### 3.5. Como o usuário revoga o acesso ou apaga os dados?
 

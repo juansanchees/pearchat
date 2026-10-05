@@ -7,7 +7,7 @@ import {
   appBaseUrl,
   consumeState,
   encodeTokens,
-  exchangeCode,
+  exchangeCodeChecked,
   googleConfigured,
   listCalendarsWithToken,
   readTokens,
@@ -18,12 +18,12 @@ import { DEFAULT_LEMBRETES, getConnection, logGoogleFailure, parseCalendarios } 
 export const dynamic = 'force-dynamic'
 
 /** Motivos de falha devolvidos em /agenda?erro=... (a tela traduz em avisos amigáveis). */
-type Motivo = 'negado' | 'estado' | 'sem_refresh' | 'sem_agendas' | 'google'
+type Motivo = 'negado' | 'estado' | 'sem_refresh' | 'sem_agendas' | 'permissao' | 'google'
 
 /**
  * GET /api/calendar/google/callback?code=&state=
  * Consome o state (HMAC + validade + nonce de uso único) e confere que a sessão é do mesmo workspace,
- * troca o code, lê as agendas reais, grava tokens criptografados e redireciona (sempre para um
+ * troca o code, confere os escopos concedidos, lê as agendas reais, grava tokens criptografados e redireciona (sempre para um
  * caminho interno fixo) para /agenda?passo=agendas. Falhas: /agenda?erro=<motivo>, sem detalhes do Google.
  */
 export async function GET(req: NextRequest) {
@@ -48,7 +48,13 @@ export async function GET(req: NextRequest) {
     if (googleError) return fail(googleError === 'access_denied' ? 'negado' : 'google')
     if (!code) return fail('google')
 
-    const exchanged = await exchangeCode(code, base)
+    // O Google deixa desmarcar permissões na tela de consentimento: sem as três, não conecta (nada é gravado).
+    const result = await exchangeCodeChecked(code, base)
+    if (!result.ok) {
+      console.warn(`[calendar] callback: permissões não concedidas: ${result.faltando.join(',')}`)
+      return fail('permissao')
+    }
+    const exchanged = result.exchanged
     const previous = await getConnection(workspaceId)
 
     // Sem refresh_token novo, só dá para seguir se já existe um da conexão anterior (reconexão).
@@ -80,7 +86,12 @@ export async function GET(req: NextRequest) {
       previous?.provider === 'google' && previous.destinoId && found.some((c) => c.id === previous.destinoId)
         ? previous.destinoId
         : primary.id
-    const tokens = encodeTokens({ accessToken: exchanged.accessToken, refreshToken, expiresAt: exchanged.expiresAt })
+    const tokens = encodeTokens({
+      accessToken: exchanged.accessToken,
+      refreshToken,
+      expiresAt: exchanged.expiresAt,
+      scopes: exchanged.scopes,
+    })
     const now = new Date()
 
     await db.calendarConnection.upsert({

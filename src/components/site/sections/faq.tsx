@@ -28,6 +28,18 @@ function perguntas(essencial: string): { p: string; r: ReactNode }[] {
       ),
     },
     {
+      p: 'Como o PearChat usa o meu Google Agenda?',
+      r: (
+        <>
+          Só se você quiser conectar: o PearChat vê os seus compromissos para não marcar em cima de outro horário e cria no seu Google Agenda os agendamentos feitos nele. Você desconecta quando quiser, e o uso dos dados do Google está explicado na{' '}
+          <Link href="/privacidade#google" className={link}>
+            Política de Privacidade
+          </Link>
+          .
+        </>
+      ),
+    },
+    {
       p: 'Quanto custa?',
       r: (
         <>
