@@ -24,6 +24,7 @@ function good(): Env {
     WA_MOCK: 'false',
     NEXT_PUBLIC_WA_MOCK: 'false',
     EVOLUTION_API_KEY: b64url(32),
+    EVOLUTION_WEBHOOK_URL: 'http://app:3000/api/wa/evolution',
     HEALTH_TOKEN: b64url(32),
     RESEND_API_KEY: 're_xxxxxxxx',
     MAIL_FROM: 'PearChat <nao-responda@pearchat.online>',
@@ -144,6 +145,16 @@ describe('guarda de produção: cada condição recusa', () => {
     assert.ok(codes({ ...good(), EVOLUTION_API_KEY: '' }).includes('EVOLUTION_API_KEY'))
     assert.ok(codes({ ...good(), EVOLUTION_API_KEY: 'curta' }).includes('EVOLUTION_API_KEY'))
     assert.ok(codes({ ...good(), EVOLUTION_API_KEY: 'change_me_change_me_change_me' }).includes('EVOLUTION_API_KEY'))
+  })
+  it('EVOLUTION_WEBHOOK_URL ausente ou pública recusa (a borda bloqueia o webhook pela internet); o interno passa', () => {
+    assert.ok(codes({ ...good(), EVOLUTION_WEBHOOK_URL: '' }).includes('EVOLUTION_WEBHOOK_URL'))
+    assert.ok(codes({ ...good(), EVOLUTION_WEBHOOK_URL: 'https://pearchat.online/api/wa/evolution' }).includes('EVOLUTION_WEBHOOK_URL'))
+    assert.ok(!codes({ ...good(), EVOLUTION_WEBHOOK_URL: 'http://app:3000/api/wa/evolution' }).includes('EVOLUTION_WEBHOOK_URL'))
+  })
+  it('EVOLUTION_WEBHOOK_TOKEN definido e fraco recusa; forte passa; ausente é permitido', () => {
+    assert.ok(codes({ ...good(), EVOLUTION_WEBHOOK_TOKEN: 'curto' }).includes('EVOLUTION_WEBHOOK_TOKEN'))
+    assert.ok(!codes({ ...good(), EVOLUTION_WEBHOOK_TOKEN: b64url(32) }).includes('EVOLUTION_WEBHOOK_TOKEN'))
+    assert.ok(!codes(good()).includes('EVOLUTION_WEBHOOK_TOKEN'))
   })
   it('DATABASE_URL: ausente, schema de teste/restauração/public/sem schema ou senha de exemplo recusam', () => {
     const url = (q: string) => `postgresql://postgres.abcdefgh:SenhaForte9xQ@aws-0-sa-east-1.pooler.supabase.com:5432/postgres${q}`

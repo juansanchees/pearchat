@@ -144,6 +144,18 @@ export function checkProductionEnv(env: Env): Issue[] {
   const evo = weakSecretReason(get('EVOLUTION_API_KEY'), 24)
   if (evo) err('EVOLUTION_API_KEY', `EVOLUTION_API_KEY inválida: ${evo} (é a chave do webhook e da API da Evolution).`)
 
+  // Webhook da Evolution: tem de ser o endereço INTERNO do compose (http://app:3000/...). Sem a variável o app usaria a URL
+  // pública, e a borda (Caddy) bloqueia /api/wa/evolution: as mensagens recebidas se perderiam em silêncio.
+  const hook = get('EVOLUTION_WEBHOOK_URL')
+  const hookHost = hook ? hostOf(hook) : null
+  if (!hook) err('EVOLUTION_WEBHOOK_URL', 'EVOLUTION_WEBHOOK_URL ausente: o webhook usaria a URL pública, que a borda bloqueia (use http://app:3000/api/wa/evolution).')
+  else if (!hookHost || hookHost.includes('.')) err('EVOLUTION_WEBHOOK_URL', 'EVOLUTION_WEBHOOK_URL deve ser o endereço interno do compose (http://app:3000/api/wa/evolution); a borda bloqueia /api/wa/evolution pela internet.')
+  // Segredo próprio do webhook (quando o app passar a usar): se definido, precisa ser forte.
+  if (get('EVOLUTION_WEBHOOK_TOKEN')) {
+    const w = weakSecretReason(get('EVOLUTION_WEBHOOK_TOKEN'), 24)
+    if (w) err('EVOLUTION_WEBHOOK_TOKEN', `EVOLUTION_WEBHOOK_TOKEN inválido: ${w}.`)
+  }
+
   // Opcionais: avisam se estiverem definidos de forma fraca.
   const health = get('HEALTH_TOKEN')
   if (!health) warn('HEALTH_TOKEN', 'HEALTH_TOKEN ausente: o monitor não enxerga fila, WhatsApp nem agendador em /api/health.')
