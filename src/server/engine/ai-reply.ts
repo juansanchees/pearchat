@@ -242,8 +242,12 @@ const DELIVERY_WAIT_NOTE = 'aguardando-confirmacao:'
 /** Teto de conferências (~33 min: cobre o prazo máximo da reconciliação com a Evolution fora do ar). */
 const DELIVERY_WAIT_MAX = 100
 
-/** Revalidação IMEDIATAMENTE antes de enviar: pessoa assumiu (HUMANO) = não envia. */
-async function humanGuard(conversationId: string): Promise<string | null> {
+/**
+ * Revalidação IMEDIATAMENTE antes de enviar: pessoa assumiu (HUMANO) = não envia. Também não envia se o desligamento
+ * gracioso já devolveu este job à fila (o próximo processo o executa; sem isto sairiam duas respostas).
+ */
+async function humanGuard(conversationId: string, jobId?: string): Promise<string | null> {
+  if (jobId && releasedJobs.has(jobId)) return 'servidor desligando: o job voltou para a fila'
   const c = await db.conversation.findUnique({ where: { id: conversationId }, select: { mode: true } })
   if (!c) return 'conversa não existe'
   return c.mode === 'HUMANO' ? 'virou modo humano antes do envio' : null
@@ -280,7 +284,7 @@ async function handoff(opts: {
         countAtendimento: true,
         emit: false,
         ...(opts.jobId ? { sendKey: `${aiSendKey(opts.jobId)}:passagem` } : {}),
-        guard: () => humanGuard(conv.id),
+        guard: () => humanGuard(conv.id, opts.jobId),
       })
     } catch (e) {
       // Mesmo sem conseguir avisar o cliente (ou já avisado/assumido), a conversa vai para a pessoa.
@@ -488,7 +492,7 @@ async function execute(job: AiJob): Promise<JobResult> {
       emit: false,
       sendKey: aiSendKey(job.id),
       // Pessoa assumiu entre a revalidação e o envio: não envia.
-      guard: () => humanGuard(conversationId),
+      guard: () => humanGuard(conversationId, job.id),
     })
   } catch (e) {
     if (e instanceof OutboundCancelledError) return { kind: 'done', note: `cancelado: ${e.message}` }
@@ -526,9 +530,11 @@ function tomFromDb(tom: string): 'Amigável' | 'Profissional' | 'Direto' {
   return tom === 'profissional' ? 'Profissional' : tom === 'direto' ? 'Direto' : 'Amigável'
 }
 
-// Jobs que ESTE processo está executando (desligamento gracioso devolve à fila o que não terminou a tempo).
-const gr = globalThis as unknown as { __pearchat_ai_running?: Set<string> }
+// Jobs que ESTE processo está executando (desligamento gracioso devolve à fila o que não terminou a tempo) e os que já
+// foram devolvidos (não enviam nem gravam mais nada: o job pertence ao próximo processo).
+const gr = globalThis as unknown as { __pearchat_ai_running?: Set<string>; __pearchat_ai_released?: Set<string> }
 const runningJobs = (gr.__pearchat_ai_running ??= new Set<string>())
+const releasedJobs = (gr.__pearchat_ai_released ??= new Set<string>())
 
 export const HANDOFF_FAILURE_MOTIVO = 'a IA não conseguiu responder (falha temporária)'
 
@@ -553,6 +559,7 @@ async function escalateAfterFailure(job: AiJob): Promise<void> {
 export async function releaseRunningAiJobs(): Promise<number> {
   const ids = Array.from(runningJobs)
   if (ids.length === 0) return 0
+  for (const id of ids) releasedJobs.add(id)
   const r = await db.aiJob.updateMany({ where: { id: { in: ids }, status: AI_JOB.executando }, data: { status: AI_JOB.pendente, runAt: new Date() } })
   return r.count
 }
@@ -593,7 +600,10 @@ async function runJob(job: AiJob): Promise<boolean> {
   }
 
   try {
-    if (result.kind === 'done') {
+    if (releasedJobs.has(job.id)) {
+      // Devolvido à fila pelo desligamento: o resultado desta execução não vale (o job roda de novo no próximo processo).
+      log('ai', `job ${job.id} devolvido à fila durante o desligamento; resultado descartado`)
+    } else if (result.kind === 'done') {
       await finish(job, 'feito', result.note)
     } else if (result.kind === 'wait') {
       // Espera (mídia baixando, conferência de envio) não gasta tentativa, salvo envio que saiu sem confirmação.
@@ -616,6 +626,7 @@ async function runJob(job: AiJob): Promise<boolean> {
     }
   } finally {
     runningJobs.delete(job.id)
+    releasedJobs.delete(job.id)
     // Em qualquer saída (inclusive passagem/cancelamento) a conversa não fica "digitando".
     try {
       const c = await db.conversation.findFirst({ where: { id: conversationId, workspaceId }, select: { typing: true } })
