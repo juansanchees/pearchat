@@ -1,2 +1,8 @@
 # Scripts de shell precisam de LF (rodam na VPS Linux; com autocrlf=true o checkout no Windows os converteria para CRLF).
 *.sh text eol=lf
+# Arquivos de publicação também precisam de LF (vão para a VPS/Docker).
+Caddyfile text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+*.yml text eol=lf
+*.mjs text eol=lf

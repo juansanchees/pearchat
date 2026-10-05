@@ -7,12 +7,14 @@ import { parse } from 'node:url'
 import { loadEnvConfig } from '@next/env'
 import { Server } from 'socket.io'
 import { getToken } from 'next-auth/jwt'
+import { assertProductionEnv } from '@/server/boot/guard'
 import { attentionRoom, orgRoom, userRoom, workspaceRoom } from '@/server/realtime/events'
 import type { ClientToServerEvents, ServerToClientEvents } from '@/server/realtime/events'
 
 const dev = !process.argv.includes('--prod') && process.env.NODE_ENV !== 'production'
 ;(process.env as Record<string, string | undefined>).NODE_ENV = dev ? 'development' : 'production'
 loadEnvConfig(process.cwd(), dev)
+if (!dev) assertProductionEnv() // recusa subir em produção com mock, segredo fraco ou schema de teste (src/server/boot/guard.ts)
 
 const port = Number(process.env.PORT ?? 3000)
 const hostname = process.env.HOSTNAME_BIND ?? '0.0.0.0'
