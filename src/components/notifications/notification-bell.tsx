@@ -162,7 +162,7 @@ export function NotificationBell() {
             const para = e.relatedTarget as Node | null
             if (para && raiz.current && !raiz.current.contains(para)) fechar()
           }}
-          className="absolute right-0 top-[40px] flex max-h-[min(560px,calc(100vh-88px))] w-[380px] max-w-[calc(100vw-24px)] animate-zfIn flex-col overflow-hidden rounded-lg border border-solid border-light-divider bg-light-surface text-light-text shadow-[0_12px_32px_rgba(0,0,0,.28)] outline-none"
+          className="absolute right-0 top-[40px] flex max-h-[min(560px,calc(100vh-88px))] w-[380px] max-w-[calc(100vw-24px)] animate-zfIn flex-col overflow-hidden rounded-lg border border-solid border-light-divider bg-light-surface text-light-text shadow-[0_12px_32px_rgba(0,0,0,.28)] focus:outline-none focus-visible:!outline-none"
         >
           <div className="flex flex-none items-center gap-2 border-0 border-b border-solid border-light-divider px-4 py-3">
             <h2 className="m-0 flex-1 text-[14px] font-medium leading-tight">Notificações</h2>
