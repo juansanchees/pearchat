@@ -22,6 +22,19 @@ deploy_domain() {
   printf '%s' "${h:-pearchat.online}"
 }
 
+# Migracoes (prisma migrate deploy). Com MIGRATE_DATABASE_URL no ambiente do servidor (papel DONO do schema, ver
+# docs/operacao/supabase.md) as migracoes usam esse papel e o app segue com o papel restrito da DATABASE_URL. Sem a variavel,
+# usa a DATABASE_URL (comportamento atual). A URL passa por variavel de ambiente, nunca na linha de comando. $1 = run | exec.
+migrate_run() {
+  local m; m="$(envval MIGRATE_DATABASE_URL)"
+  if [ -n "$m" ]; then
+    echo "(migracoes com MIGRATE_DATABASE_URL: papel dono do schema)"
+    if [ "$1" = run ]; then DATABASE_URL="$m" $C run --rm --no-deps -T -e DATABASE_URL app npx prisma migrate deploy
+    else DATABASE_URL="$m" $C exec -T -e DATABASE_URL app npx prisma migrate deploy; fi
+  elif [ "$1" = run ]; then $C run --rm --no-deps -T app npx prisma migrate deploy
+  else $C exec -T app npx prisma migrate deploy; fi
+}
+
 # Espera o healthcheck do app ficar "healthy". $1 = tentativas de 5 s (padrao 120 = 10 min).
 wait_app_healthy() {
   local n="${1:-120}" st=starting i

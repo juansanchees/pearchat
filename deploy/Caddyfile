@@ -11,7 +11,7 @@
 		timeouts {
 			# Conexões lentas/penduradas não seguram o processo Node. NÃO há "write": mídia grande e Socket.io precisam de tempo.
 			read_header 10s
-			read_body 120s
+			read_body 300s
 			idle 2m
 		}
 	}

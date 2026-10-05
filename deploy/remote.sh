@@ -107,9 +107,19 @@ if [ "${PIPESTATUS[0]}" != 0 ]; then
   final
 fi
 
+# (2b') Caddyfile novo valido? (com a MESMA imagem do Caddy que roda; sem rede, sem tocar no Caddy em uso). Invalido = nada e trocado.
+CIMG="$(envval CADDY_IMAGE)"; CIMG="${CIMG:-caddy:2-alpine}"
+echo "--- validando o Caddyfile novo (caddy validate, imagem $CIMG)"
+docker run --rm --network none -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" "$CIMG" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -n 15
+if [ "${PIPESTATUS[0]}" != 0 ]; then
+  echo "O Caddyfile novo e INVALIDO. Nada foi trocado; o app e o Caddy anteriores seguem no ar."
+  RESULT=fail_caddyfile_invalid
+  final
+fi
+
 # (2c) Migracoes ANTES da troca, em container descartavel (imagem nova). Aditivas: o app antigo segue funcionando.
 echo "--- prisma migrate deploy (container descartavel, imagem nova, app antigo ainda no ar)"
-$C run --rm --no-deps -T app npx prisma migrate deploy 2>&1 | tail -n 15
+migrate_run run 2>&1 | tail -n 15
 if [ "${PIPESTATUS[0]}" != 0 ]; then
   RESULT=fail_migrate_pre
   final
@@ -131,7 +141,7 @@ fi
 
 # Migracoes: no-op idempotente (as de verdade ja rodaram em 2c).
 echo "--- prisma migrate deploy (confirmacao)"
-$C exec -T app npx prisma migrate deploy 2>&1 | tail -n 10
+migrate_run exec 2>&1 | tail -n 10
 [ "${PIPESTATUS[0]}" = 0 ] || [ "$RESULT" != ok ] || RESULT=fail_migrate
 
 # (e) Espera ate 3 min o Caddy obter o certificado (ou o https local responder)
