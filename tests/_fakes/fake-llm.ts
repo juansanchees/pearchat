@@ -106,7 +106,7 @@ export async function startFakeLlm(port = 0, initial: LlmHandler = echoHandler) 
       peak = active
     },
     async close() {
-      for (const s of sockets) s.destroy()
+      for (const s of Array.from(sockets)) s.destroy()
       await new Promise<void>((r) => server.close(() => r()))
     },
   }

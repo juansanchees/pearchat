@@ -122,7 +122,7 @@ export async function startFakeEvolution(port = 0) {
       onDelivered = null
     },
     async close() {
-      for (const s of sockets) s.destroy()
+      for (const s of Array.from(sockets)) s.destroy()
       await new Promise<void>((r) => server.close(() => r()))
     },
   }
