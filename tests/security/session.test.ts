@@ -13,6 +13,7 @@ import {
 } from '../../src/server/auth/availability'
 import { unauthorized as unauthorizedMessages } from '../../src/server/messages/api'
 import { unauthorized as unauthorizedSettings } from '../../src/server/settings/http'
+import { unauthorized as unauthorizedNotifications } from '../../src/server/notifications/http'
 
 afterEach(clearSessionCheckFailure)
 
@@ -73,7 +74,7 @@ describe('judgeSession: erro de infraestrutura x resposta definitiva do banco', 
 describe('respostas das rotas sem sessão utilizável', () => {
   it('sem falha recente de leitura: 401 "Não autenticado" (sessão realmente ausente/revogada)', async () => {
     assert.equal(sessionCheckRecentlyFailed(), false)
-    for (const fn of [unauthorizedResponse, unauthorizedMessages, unauthorizedSettings]) {
+    for (const fn of [unauthorizedResponse, unauthorizedMessages, unauthorizedSettings, unauthorizedNotifications]) {
       const r = fn()
       assert.equal(r.status, 401)
       assert.equal(r.headers.get('retry-after'), null)
@@ -83,7 +84,7 @@ describe('respostas das rotas sem sessão utilizável', () => {
   it('logo após falha de infraestrutura: 503 + Retry-After curto + código INDISPONIVEL, em TODOS os helpers das rotas', async () => {
     markSessionCheckFailed()
     assert.equal(sessionCheckRecentlyFailed(), true)
-    for (const fn of [unauthorizedResponse, unauthorizedMessages, unauthorizedSettings, unavailableResponse]) {
+    for (const fn of [unauthorizedResponse, unauthorizedMessages, unauthorizedSettings, unauthorizedNotifications, unavailableResponse]) {
       const r = fn()
       assert.equal(r.status, 503)
       assert.equal(r.headers.get('retry-after'), String(RETRY_AFTER_S))
