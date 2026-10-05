@@ -25,6 +25,8 @@ export function ConnectedView({
   patch,
   onDisconnected,
   clienteParam,
+  diaParam = null,
+  onDiaConsumido,
   onSynced,
   onConnectGoogle,
 }: {
@@ -32,6 +34,9 @@ export function ConnectedView({
   patch: (body: CalendarPatch) => Promise<boolean>
   onDisconnected: (next: CalendarStateDto) => void
   clienteParam: string | null
+  /** Dia (AAAA-MM-DD) pedido por um link do sininho: a grade vai até ele e avisa que consumiu. */
+  diaParam?: string | null
+  onDiaConsumido?: () => void
   /** Chamado com o instante da última leitura bem-sucedida do Google (para o status da barra superior). */
   onSynced?: (iso: string) => void
   /** Sem Google conectado: abre o fluxo de conexão a partir do aviso no topo. */
@@ -122,6 +127,14 @@ export function ConnectedView({
     setOffset(off)
     setSelIdx(diff - off * 7)
   }
+
+  // Link do sininho (?dia=AAAA-MM-DD): vai até o dia assim que "hoje" está calculado.
+  useEffect(() => {
+    if (!diaParam || !today) return
+    if (/^\d{4}-\d{2}-\d{2}$/.test(diaParam)) goToDate(diaParam)
+    onDiaConsumido?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diaParam, today])
 
   const changeTipo = (id: string) => {
     setTipoId(id)

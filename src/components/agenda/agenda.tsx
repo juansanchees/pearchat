@@ -51,6 +51,14 @@ export function Agenda() {
   const passo = sp.get('passo')
   const erro = sp.get('erro')
   const clienteParam = sp.get('cliente')
+  // Link do sininho: /agenda?dia=AAAA-MM-DD abre a grade nesse dia (guardado aqui porque a URL é limpa em seguida).
+  const diaParam = sp.get('dia')
+  const [dia, setDia] = useState<string | null>(null)
+  useEffect(() => {
+    if (!diaParam) return
+    setDia(diaParam)
+    router.replace('/agenda')
+  }, [diaParam, router])
 
   // Retorno do OAuth real: ?passo=agendas abre a escolha de agendas; ?erro=google avisa a falha.
   useEffect(() => {
@@ -159,6 +167,8 @@ export function Agenda() {
           }}
           patch={patch}
           clienteParam={clienteParam}
+          diaParam={dia}
+          onDiaConsumido={() => setDia(null)}
           onSynced={setSyncedAt}
           onDisconnected={(next) => {
             setCal(next)
