@@ -177,6 +177,8 @@ model Workspace {
   bookingMensagem         String?
   bookingAttempts         BookingAttempt[]
   members                 SpaceMember[]
+  notifications           Notification[]
+  notificationCursors     NotificationCursor[]
 
   @@index([organizationId])
 }
@@ -212,6 +214,8 @@ model User {
   accounts     Account[]
   sessions     Session[]
   recoveryCodes RecoveryCode[]
+  notifications       Notification[]
+  notificationCursors NotificationCursor[]
 
   @@index([workspaceId])
   @@index([organizationId])
@@ -803,4 +807,58 @@ model AuditLog {
   createdAt      DateTime @default(now())
 
   @@index([organizationId, createdAt])
+}
+
+// ---- Notificações / sininho (migração 0023) ----
+
+// Histórico do sininho, POR USUÁRIO e POR ESPAÇO (cada WhatsApp é independente). As linhas são DERIVADAS do que já está
+// gravado (mensagens, jobs da IA, agenda...) pela sincronização (src/server/notifications), nunca por ganchos no motor.
+// Guarda só contagens, nomes de contatos e horários: nunca o texto de mensagens. Fica no máximo 7 dias.
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  workspaceId String
+  // ia_respondeu | passou_para_voce | esperando_resposta | nova_conversa | agenda_* | followup | campanha | falha_envio | whatsapp_* | equipe_convite | cota_ia
+  tipo        String
+  titulo      String
+  corpo       String?
+  contagem    Int       @default(1)
+  // Rota interna montada pelo servidor (nunca vem do cliente): /whatsapp?c=<id>, /agenda?dia=AAAA-MM-DD...
+  link        String?
+  // Ids relacionados (ex.: conversas já somadas), para somar sem repetir. Não vai para o cliente.
+  refIds      Json?
+  // Dados de apresentação (nomes, horário do agendamento, "ausente desde"). Sem texto de mensagens.
+  dados       Json?
+  // Aconteceu enquanto a pessoa estava fora (sem batimento há mais de 3 min).
+  ausente     Boolean   @default(false)
+  // Chave de idempotência: duas sincronizações (duas abas) nunca duplicam.
+  dedupeKey   String
+  ocorridoEm  DateTime
+  lidaEm      DateTime?
+  // Apagada pela pessoa: o conteúdo é zerado e a linha fica só como marca (a chave impede reaparecer) até vencer os 7 dias.
+  apagadaEm   DateTime?
+  createdAt   DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId, dedupeKey])
+  @@index([userId, workspaceId, createdAt])
+  @@index([createdAt])
+}
+
+// Até onde a sincronização já olhou e a última presença (aba visível e em foco) de cada usuário em cada espaço.
+model NotificationCursor {
+  userId            String
+  workspaceId       String
+  sincronizadoAte   DateTime
+  ultimaAtividadeEm DateTime
+  // Pequena memória da sincronização (ex.: último aviso de cota do mês), para não repetir avisos.
+  estado            Json?
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([userId, workspaceId])
+  @@index([workspaceId])
 }
