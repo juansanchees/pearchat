@@ -106,6 +106,10 @@ if [ -n "$EXTRACT_ENV" ]; then
   [ -f "$WORK/env.production" ] || die "o pacote nao tem env.production"
   cp -- "$WORK/env.production" "$EXTRACT_ENV/env.production"; chmod 600 "$EXTRACT_ENV/env.production"
   echo "env.production gravado em $EXTRACT_ENV/env.production (contem segredos: proteja)"
+  # Configuracao do backup/monitor (canais de alerta, destino externo), quando o pacote a tem. Nao e instalada sozinha.
+  for extra in etc-pearchat-backup.conf etc-pearchat-monitor.conf imagens-em-uso.txt; do
+    if [ -f "$WORK/$extra" ]; then cp -- "$WORK/$extra" "$EXTRACT_ENV/$extra"; chmod 600 "$EXTRACT_ENV/$extra"; echo "gravado: $EXTRACT_ENV/$extra"; fi
+  done
 fi
 if [ "$VERIFY" = 1 ]; then echo; echo "VERIFY_OK ($STAMP)"; exit 0; fi
 
@@ -175,6 +179,12 @@ echo "Aplicando no banco (uma transacao) ..."
 psql_c --single-transaction -q -f /in/all.sql >/dev/null
 cnt="$(psql_c -tA -c "select count(*) from information_schema.tables where table_schema='$NEWSCHEMA'" | tr -d '[:space:]')"
 echo "Restauracao do app concluida: $cnt tabelas em '$NEWSCHEMA'."
+# Conferencia: contagem de linhas das tabelas principais no schema restaurado (compare com o app/painel; nao mostra dados).
+echo "Conferencia (linhas por tabela em '$NEWSCHEMA'):"
+for tb in Organization Workspace User Contact Conversation Message WhatsAppSession Event; do
+  n="$(psql_c -tA -c "select count(*) from \"$NEWSCHEMA\".\"$tb\"" 2>/dev/null | tr -d '[:space:]' || true)"
+  printf '  %-18s %s\n' "$tb" "${n:-(tabela ausente)}"
+done
 if [ "$NEWSCHEMA" != "$APP_SCHEMA" ]; then
   echo "Para inspecionar: select count(*) from $NEWSCHEMA.\"User\";"
   echo "Quando terminar de conferir, apague com cuidado: DROP SCHEMA $NEWSCHEMA CASCADE;  (manual, no SQL Editor do Supabase)"

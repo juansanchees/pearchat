@@ -46,7 +46,8 @@ pearchat.online {
 	# O app nunca deve confiar neste cabeçalho vindo de fora (middleware do Next; defesa em profundidade).
 	request_header -x-middleware-subrequest
 
-	# Log de acesso para investigação, SEM dados pessoais sensíveis: sem cookies, sem tokens, sem query string.
+	# Log de acesso para investigação, SEM dados pessoais sensíveis: sem cookies, sem tokens, sem query string, sem Referer
+	# (o token do monitor externo /api/health/check?token=... e os de redefinição de senha/convite vão na query).
 	# Fica no volume pearchat_caddy_logs, com rotação (10 MB x 5 arquivos, no máximo 30 dias).
 	log {
 		output file /var/log/caddy/access.log {
@@ -62,6 +63,8 @@ pearchat.online {
 				request>headers>X-Health-Token delete
 				request>headers>X-Api-Key delete
 				request>headers>Apikey delete
+				# O Referer (mesma origem) leva a URL COMPLETA, inclusive ?token= de redefinicao de senha, convite e verificacao.
+				request>headers>Referer delete
 				resp_headers>Set-Cookie delete
 				request>uri regexp "\?.*$" ""
 			}

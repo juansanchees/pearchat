@@ -75,4 +75,10 @@ echo "== bk_json_str"
 eq "$(bk_json_str 'a"b\c
 d')" 'a\"b\\c d' "escape JSON"
 
+echo "== bk_key_fingerprint (conferir a copia da chave guardada fora do servidor)"
+printf '%s' 'chave-de-teste-nao-real' > "$T/k"
+fp="$(bk_key_fingerprint "$T/k")"
+eq "$fp" "$(printf '%s' 'chave-de-teste-nao-real' | sha256sum | cut -c1-12)" "impressao = sha256 do texto da chave (12 caracteres)"
+eq "$(bk_key_fingerprint "$T/nao-existe")" ausente "chave ausente"
+
 echo; [ "$fails" = 0 ] && echo "SELFTEST_BACKUP_OK" || { echo "SELFTEST_BACKUP_FALHOU ($fails)"; exit 1; }

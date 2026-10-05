@@ -2,7 +2,9 @@
 
 Backup diario, criptografado, feito NA VPS. O banco do app e Postgres no Supabase (plano gratuito, **sem backup automatico**), entao este e o unico backup que existe.
 
-> **Sem copia externa, o backup e SOMENTE LOCAL.** Se a VPS for perdida, o backup vai junto. Configure `BACKUP_REMOTE` (secao "Copia para fora do servidor") e guarde a chave fora do servidor.
+> **Sem copia externa, o backup e SOMENTE LOCAL.** Se a VPS for perdida, o backup vai junto. Configure `BACKUP_REMOTE` (secao "Copia para fora do servidor") e guarde a chave fora do servidor. O monitor lembra disso (`backup_externo`) a cada 6 h ate ser configurado.
+>
+> **Restauracao passo a passo (teste mensal, erro no banco, VPS perdida): `deploy/backup/restore.md`.** Para conferir que a copia da chave guardada fora do servidor esta certa, compare a `chaveImpressao` de `last-status.json` (ver restore.md).
 
 ## O que entra e o que nao entra
 
@@ -12,6 +14,7 @@ Backup diario, criptografado, feito NA VPS. O banco do app e Postgres no Supabas
 | Banco da Evolution (`evolution-db`: instancias, chats, mensagens) | `docker exec ... pg_dump` (formato custom) |
 | Volumes: `pearchat_media` (midia, quando existir), `pearchat_evolution_instances` (sessoes de WhatsApp conectadas), `pearchat_caddy_data` (certificados) | `tar.gz` por container descartavel, volume montado somente leitura |
 | `/opt/pearchat/deploy/.env.production` | copia dentro do pacote criptografado. E o unico lugar com `ENCRYPTION_KEY`, `AUTH_SECRET`, etc.: **sem a `ENCRYPTION_KEY` o dump do banco nao serve** (dados criptografados) |
+| `etc-pearchat-backup.conf`, `etc-pearchat-monitor.conf`, `imagens-em-uso.txt` | destino externo e canais de alerta (para reconstruir a VPS) e as imagens Docker em uso. A credencial do rclone NAO entra |
 | `manifest.json` | tamanhos, hashes sha256, duracao, versao do app (commit de `/opt/pearchat/.deploy-commit`) |
 
 Nao entram: schema `public` do Supabase (legado de outro produto), `evolution_db_data` bruto (o dump logico o substitui), Redis da Evolution (cache), `pearchat_caddy_config` (regeneravel), imagens Docker, codigo (esta no git).
@@ -51,7 +54,7 @@ Com `rclone` instalado (`curl https://rclone.org/install.sh | sudo bash`) e um r
     BACKUP_REMOTE=rclone:meuremote:pearchat-backups
     BACKUP_REMOTE_KEEP_DAYS=45        # opcional: apaga na nuvem pacotes mais velhos que N dias
 
-Teste: `rclone lsd meuremote:` e depois `bash /opt/pearchat/deploy/backup/backup.sh`. So o `.tar.enc` (ja criptografado) e o `manifest.json` sobem. Falha na copia deixa `remoto: "erro"` em `last-status.json` e o monitor avisa.
+Teste: `rclone lsd meuremote:` e depois `bash /opt/pearchat/deploy/backup/backup.sh`. So o `.tar.enc` (ja criptografado) e o `manifest.json` sobem. Depois do envio o backup roda `rclone check` (tamanho e hash no destino): copia que nao confere NAO conta (`remoto: "erro"` e backup "parcial"). Falha na copia deixa `remoto: "erro"` em `last-status.json` e o monitor avisa. O `rclone` NAO e instalado pelo deploy: o roteiro para o dono esta em `docs/operacao/` (Backblaze B2, Google Drive, S3).
 
 - **Google Drive**: `rclone config` > `n` > tipo `drive`; em servidor sem navegador responda "n" em "Use auto config" e autorize num PC com `rclone authorize "drive"`.
 - **Backblaze B2**: crie bucket privado e uma Application Key restrita ao bucket; tipo `b2`.
