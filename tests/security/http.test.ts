@@ -88,6 +88,22 @@ suite('M4: corpo grande em rotas ANÔNIMAS é cortado (413), mesmo "chunked"', (
   })
 })
 
+suite('B4: rotas /api/wa do app passam pela conferência de Origem; os webhooks não', () => {
+  it('POST de outro site em /api/wa/disconnect é 403 (antes de qualquer sessão); sem Origin segue para a autenticação (401)', async () => {
+    const evil = await fetch(`${BASE}/api/wa/disconnect`, { method: 'POST', headers: { origin: 'https://evil.example' } })
+    assert.equal(evil.status, 403)
+    const semOrigin = await fetch(`${BASE}/api/wa/disconnect`, { method: 'POST' })
+    assert.equal(semOrigin.status, 401)
+  })
+
+  it('webhooks (Evolution, Meta) seguem autenticando pelo próprio segredo, sem a conferência de Origem do navegador', async () => {
+    const r = await fetch(`${BASE}/api/wa/evolution`, { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json' }, body: '{}' })
+    assert.equal(r.status, 401, 'sem o segredo do webhook: 401 (não 403 de Origem)')
+    const m = await fetch(`${BASE}/api/wa/meta`, { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json' }, body: '{}' })
+    assert.equal(m.status, 401, 'sem a assinatura da Meta: 401')
+  })
+})
+
 suite('conta existente: entra, usa o app e é protegida na API', () => {
   it('login por senha, perfil, CSRF por Origin, corpo grande e troca de e-mail pelo PUT de perfil', async () => {
     const u = await makeAccount({ verified: true })

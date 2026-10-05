@@ -45,6 +45,7 @@ export default auth((req) => {
 })
 
 export const config = {
-  // Exclui: /api/auth, /api/wa/* (webhooks), _next e arquivos estáticos.
-  matcher: ['/((?!api/auth|api/wa|api/billing/asaas|api/health|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
+  // Exclui: /api/auth, os webhooks (/api/wa/evolution, /api/wa/meta, /api/billing/asaas: cada um se autentica sozinho), _next e
+  // arquivos estáticos. As demais rotas /api/wa/* (conectar, desconectar...) são do app e passam pela conferência de origem.
+  matcher: ['/((?!api/auth|api/wa/evolution|api/wa/meta|api/billing/asaas|api/health|_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 }
