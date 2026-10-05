@@ -1,14 +1,15 @@
 import { z } from 'zod'
 import type { ConnectionStatusKind } from '@/lib/types'
 import { evolutionRecipient, onlyDigits, toE164 } from './phone'
-import { WhatsAppProviderError } from './provider'
+import { uncertainError, WhatsAppProviderError } from './provider'
 import type { ContactRef, FetchedMedia, OutboundMedia, WhatsAppProvider } from './provider'
 
 // Provedor "conexão rápida": Evolution API 2.3.7 (Baileys / WhatsApp Web), via REST.
 
 export const instanceNameFor = (workspaceId: string) => `pc_${workspaceId}`
 
-const WEBHOOK_EVENTS = ['QRCODE_UPDATED', 'CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONTACTS_UPSERT']
+// SEND_MESSAGE: eco dos envios feitos pela API (com o id), usado para reconciliar envio sem confirmação (engine/delivery.ts).
+export const WEBHOOK_EVENTS = ['QRCODE_UPDATED', 'CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONTACTS_UPSERT', 'SEND_MESSAGE']
 // Histórico enviado pelo WhatsApp logo após o pareamento.
 export const HISTORY_WEBHOOK_EVENTS = ['MESSAGES_SET', 'CHATS_SET', 'CONTACTS_SET', 'CHATS_UPSERT']
 
@@ -25,10 +26,27 @@ function webhookUrl(): string {
   return `${app}/api/wa/evolution`
 }
 
+/** Erros de rede que garantem que o pedido NÃO chegou à Evolution (a conexão nem abriu). */
+const NOT_SENT_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT'])
+
+/**
+ * Falha do fetch -> erro do provedor. Conexão recusada/DNS = nada foi enviado (falha comum). Timeout ou conexão caída
+ * no meio = a Evolution PODE ter enviado: erro "incerto" (o envio não é repetido às cegas).
+ */
+export function evolutionFetchFailure(e: unknown): WhatsAppProviderError {
+  const name = e instanceof Error ? e.name : ''
+  const cause = e instanceof Error ? (e as Error & { cause?: { code?: unknown } }).cause : undefined
+  const code = typeof cause?.code === 'string' ? cause.code : ''
+  if (name === 'TimeoutError' || name === 'AbortError') return uncertainError('A Evolution não respondeu a tempo (envio sem confirmação)')
+  if (NOT_SENT_CODES.has(code)) return new WhatsAppProviderError('Evolution API inacessível', 0, null)
+  return uncertainError('A conexão com a Evolution caiu durante o envio (envio sem confirmação)')
+}
+
 async function evo(method: string, path: string, body?: unknown, timeoutMs = 15_000): Promise<unknown> {
   const apiKey = process.env.EVOLUTION_API_KEY
   if (!apiKey) throw new Error('EVOLUTION_API_KEY não configurada')
   let res: Response
+  let text: string
   try {
     res = await fetch(`${baseUrl()}${path}`, {
       method,
@@ -37,10 +55,10 @@ async function evo(method: string, path: string, body?: unknown, timeoutMs = 15_
       cache: 'no-store',
       signal: AbortSignal.timeout(timeoutMs),
     })
-  } catch {
-    throw new WhatsAppProviderError('Evolution API inacessível', 0, null)
+    text = await res.text()
+  } catch (e) {
+    throw evolutionFetchFailure(e)
   }
-  const text = await res.text()
   let parsed: unknown = text
   try {
     parsed = text ? JSON.parse(text) : null
@@ -273,6 +291,19 @@ export class EvolutionProvider implements WhatsAppProvider {
     )
   }
 
+  /**
+   * Últimas mensagens ENVIADAS por nós (fromMe) num chat, mais novas primeiro (corpo cru da Evolution). Usado só pela
+   * reconciliação de envios sem confirmação: a Evolution grava cada envio no banco dela (DATABASE_SAVE_DATA_NEW_MESSAGE).
+   */
+  findRecentOwnMessages(workspaceId: string, remoteJid: string, take = 20): Promise<unknown> {
+    return evo(
+      'POST',
+      `/chat/findMessages/${encodeURIComponent(instanceNameFor(workspaceId))}`,
+      { where: { key: { remoteJid, fromMe: true } }, page: 1, offset: take },
+      15_000,
+    )
+  }
+
   /** POST /chat/findContacts (todos os contatos salvos na Evolution). */
   findContacts(workspaceId: string): Promise<unknown> {
     return evo('POST', `/chat/findContacts/${encodeURIComponent(instanceNameFor(workspaceId))}`, {}, 60_000)
@@ -284,7 +315,8 @@ export class EvolutionProvider implements WhatsAppProvider {
       text,
     })
     const parsed = sendSchema.safeParse(raw)
-    if (!parsed.success) throw new WhatsAppProviderError('Resposta inesperada da Evolution', 502, null)
+    // 2xx sem id legível: a Evolution aceitou; não dá para saber o id -> incerto (não reenvia às cegas).
+    if (!parsed.success) throw uncertainError('Resposta inesperada da Evolution (envio sem confirmação)', 502)
     return { providerMessageId: parsed.data.key.id }
   }
 
@@ -304,7 +336,8 @@ export class EvolutionProvider implements WhatsAppProvider {
       90_000,
     )
     const parsed = sendSchema.safeParse(raw)
-    if (!parsed.success) throw new WhatsAppProviderError('Resposta inesperada da Evolution', 502, null)
+    // 2xx sem id legível: a Evolution aceitou; não dá para saber o id -> incerto (não reenvia às cegas).
+    if (!parsed.success) throw uncertainError('Resposta inesperada da Evolution (envio sem confirmação)', 502)
     return { providerMessageId: parsed.data.key.id }
   }
 
@@ -320,7 +353,8 @@ export class EvolutionProvider implements WhatsAppProvider {
       90_000,
     )
     const parsed = sendSchema.safeParse(raw)
-    if (!parsed.success) throw new WhatsAppProviderError('Resposta inesperada da Evolution', 502, null)
+    // 2xx sem id legível: a Evolution aceitou; não dá para saber o id -> incerto (não reenvia às cegas).
+    if (!parsed.success) throw uncertainError('Resposta inesperada da Evolution (envio sem confirmação)', 502)
     return { providerMessageId: parsed.data.key.id }
   }
 

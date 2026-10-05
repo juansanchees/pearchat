@@ -21,6 +21,7 @@ import { notifySpaceAttention } from '@/server/spaces/attention'
 import { handleReminderReply } from '@/server/calendar/confirmation'
 import { isNonReplyableBody } from '@/server/whatsapp/labels'
 import { maybeQueuePhoto } from '@/server/contacts/photo'
+import { attachProviderId, correlateStatus } from '@/server/engine/delivery'
 
 /** Campos de mídia de uma Message nova (metadados do webhook; o arquivo vem depois). */
 function mediaColumns(media: NormalizedMedia, opts: { imported: boolean; direction: 'IN' | 'OUT' }) {
@@ -106,6 +107,23 @@ export async function findOrCreateContact(
   }
 }
 
+/** Atraso de entrega acima do qual a mensagem é tratada como "atrasada" (mantém a hora real do WhatsApp). */
+const LATE_DELIVERY_MS = 10 * 60_000
+/** Mensagem do cliente mais velha que isto (reentrega após reconexão) é gravada, mas não aciona a IA. */
+const AI_MAX_AGE_MS = 24 * 3_600_000
+
+/**
+ * Hora gravada de uma mensagem recebida AO VIVO. O carimbo do WhatsApp vem em segundos (truncado) e o nosso envio usa
+ * o relógio do servidor em ms: gravar o carimbo faria uma mensagem que chega DURANTE um envio nosso ficar "antes" dele
+ * (a IA e a varredura achariam a conversa respondida). Por isso vale a hora de CHEGADA ao servidor; só uma entrega
+ * muito atrasada (reentrega depois de queda) mantém a hora real do WhatsApp.
+ */
+export function inboundCreatedAt(timestamp: Date, receivedAt: Date): Date {
+  const delay = receivedAt.getTime() - timestamp.getTime()
+  if (delay > LATE_DELIVERY_MS) return timestamp
+  return receivedAt
+}
+
 export async function ingestInboundMessage(input: {
   workspaceId: string
   from: ContactRef
@@ -115,13 +133,17 @@ export async function ingestInboundMessage(input: {
   /** Mídia recebida (imagem, áudio, vídeo, documento, figurinha): baixada em segundo plano. */
   media?: NormalizedMedia
   providerMessageId: string
+  /** Carimbo do WhatsApp. */
   timestamp: Date
+  /** Quando o webhook chegou ao servidor (caixa de entrada). Padrão: agora. */
+  receivedAt?: Date
 }): Promise<void> {
   const { workspaceId, from, mediaUrl, media, providerMessageId, timestamp } = input
   if (!from.waUserId && !from.telefone) return
   // NUL e surrogates soltos (vindos do celular do cliente) fariam o Postgres recusar a mensagem: saem do texto.
   const body = cleanText(input.body)
   const nome = input.nome === undefined ? undefined : cleanText(input.nome)
+  const createdAt = inboundCreatedAt(timestamp, input.receivedAt ?? new Date())
 
   const dup = await db.message.findFirst({
     where: { providerMessageId, conversation: { workspaceId } },
@@ -147,24 +169,35 @@ export async function ingestInboundMessage(input: {
     update: {},
   })
 
-  const message = await db.message.create({
-    data: {
-      conversationId: conversation.id,
-      direction: 'IN',
-      author: 'CLIENTE',
-      body,
-      mediaUrl: mediaUrl ?? null,
-      ...(media ? mediaColumns(media, { imported: false, direction: 'IN' }) : {}),
-      status: 'ENTREGUE',
-      providerMessageId,
-      createdAt: timestamp,
-    },
-  })
-
-  await db.conversation.update({
-    where: { id: conversation.id },
-    data: { unread: { increment: 1 }, lastMessageAt: timestamp },
-  })
+  // Mensagem + contadores da conversa juntos (queda no meio não deixa a conversa sem lastMessageAt, fora da varredura).
+  let message
+  try {
+    ;[message] = await db.$transaction([
+      db.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction: 'IN',
+          author: 'CLIENTE',
+          body,
+          mediaUrl: mediaUrl ?? null,
+          ...(media ? mediaColumns(media, { imported: false, direction: 'IN' }) : {}),
+          status: 'ENTREGUE',
+          providerMessageId,
+          createdAt,
+        },
+      }),
+      db.conversation.update({ where: { id: conversation.id }, data: { unread: { increment: 1 } } }),
+      // lastMessageAt nunca regride (entrega atrasada não faz a conversa "voltar no tempo").
+      db.conversation.updateMany({
+        where: { id: conversation.id, OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: createdAt } }] },
+        data: { lastMessageAt: createdAt },
+      }),
+    ])
+  } catch (e) {
+    // Reentrega concorrente da MESMA mensagem (dois webhooks ao mesmo tempo): a outra já gravou.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return
+    throw e
+  }
 
   emitToWorkspace(workspaceId, 'message.received', {
     workspaceId,
@@ -183,6 +216,8 @@ export async function ingestInboundMessage(input: {
   }
   void notifySpaceAttention(workspaceId)
   if (media) startInboundMedia(message.id, media.inlineBase64)
+  // Reentrega muito antiga (ex.: dias depois, após reconexão): fica na conversa, mas a IA não responde sozinha.
+  if (Date.now() - timestamp.getTime() > AI_MAX_AGE_MS) return
   // Resposta a um lembrete de agendamento ("1" confirma, "2" remarca): tratada aqui, sem acionar a IA para a mesma mensagem.
   if (!media && !optOut) {
     const lembrete = await handleReminderReply({ workspaceId, conversationId: conversation.id, contactId: contact.id, text: body, optOut })
@@ -193,8 +228,8 @@ export async function ingestInboundMessage(input: {
   await scheduleAiReply({ workspaceId, conversationId: conversation.id, optOut })
 }
 
-/** Quanto tempo uma mensagem enviada pelo PearChat fica "em voo" (gravada como PENDENTE, ainda sem id do provedor). */
-const IN_FLIGHT_MS = 120_000
+/** Até quanto tempo depois do envio um eco ainda é reconhecido como do PearChat (envio em voo ou sem confirmação). */
+const OWN_ECHO_WINDOW_MS = 15 * 60_000
 
 /**
  * Mensagem que o DONO enviou direto pelo celular (webhook `messages.upsert` com `fromMe`).
@@ -213,37 +248,42 @@ export async function ingestOutboundFromPhone(input: {
   timestamp: Date
   takeOver: boolean
   media?: NormalizedMedia
+  /** Quando o webhook chegou ao servidor (ordem real em relação aos nossos envios). Padrão: agora. */
+  receivedAt?: Date
 }): Promise<'recorded' | 'duplicate' | 'ignored'> {
   const { workspaceId, to, providerMessageId, timestamp, takeOver, media } = input
+  // Resposta ao vivo pelo celular: hora de chegada (mesma regra das recebidas); histórico mantém a hora do WhatsApp.
+  const at = takeOver ? inboundCreatedAt(timestamp, input.receivedAt ?? new Date()) : timestamp
   if (!to.waUserId && !to.telefone) return 'ignored'
   const body = cleanText(input.body)
   if (!body.trim()) return 'ignored'
 
-  // Só pode haver envio nosso em voo para um contato que já existe.
+  const known = await db.message.findFirst({ where: { providerMessageId, conversation: { workspaceId } }, select: { id: true } })
+  if (known) return 'duplicate'
+  // Só pode haver envio nosso sem id para um contato que já existe.
   const existing = await findContact(workspaceId, to)
   const existingConv = existing ? await db.conversation.findUnique({ where: { contactId: existing.id }, select: { id: true } }) : null
-  const dup = await db.message.findFirst({
-    where: {
-      OR: [
-        { providerMessageId, conversation: { workspaceId } },
-        ...(existingConv
-          ? [
-              {
-                conversationId: existingConv.id,
-                direction: 'OUT' as const,
-                status: 'PENDENTE' as const,
-                providerMessageId: null,
-                body,
-                ...(media ? { mediaType: media.type } : {}),
-                createdAt: { gte: new Date(Date.now() - IN_FLIGHT_MS) },
-              },
-            ]
-          : []),
-      ],
-    },
-    select: { id: true },
-  })
-  if (dup) return 'duplicate'
+  if (existingConv) {
+    // Eco do NOSSO envio (app, IA, follow-up, disparo, lembrete) que ainda não tem o id: em voo (PENDENTE), sem
+    // confirmação (incerto) ou dado como falho por falta de confirmação. Vincula o id e NÃO assume a conversa.
+    const own = await db.message.findFirst({
+      where: {
+        conversationId: existingConv.id,
+        direction: 'OUT',
+        providerMessageId: null,
+        body,
+        ...(media ? { mediaType: media.type } : {}),
+        createdAt: { gte: new Date(Date.now() - OWN_ECHO_WINDOW_MS) },
+        OR: [{ status: 'PENDENTE' }, { status: 'FALHOU', uncertainSince: { not: null } }],
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true, conversationId: true },
+    })
+    if (own) {
+      await attachProviderId(workspaceId, own, providerMessageId)
+      return 'duplicate'
+    }
+  }
 
   const contact = existing ?? (await findOrCreateContact(workspaceId, to, undefined))
   const conversation = await db.conversation.upsert({
@@ -264,7 +304,7 @@ export async function ingestOutboundFromPhone(input: {
         status: 'ENVIADA',
         providerMessageId,
         imported: !takeOver,
-        createdAt: timestamp,
+        createdAt: at,
       },
     })
   } catch (e) {
@@ -274,11 +314,11 @@ export async function ingestOutboundFromPhone(input: {
   }
 
   if (takeOver) {
-    await registerManualReply({ conversationId: conversation.id, currentMode: conversation.mode, at: timestamp })
+    await registerManualReply({ conversationId: conversation.id, currentMode: conversation.mode, at })
   } else {
     await db.conversation.updateMany({
-      where: { id: conversation.id, OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: timestamp } }] },
-      data: { lastMessageAt: timestamp },
+      where: { id: conversation.id, OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: at } }] },
+      data: { lastMessageAt: at },
     })
   }
 
@@ -296,12 +336,20 @@ export async function updateMessageStatus(input: {
   status: 'enviada' | 'entregue' | 'lida' | 'falhou'
   /** Motivo da falha informado pelo provedor (só quando status = falhou). */
   reason?: string
+  /** Evolution: chat e "é nossa": status de um envio nosso cujo id ainda não conhecemos (envio sem confirmação). */
+  remoteJid?: string
+  fromMe?: boolean
 }): Promise<void> {
   const { workspaceId, providerMessageId, status } = input
   const msg = await db.message.findFirst({
     where: { providerMessageId, conversation: { workspaceId } },
   })
-  if (!msg) return
+  if (!msg) {
+    if (input.fromMe && input.remoteJid) {
+      await correlateStatus(workspaceId, { providerMessageId, status, remoteJid: input.remoteJid, fromMe: true })
+    }
+    return
+  }
 
   const next = status.toUpperCase() as 'ENVIADA' | 'ENTREGUE' | 'LIDA' | 'FALHOU'
   if (msg.status === next) return

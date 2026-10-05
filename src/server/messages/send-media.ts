@@ -6,6 +6,7 @@ import { MAX_OUTBOUND_BYTES, MEDIA_LABEL, sanitizeFileName, validateMedia } from
 import { buildMediaKey, getMediaStore } from '@/server/media/store'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { getProvider, ProviderUnsupportedError, WindowClosedError } from '@/server/whatsapp'
+import { runProviderSend } from '@/server/engine/outbound'
 import { cleanText } from './api'
 import { loadConversationItem, senderFirstNames, toMessageDTO } from './dto'
 import { SendError, withIdempotency } from './send'
@@ -82,10 +83,12 @@ async function sendOnce(input: { workspaceId: string; conversationId: string; fi
 
   let sent
   let failure: string | null = null
-  try {
-    const { providerMessageId } = await send(workspaceId, to, { type, mime: v.mime, fileName, ...(caption ? { caption } : {}), data: file.data })
-    sent = await db.message.update({ where: { id: pending.id }, data: { providerMessageId, status: 'ENVIADA' } })
-  } catch (e) {
+  // "Enviar" separado de "gravar o id" (ver runProviderSend): aceito nunca vira FALHOU; timeout fica "sem confirmação".
+  const outcome = await runProviderSend(pending, () => send(workspaceId, to, { type, mime: v.mime, fileName, ...(caption ? { caption } : {}), data: file.data }))
+  if (outcome.kind !== 'failed') {
+    sent = outcome.message
+  } else {
+    const e = outcome.error
     if (e instanceof ProviderUnsupportedError) {
       // Nada foi enviado: não deixa mensagem nem arquivo para trás.
       await db.message.delete({ where: { id: pending.id } }).catch(() => {})

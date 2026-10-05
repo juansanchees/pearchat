@@ -106,7 +106,19 @@ async function main() {
   setIo(io)
 
   // Motor de automações (IA, disparos, follow-up, lembretes). ENGINE_DISABLED=true desliga.
-  const { startEngine } = await import('@/server/engine/scheduler')
+  const { startEngine, stopEngine } = await import('@/server/engine/scheduler')
+  const { db } = await import('@/lib/db')
+  installShutdown(async () => {
+    // 1) não aceita conexões novas; 2) motor: nada novo começa, espera o que está em andamento (até o prazo);
+    // 3) fecha sockets e o pool do banco.
+    httpServer.close()
+    const r = await stopEngine(SHUTDOWN_GRACE_MS)
+    logLine('info', 'motor-parado', r)
+    await new Promise<void>((resolve) => io.close(() => resolve()))
+    await db.$disconnect()
+  })
+
+  await reconcileOnStartup()
   startEngine()
 
   httpServer.listen(port, hostname, () => {
@@ -114,7 +126,87 @@ async function main() {
   })
 }
 
+// ---------------------------------------------------------------- Rede de segurança do processo
+
+/** Prazo para o desligamento gracioso (o compose precisa de stop_grace_period MAIOR que isto + ~10 s). */
+const SHUTDOWN_GRACE_MS = (() => {
+  const n = Number(process.env.SHUTDOWN_GRACE_MS)
+  if (process.env.SHUTDOWN_GRACE_MS && Number.isFinite(n) && n >= 0) return n
+  return dev ? 3_000 : 25_000 // dev: o tsx watch reinicia a cada edição
+})()
+const processStart = new Date()
+
+function logLine(level: 'info' | 'warn' | 'error', event: string, fields: Record<string, unknown> = {}): void {
+  const line = JSON.stringify({ ts: new Date().toISOString(), level, area: 'processo', event, ...fields })
+  if (level === 'error') console.error(line)
+  else console.log(line)
+}
+
+const errInfo = (e: unknown) => (e instanceof Error ? { erro: `${e.name}: ${e.message}`.slice(0, 300), stack: e.stack?.split('\n').slice(0, 6).join(' | ') } : { erro: String(e).slice(0, 300) })
+
+let shuttingDown = false
+let shutdownFn: (() => Promise<void>) | null = null
+
+async function shutdown(reason: string, exitCode: number): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  logLine('info', 'desligando', { motivo: reason, prazoMs: SHUTDOWN_GRACE_MS })
+  // Trava final: se algo pendurar, sai mesmo assim (antes do SIGKILL do Docker).
+  const hard = setTimeout(() => {
+    logLine('error', 'desligamento-forcado', { motivo: reason })
+    process.exit(exitCode || 1)
+  }, SHUTDOWN_GRACE_MS + 8_000)
+  hard.unref()
+  try {
+    await shutdownFn?.()
+  } catch (e) {
+    logLine('error', 'falha-no-desligamento', errInfo(e))
+  }
+  logLine('info', 'desligado', { motivo: reason })
+  process.exit(exitCode)
+}
+
+function installShutdown(fn: () => Promise<void>): void {
+  shutdownFn = fn
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM', 0))
+process.on('SIGINT', () => void shutdown('SIGINT', 0))
+// Rejeição sem tratamento (ex.: um `void fn()` do motor que falhou): registra e SEGUE. Uma falha isolada do motor
+// não pode derrubar sockets, webhooks e o agendador de todos os clientes.
+process.on('unhandledRejection', (reason) => {
+  logLine('error', 'rejeicao-sem-tratamento', errInfo(reason))
+})
+// Exceção síncrona sem tratamento: o estado do processo é desconhecido. Registra e sai LIMPO (desligamento gracioso,
+// código 1); o Docker (restart: unless-stopped) sobe de novo e a subida reconcilia o que ficou pela metade.
+process.on('uncaughtException', (err) => {
+  logLine('error', 'excecao-sem-tratamento', errInfo(err))
+  void shutdown('uncaughtException', 1)
+})
+
+/**
+ * Subida: o que o processo anterior deixou pela metade volta para a fila com segurança.
+ * - jobs de IA "executando" de antes desta subida (instância única) voltam a "pendente": a sendKey impede reenviar;
+ * - a caixa de entrada dos webhooks é drenada (eventos gravados que não chegaram a ser processados).
+ * ENGINE_SINGLE_INSTANCE=false desliga a retomada imediata (com várias instâncias vale só o prazo de job preso).
+ */
+async function reconcileOnStartup(): Promise<void> {
+  if (process.env.ENGINE_DISABLED === 'true') return
+  try {
+    if (process.env.ENGINE_SINGLE_INSTANCE !== 'false') {
+      const { recoverOrphanAiJobs } = await import('@/server/engine/ai-reply')
+      await recoverOrphanAiJobs(processStart)
+    }
+    const { drainInbox } = await import('@/server/whatsapp/inbox')
+    const n = await drainInbox({ limit: 200 })
+    if (n > 0) logLine('info', 'caixa-de-entrada-drenada', { eventos: n })
+  } catch (e) {
+    // Banco fora na subida: o agendador tenta de novo a cada ciclo.
+    logLine('warn', 'reconciliacao-na-subida-falhou', errInfo(e))
+  }
+}
+
 main().catch((err) => {
-  console.error(err)
+  logLine('error', 'falha-na-subida', errInfo(err))
   process.exit(1)
 })

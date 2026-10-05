@@ -122,13 +122,27 @@ export async function setStatus(
   return row
 }
 
-/** Desligar no servidor IA, follow-up e disparos (pausando campanhas) quando o WhatsApp cai; não depende do cliente. */
+/**
+ * Desliga no servidor IA, follow-up e disparos (pausando campanhas): grava a PREFERÊNCIA como desligada.
+ * Só para ação do dono (desconectar/arquivar) ou desconexão DEFINITIVA (logout no celular, token recusado, conta
+ * removida). Queda passageira NÃO chama isto: as automações só ficam pausadas enquanto o status não é CONECTADO
+ * (todas as tarefas do motor exigem sessão CONECTADA) e voltam sozinhas ao reconectar.
+ */
 export async function disableAutomations(workspaceId: string): Promise<void> {
   await Promise.all([
     db.aiAgent.updateMany({ where: { workspaceId }, data: { enabled: false } }),
     db.followUpRule.updateMany({ where: { workspaceId }, data: { enabled: false } }),
     setDisparosAtivos(workspaceId, false),
   ])
+}
+
+/** Desconexão definitiva sem ação do dono: desliga as automações, registra na auditoria e avisa a equipe. */
+export async function disableAutomationsDefinitively(workspaceId: string, motivo: string): Promise<void> {
+  await disableAutomations(workspaceId)
+  console.warn(JSON.stringify({ ts: new Date().toISOString(), level: 'warn', area: 'wa', event: 'desconexao-definitiva', workspaceId, motivo }))
+  await auditWorkspace(workspaceId, null, 'wa.disconnected', `${motivo}: IA, follow-up e disparos desligados`)
+  const { notifySpaceAttention } = await import('@/server/spaces/attention')
+  await notifySpaceAttention(workspaceId)
 }
 
 // --- sessionData (JSON criptografado: token do workspace, preferências) ---
