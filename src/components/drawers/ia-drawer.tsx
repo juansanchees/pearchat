@@ -13,6 +13,11 @@ import { DrawerShell, Field, SaveFooter, Section, Seg } from './parts'
 import { PendingAiSection } from './pending-ai-section'
 
 const TONS: Tom[] = ['Amigável', 'Profissional', 'Direto']
+const TOM_AJUDA: Record<Tom, string> = {
+  Amigável: 'Amigável — próximo e natural; o tamanho da resposta acompanha o cliente.',
+  Profissional: 'Profissional — como uma empresa responderia: cordial, sem gírias nem emoji.',
+  Direto: 'Direto — só o essencial, em uma linha.',
+}
 const HORARIOS: Horario[] = ['Sempre', 'Fora do expediente', 'Só fins de semana']
 const IDIOMAS: { id: Idioma; label: string }[] = [
   { id: 'auto', label: 'Automático' },
@@ -73,7 +78,16 @@ export function IaDrawer() {
       // Envia o que está na tela (ainda não salvo) para o teste refletir as edições.
       const r = await api<AgentTestResultDTO>('/api/agent/test', {
         method: 'POST',
-        body: { mensagem, nome: agente.nome.trim() || undefined, tom: agente.tom, prompt: agente.prompt, handoffRules: handoff, canSchedule: agente.canSchedule, idioma: agente.idioma },
+        body: {
+          mensagem,
+          nome: agente.nome.trim() || undefined,
+          tom: agente.tom,
+          prompt: agente.prompt,
+          handoffRules: handoff,
+          canSchedule: agente.canSchedule,
+          idioma: agente.idioma,
+          confirmarAgendamento: agente.confirmarAgendamento,
+        },
       })
       setTestA(r.resposta)
     } catch (e) {
@@ -86,7 +100,17 @@ export function IaDrawer() {
   const salvar = async () => {
     const saved = await api<AgentDTO>('/api/agent', {
       method: 'PUT',
-      body: { nome: agente.nome, tom: agente.tom, prompt: agente.prompt, horario: agente.horario, handoffRules: handoff, canSchedule: agente.canSchedule, idioma: agente.idioma },
+      body: {
+        nome: agente.nome,
+        tom: agente.tom,
+        prompt: agente.prompt,
+        horario: agente.horario,
+        handoffRules: handoff,
+        canSchedule: agente.canSchedule,
+        idioma: agente.idioma,
+        ritmoNatural: agente.ritmoNatural,
+        confirmarAgendamento: agente.confirmarAgendamento,
+      },
     })
     setAgentName(saved.nome)
   }
@@ -107,6 +131,7 @@ export function IaDrawer() {
             <Seg options={TONS} value={agente.tom} onChange={(v) => edit({ tom: v })} label="Tom de voz" />
           </Field>
         </div>
+        <div className="text-[12px] text-light-neutral-400">{TOM_AJUDA[agente.tom]}</div>
       </Section>
 
       <Section label="Idioma das respostas" gap="gap-3">
@@ -121,6 +146,9 @@ export function IaDrawer() {
 
       <Section label="Instruções" gap="gap-3">
         <div className="text-[12px] text-light-neutral-400">Explique quem é o agente, como ele fala e o que ele pode ou não fazer.</div>
+        <div className="text-[12px] leading-[1.5] text-light-neutral-400">
+          Para soar natural: escreva o que ele precisa saber e fazer, não frases prontas para copiar (ele responde com as próprias palavras, no idioma do cliente). Diga em que casos ele deve passar a conversa para você, em vez de pedir que ele “encaminhe” ou gere protocolo. Não peça que ele se apresente ou liste opções em toda mensagem. Quer que ele marque horários sem perguntar? Desligue “Pedir confirmação antes de marcar” na Agenda ou escreva isso aqui.
+        </div>
         <div className="pc-note flex gap-[9px]">
           <ShieldCheck size={15} className="mt-px flex-none text-light-accent-300" />
           <span>Por regra do WhatsApp, o agente só fala sobre o seu negócio. Assuntos fora disso recebem uma resposta educada de que ele não pode ajudar.</span>
@@ -186,6 +214,18 @@ export function IaDrawer() {
         <Seg options={HORARIOS} value={agente.horario} onChange={(v) => edit({ horario: v })} label="Quando responder" />
       </Section>
 
+      <Section label="Ritmo das respostas">
+        <div className="flex items-start gap-3 rounded-md border border-light-divider px-3 py-[11px]">
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-medium leading-[1.3]">Ritmo natural (mostra “digitando” antes de responder)</div>
+            <div className="mt-1 text-[12px] text-light-neutral-400">
+              O cliente vê “digitando…” por alguns segundos, conforme o tamanho da resposta (até 8 s), como numa conversa com uma pessoa. Na conexão pela API oficial, só a pausa.
+            </div>
+          </div>
+          <PearSwitch checked={agente.ritmoNatural} onChange={(v) => edit({ ritmoNatural: v })} label="Ritmo natural (mostra “digitando” antes de responder)" />
+        </div>
+      </Section>
+
       <Section label="Agenda">
         <div className="flex items-start gap-3 rounded-md border border-light-divider px-3 py-[11px]">
           <div className="min-w-0 flex-1">
@@ -195,6 +235,15 @@ export function IaDrawer() {
             </div>
           </div>
           <PearSwitch checked={agente.canSchedule} onChange={(v) => edit({ canSchedule: v })} label="Permitir que o agente agende, remarque e cancele" />
+        </div>
+        <div className="flex items-start gap-3 rounded-md border border-light-divider px-3 py-[11px]">
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-medium leading-[1.3]">Pedir confirmação antes de marcar</div>
+            <div className="mt-1 text-[12px] text-light-neutral-400">
+              Ligado, ele pergunta “posso confirmar?” antes de criar o horário. Desligado, marca assim que o cliente escolhe um dos horários oferecidos. Remarcar e cancelar sempre pedem confirmação.
+            </div>
+          </div>
+          <PearSwitch checked={agente.confirmarAgendamento} onChange={(v) => edit({ confirmarAgendamento: v })} label="Pedir confirmação antes de marcar" />
         </div>
       </Section>
 
