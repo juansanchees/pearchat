@@ -1,4 +1,5 @@
 import type { AgentTom } from '@/lib/types'
+import { detectLanguage } from './i18n'
 
 // Acabamento determinístico da resposta do modelo, antes do envio (e no "Testar o agente").
 // Conservador por construção: só tira forma (markdown, listas, espaços, emoji a mais) e frases INTEIRAS de fórmula ou de
@@ -77,6 +78,10 @@ const OPENERS = /^(?:claro|certo|perfeito|otimo|beleza|combinado|show|perfecto|g
 const GREETING = /^(?:oi|ola|hola|hi|hello|hey|opa|e ai|eai|buenas|bom dia|boa tarde|boa noite|buenos dias|buenas tardes|buenas noches|good morning|good afternoon|good evening)(?: (?:tudo bem|tudo bom|como vai|como estas|como esta|que tal|how are you))?$/
 const GREETING_START = /^\s*[¡!]?\s*(?:oi|ol[aá]|hola|hi|hello|hey|opa|buenas|bom dia|boa tarde|boa noite|buenos d[ií]as|buenas tardes|buenas noches|good (?:morning|afternoon|evening))\b/i
 
+/** "Hola, ¿en qué te ayudo con X?" / "Oi! Como posso te ajudar?" / "Hi! How can I help?" (já normalizado). */
+const GREETING_THEN_HELP = /^(?:oi|ola|hola|hi|hello|hey|buenas|bom dia|boa tarde|boa noite|buenos dias|buenas tardes|buenas noches)\b.*\b(?:ajudar|ajudo|ayudar|ayudo|ayudarte|ayudarle|help|assist)\b/
+const DIRETO_OI: Record<'pt' | 'es' | 'en', string> = { pt: 'Oi, pode falar.', es: 'Hola, dime.', en: 'Hi, go ahead.' }
+
 /** O cliente perguntou quem é / se é robô: aí a apresentação é a resposta e fica. */
 const ASKS_IDENTITY = /\b(?:robo|robot|bot|ia|ai|humano|humana|human|pessoa|persona|person|maquina|machine|quem (?:e|eh|fala)|seu nome|su nombre|tu nombre|quien eres|quien habla|who are you|your name|are you real|inteligencia artificial|artificial)\b/
 
@@ -113,13 +118,22 @@ function flattenLists(t: string): string {
     .join('\n')
 }
 
-/** Travessão como pontuação vira vírgula (intervalos como "9h – 18h" ficam). */
+/** Travessão como pontuação vira vírgula (intervalos como "9h – 18h" ou "9–18h" ficam). */
 function replaceDashes(t: string): string {
-  return t.replace(/\s+[—–]\s+/g, (m, offset: number, s: string) => {
-    const before = s.charAt(offset - 1)
-    const after = s.charAt(offset + m.length)
-    return /\d/.test(before) && /\d/.test(after) ? m : ', '
-  })
+  const notRange = (s: string, offset: number, len: number) => !(/\d/.test(s.charAt(offset - 1)) && /\d/.test(s.charAt(offset + len)))
+  return t
+    .replace(/\s+[—–]\s+/g, (m, offset: number, s: string) => (notRange(s, offset, m.length) ? ', ' : m))
+    .replace(/—/g, (m, offset: number, s: string) => (notRange(s, offset, m.length) ? ', ' : m))
+}
+
+/** "equipe" (português) escapando numa resposta em espanhol: "a la equipe" -> "al equipo", "la equipe" -> "el equipo". */
+function fixSpanishTeam(t: string): string {
+  if (!/\bequip[eo]\b/i.test(t) || detectLanguage(t) !== 'es') return t
+  const keepCase = (orig: string, rep: string) => (orig.charAt(0) === orig.charAt(0).toUpperCase() ? rep.charAt(0).toUpperCase() + rep.slice(1) : rep)
+  return t
+    .replace(/\b(a|de) la equip[eo]\b/gi, (m, prep: string) => keepCase(m, `${prep.toLowerCase() === 'a' ? 'al' : 'del'} equipo`))
+    .replace(/\bla equip[eo]\b/gi, (m) => keepCase(m, 'el equipo'))
+    .replace(/\bequipe\b/gi, (m) => keepCase(m, 'equipo'))
 }
 
 /** Mantém no máximo `max` emojis (os primeiros). */
@@ -166,7 +180,7 @@ function isReintroduction(s: string, agentName: string): boolean {
 /** Acabamento da resposta do modelo (ver o topo do arquivo). Devolve sempre um texto não vazio se a entrada não for vazia. */
 export function humanizeReply(text: string, opts: HumanizeOpts = {}): string {
   const tom = opts.tom ?? 'Amigável'
-  const base = replaceDashes(flattenLists(stripMarkdown(text)))
+  const base = fixSpanishTeam(replaceDashes(flattenLists(stripMarkdown(text))))
     .split('\n')
     .map((l) => l.replace(/[ \t]+/g, ' ').trim())
     .filter(Boolean)
@@ -193,6 +207,15 @@ export function humanizeReply(text: string, opts: HumanizeOpts = {}): string {
   drop((s) => !HAS_FACT.test(s) && FORMULAS.some((re) => re.test(normSentence(s))))
   // Interjeição solta de abertura nos tons Direto e Profissional.
   if (tom !== 'Amigável') drop((s, i) => i === 0 && OPENERS.test(normSentence(s)))
+
+  // Tom Direto: a um "oi" sozinho, nada de "Oi! Como posso te ajudar?": só o cumprimento e um convite curto.
+  if (tom === 'Direto' && !opts.jaRespondeu && GREETING.test(cliente)) {
+    const n = normSentence(sentences.join(' '))
+    if (n.length <= 70 && !HAS_FACT.test(sentences.join(' ')) && GREETING_THEN_HELP.test(n)) {
+      const lang = detectLanguage(opts.clienteTexto ?? '') ?? detectLanguage(sentences.join(' ')) ?? 'pt'
+      return DIRETO_OI[lang]
+    }
+  }
 
   const firstChanged = sentences[0] !== splitSentences(base)[0]
   let out = sentences.join(' ')

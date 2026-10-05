@@ -23,7 +23,14 @@ describe('humanizeReply: forma', () => {
   })
   it('travessão vira vírgula, mas intervalo de horário fica', () => {
     assert.equal(h('Sim — até as 18h.'), 'Sim, até as 18h.')
+    assert.equal(h('Refunds are covered for 7 days—tell me the email.'), 'Refunds are covered for 7 days, tell me the email.')
     assert.equal(h('Atendemos das 9 – 18h.'), 'Atendemos das 9 – 18h.')
+    assert.equal(h('Atendemos das 9—18h.'), 'Atendemos das 9—18h.')
+  })
+  it('"equipe" do português escapando no espanhol vira "equipo"', () => {
+    assert.equal(h('Gracias. Voy a pasar tu caso a la equipo para que reenvíen el acceso manualmente.'), 'Gracias. Voy a pasar tu caso al equipo para que reenvíen el acceso manualmente.')
+    assert.equal(h('Claro. Para que la equipe te reenvíe el acceso, ¿me pasas el email?'), 'Claro. Para que el equipo te reenvíe el acceso, ¿me pasas el email?')
+    assert.equal(h('A equipe vai te ajudar com isso.'), 'A equipe vai te ajudar com isso.')
   })
   it('emoji: no máximo um no Amigável; nenhum no Profissional e no Direto; © fica', () => {
     assert.equal(h('Oi! 😊 Tudo certo 👍🏽', { tom: 'Amigável' }), 'Oi! 😊 Tudo certo')
@@ -42,6 +49,12 @@ describe('humanizeReply: frases de roteiro e reapresentação', () => {
   it('não deixa a resposta só com saudação nem vazia', () => {
     assert.equal(h('Oi! Como posso ajudar?'), 'Oi! Como posso ajudar?')
     assert.equal(h('Entendido.'), 'Entendido.')
+  })
+  it('tom Direto: "oi" sozinho recebe só cumprimento curto, sem oferta de ajuda', () => {
+    assert.equal(h('Hola, ¿en qué te ayudo con ZapRadar?', { tom: 'Direto', clienteTexto: 'Hola' }), 'Hola, dime.')
+    assert.equal(h('Oi! Como posso te ajudar?', { tom: 'Direto', clienteTexto: 'oi' }), 'Oi, pode falar.')
+    assert.equal(h('Oi! Como posso te ajudar?', { tom: 'Amigável', clienteTexto: 'oi' }), 'Oi! Como posso te ajudar?')
+    assert.equal(h('Oi! O link é https://exemplo.com/a', { tom: 'Direto', clienteTexto: 'oi' }), 'Oi! O link é https://exemplo.com/a')
   })
   it('interjeição solta de abertura sai no Direto e no Profissional, fica no Amigável', () => {
     assert.equal(h('Perfeito! O link é https://exemplo.com/a', { tom: 'Direto' }), 'O link é https://exemplo.com/a')
@@ -134,6 +147,7 @@ describe('finishReply (estilo + passagem)', () => {
       'Sí, te ayudo con eso. ¿Me pasas el email con el que compraste?',
       "I'm sorry this happened. I can request a refund for you, but I'll need the email you used to buy.",
       'Sim, é um assistente virtual. Se você quiser, eu passo sua conversa para a equipe.',
+      'Sou o assistente virtual do Suporte ZapRadar; se preferir, chamo alguém da equipe.',
     ]) {
       const r = finishReply(`${t} ${HANDOFF_MARKER}`, ctx)
       assert.equal(r.kind, 'reply', t)

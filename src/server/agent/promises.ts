@@ -67,7 +67,7 @@ export function requestsData(text: string): boolean {
 const COND = "(?:se (?:voce |vc )?(?:preferir|quiser)|caso (?:voce )?(?:prefira|queira)|si (?:tu |usted )?(?:prefieres|quieres|lo prefieres|prefiere|quiere|lo deseas|deseas)|if you(?:'d)? (?:prefer|like|want|would like))\\b"
 const CONDITIONAL = new RegExp(`^${COND}`)
 /** Oferta condicional em qualquer ponto da frase ("Sou o assistente virtual; se preferir, chamo alguém"). */
-const CONDITIONAL_ANY = new RegExp(`(?:^|[,;:] )${COND}`)
+const CONDITIONAL_ANY = new RegExp(`\\b${COND}`)
 const HAS_URL = /(?:https?:\/\/|www\.)\S+/i
 
 function norm(s: string): string {
