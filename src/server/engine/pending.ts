@@ -51,10 +51,9 @@ function pendingFrom(workspaceId: string, since: Date, conversationId?: string):
       AND (c."mode" IS NULL OR c."mode" <> 'HUMANO')
       AND ct."optOut" = false
       AND COALESCE(ct."waUserId", '') NOT LIKE '%@g.us'
-      -- Contato só com LID (waUserId só de dígitos e sem telefone), em geral vindo do histórico importado: o WhatsApp não
-      -- informou o número dele. Não conta como pendente (nem entra no lote nem oferece "Responder com a IA"), para o lote não
-      -- gerar dezenas de falhas; a pessoa ainda pode responder à mão. (BSUID da API oficial tem letras e continua valendo.)
-      AND NOT (ct."telefone" IS NULL AND ct."waUserId" ~ '^[0-9]+$')
+      -- Sem nenhum destino (nem telefone nem waUserId) não dá para responder. Contato só com LID (waUserId, sem telefone) vale:
+      -- o envio usa o JID "<lid>@lid" pela Evolution.
+      AND (COALESCE(btrim(ct."telefone"), '') <> '' OR COALESCE(btrim(ct."waUserId"), '') <> '')
       AND lm."direction" = 'IN'
       AND lm."createdAt" >= ${since}
       AND (lm."mediaType" IS NOT NULL OR (btrim(lm."body") <> '' AND lm."body" !~ ${NON_REPLYABLE_RE}))

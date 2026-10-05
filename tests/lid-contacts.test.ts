@@ -250,7 +250,7 @@ describe('normalização de telefones (sem regressão)', () => {
 // ---------------------------------------------------------------- Pendentes
 
 describe('conversas pendentes', () => {
-  it('contato só com LID (sem número) não conta; telefone e BSUID da API oficial contam', async () => {
+  it('contato só com LID conta como pendente; sem telefone e sem waUserId (sem destino) não conta', async () => {
     const ws = await newWorkspace()
     const now = new Date()
     const mk = async (d: { telefone?: string; waUserId?: string }) => {
@@ -263,9 +263,11 @@ describe('conversas pendentes', () => {
     const comLidETel = await mk({ telefone: PHONE_MX, waUserId: LID })
     const soLid = await mk({ waUserId: LID2 })
     const bsuid = await mk({ waUserId: 'BR.abc123' })
+    const semDestino = await mk({})
     const ids = (await findPending(ws, { sinceMs: 3_600_000 })).map((r) => r.conversationId).sort()
-    assert.deepEqual(ids, [comTel, comLidETel, bsuid].sort())
-    assert.ok(!ids.includes(soLid))
-    assert.equal((await findPending(ws, { sinceMs: 3_600_000, conversationId: soLid })).length, 0)
+    assert.deepEqual(ids, [comTel, comLidETel, soLid, bsuid].sort())
+    assert.ok(!ids.includes(semDestino))
+    assert.equal((await findPending(ws, { sinceMs: 3_600_000, conversationId: soLid })).length, 1)
+    assert.equal((await findPending(ws, { sinceMs: 3_600_000, conversationId: semDestino })).length, 0)
   })
 })
