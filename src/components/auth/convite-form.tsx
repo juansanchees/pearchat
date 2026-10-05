@@ -48,7 +48,7 @@ export function ConviteForm({ token, organizacao, papel, googleEnabled }: { toke
       </AuthTitle>
       {googleEnabled && (
         <>
-          <GoogleButton label="Continuar com Google" enabled />
+          <GoogleButton label="Continuar com o Google" enabled />
           <OrDivider />
         </>
       )}

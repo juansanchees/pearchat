@@ -2,8 +2,16 @@
 
 import { useId, useState, type ReactNode } from 'react'
 import { useFormStatus } from 'react-dom'
-import { Check, Eye, EyeSlash, GoogleLogo } from '@phosphor-icons/react'
+import { Roboto } from 'next/font/google'
+import { Check, Eye, EyeSlash } from '@phosphor-icons/react'
 import { googleAction } from '@/app/(auth)/_lib/google-action'
+import { GoogleG } from '@/components/brand/google-g'
+
+// Botão do Google conforme as diretrizes de marca (tema claro): fundo #FFFFFF, traço #747775 de 1 px,
+// texto #1F1F1F em Roboto Medium 14/20, "G" colorido de 20 px com 12 px de margem à esquerda e 10 px até o texto.
+const roboto = Roboto({ weight: '500', subsets: ['latin'], display: 'swap' })
+const googleBtnCls =
+  'pc-btn w-full gap-[10px] border-[#747775] bg-white px-3 py-2.5 text-[14px] font-medium leading-5 text-[#1F1F1F] hover:bg-[#f2f2f2]'
 
 export function Spinner({ className = '' }: { className?: string }) {
   return (
@@ -183,15 +191,15 @@ function GoogleSubmit({ label }: { label: string }) {
       type="submit"
       disabled={pending}
       aria-busy={pending}
-      className="pc-btn pc-btn-secondary w-full gap-[9px] px-3.5 py-2.5"
+      className={googleBtnCls}
     >
-      {pending ? <Spinner /> : <GoogleLogo size={16} weight="bold" aria-hidden="true" />}
-      {pending ? 'Abrindo o Google…' : label}
+      {pending ? <Spinner /> : <GoogleG size={20} />}
+      <span className={roboto.className}>{pending ? 'Abrindo o Google…' : label}</span>
     </button>
   )
 }
 
-// "Continuar com Google": ativo quando o servidor tem credenciais do Google; senão fica desabilitado com "Em breve".
+// "Continuar com o Google": ativo quando o servidor tem credenciais do Google; senão fica desabilitado com "Em breve".
 export function GoogleButton({ label, enabled = false, callbackUrl }: { label: string; enabled?: boolean; callbackUrl?: string }) {
   if (enabled) {
     return (
@@ -218,10 +226,10 @@ export function GoogleButton({ label, enabled = false, callbackUrl }: { label: s
         type="button"
         disabled
         aria-disabled="true"
-        className="pc-btn pc-btn-secondary w-full gap-[9px] px-3.5 py-2.5"
+        className={googleBtnCls}
       >
-        <GoogleLogo size={16} weight="bold" aria-hidden="true" />
-        {label}
+        <GoogleG size={20} />
+        <span className={roboto.className}>{label}</span>
         <span className="rounded-full border border-light-divider bg-light-neutral-900 px-2 py-0.5 text-[10px] text-light-neutral-500">
           Em breve
         </span>

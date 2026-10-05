@@ -56,7 +56,7 @@ export function LoginForm({
           {oauthError}
         </p>
       )}
-      <GoogleButton label="Continuar com Google" enabled={googleEnabled} callbackUrl={callbackUrl} />
+      <GoogleButton label="Continuar com o Google" enabled={googleEnabled} callbackUrl={callbackUrl} />
       <OrDivider />
       <form action={action} onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
       <div className="flex flex-col gap-3.5">

@@ -90,7 +90,7 @@ export function RegistroForm({ googleEnabled = false }: { googleEnabled?: boolea
       >
         Criar conta
       </AuthTitle>
-      <GoogleButton label="Criar com Google" enabled={googleEnabled} />
+      <GoogleButton label="Cadastrar-se com o Google" enabled={googleEnabled} />
       <OrDivider />
       <form action={action} onSubmit={onSubmit} noValidate className="flex flex-col gap-[18px]">
       <div className="flex flex-col gap-[13px]">

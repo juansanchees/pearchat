@@ -9,7 +9,6 @@ import {
   CalendarCheck,
   Check,
   CheckCircle,
-  GoogleLogo,
   MicrosoftOutlookLogo,
   Sparkle,
   UserPlus,
@@ -18,6 +17,7 @@ import {
 } from '@phosphor-icons/react'
 import type { Icon } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
+import { GoogleG } from '@/components/brand/google-g'
 import { Spinner, Tag } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import type { CalendarStateDto } from '@/server/calendar/types'
@@ -113,7 +113,7 @@ export function ConnectFlow({
             <ArrowLeft size={12} /> Voltar
           </button>
           <div className="flex items-center gap-2.5">
-            <GoogleLogo size={20} className="text-light-accent-300" />
+            <GoogleG size={20} />
             <h2 className="m-0 text-[18px] font-medium leading-[1.2] tracking-normal">Escolha uma conta</h2>
           </div>
           <div className="-mt-1.5 text-[12.5px] text-light-neutral-500">para continuar no PearChat</div>
@@ -140,7 +140,7 @@ export function ConnectFlow({
             <button
               type="button"
               onClick={() =>
-                toast({ icon: <GoogleLogo size={18} weight="fill" />, title: 'Outra conta', text: 'Abriria a janela de login do Google' })
+                toast({ icon: <GoogleG size={18} />, title: 'Outra conta', text: 'Abriria a janela de login do Google' })
               }
               className="flex cursor-pointer items-center gap-3 border-0 border-t border-solid border-light-divider bg-transparent px-3.5 py-[13px] text-left text-[13px] text-light-text hover:bg-light-accent-900"
             >
@@ -211,13 +211,27 @@ function Intro({ onGoogle, onClose }: { onGoogle: () => void; onClose?: () => vo
       </div>
       <div className="flex min-w-[260px] flex-[0_1_300px] flex-col gap-2.5">
         <div className="text-[12px] text-light-neutral-500">Escolha onde está sua agenda</div>
+        <p className="m-0 text-[11.5px] leading-[1.5] text-light-neutral-500 [text-wrap:pretty]">
+          Ao conectar o Google Agenda, o PearChat vê os seus compromissos para não marcar em cima de outro horário e cria, atualiza e remove
+          os agendamentos feitos nele. Não vendemos esses dados, não os usamos para publicidade nem para treinar IA, e a equipe do PearChat
+          não lê os seus eventos sem a sua autorização. Você pode desconectar quando quiser. Veja a{' '}
+          <a
+            href="/privacidade#google"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-light-accent-200 underline underline-offset-2 hover:text-light-accent-300"
+          >
+            Política de Privacidade
+          </a>
+          .
+        </p>
         <button
           type="button"
           onClick={onGoogle}
           className="flex cursor-pointer items-center gap-3 rounded-lg border border-solid border-light-accent-600 bg-light-accent-900 p-3.5 text-left text-light-text hover:border-light-accent-400"
         >
           <span className="grid h-[38px] w-[38px] flex-none place-items-center rounded-[10px] border border-solid border-light-divider bg-light-surface">
-            <GoogleLogo size={19} className="text-light-accent-300" />
+            <GoogleG size={20} />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[13.5px] font-medium leading-[1.25]">Google Agenda</span>
