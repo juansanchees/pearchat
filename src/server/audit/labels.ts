@@ -17,6 +17,10 @@ export type AuditAction =
   | 'subscription.created'
   | 'subscription.canceled'
   | 'subscription.reactivated'
+  | 'email.change_requested'
+  | 'email.changed'
+  | 'booking.link_capped'
+  | 'account.google_linked'
 
 export const AUDIT_LABEL: Record<AuditAction, string> = {
   'invite.created': 'convidou',
@@ -36,4 +40,8 @@ export const AUDIT_LABEL: Record<AuditAction, string> = {
   'subscription.created': 'contratou uma assinatura',
   'subscription.canceled': 'cancelou a assinatura',
   'subscription.reactivated': 'reativou a assinatura',
+  'email.change_requested': 'pediu a troca do e-mail de login',
+  'email.changed': 'trocou o e-mail de login',
+  'booking.link_capped': 'pausou o link de agendamento por excesso de uso',
+  'account.google_linked': 'vinculou o Google à conta',
 }

@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { apiSession, unauthorized } from '@/server/settings/http'
 import { MAX_ATTEMPTS, verifyEmailCode } from '@/server/mail/email-verification'
+import { BLOCKED_MESSAGE, consume } from '@/server/security/rate-limit'
+import { clientIpFromHeaders } from '@/server/security/hash'
+import { readJson, SMALL_LIMIT_BYTES } from '@/server/http/body'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -13,7 +16,8 @@ const bodySchema = z.object({ code: z.string().regex(/^\d{6}$/) })
 export async function POST(req: Request) {
   const s = await apiSession()
   if (!s) return unauthorized()
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null))
+  if ((await consume('emailVerify', { ip: clientIpFromHeaders(req.headers) })).blocked) return NextResponse.json({ error: BLOCKED_MESSAGE, code: 'rate_limited' }, { status: 429 })
+  const parsed = bodySchema.safeParse(await readJson(req, SMALL_LIMIT_BYTES))
   if (!parsed.success) return NextResponse.json({ error: 'Digite os 6 dígitos.', code: 'invalid' }, { status: 400 })
 
   const user = await db.user.findUnique({ where: { id: s.userId }, select: { id: true, email: true, nome: true, emailVerified: true } })

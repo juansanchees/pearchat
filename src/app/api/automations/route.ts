@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { auth } from '@/auth'
 import { db } from '@/lib/db'
 import { setDisparosAtivos } from '@/server/campaigns/service'
+import { readJson } from '@/server/http/body'
 
 const bodySchema = z.object({
   key: z.enum(['ia', 'disparos', 'followup']),
@@ -17,7 +18,7 @@ export async function PATCH(req: Request) {
   const workspaceId = session?.user?.workspaceId
   if (!workspaceId) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null))
+  const parsed = bodySchema.safeParse(await readJson(req))
   if (!parsed.success) return NextResponse.json({ error: 'Corpo inválido' }, { status: 400 })
   const { key, on } = parsed.data
 

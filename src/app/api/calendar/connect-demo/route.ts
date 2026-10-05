@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { denyUnless } from '@/server/auth/guard'
-import { badRequest, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { readJson } from '@/server/http/body'
 import {
   DEFAULT_LEMBRETES,
   apiError,

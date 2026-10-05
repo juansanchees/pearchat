@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { readJson } from '@/server/messages/api'
+import { readJson } from '@/server/http/body'
 import { resendSchema, teamActor, teamErrorResponse, teamNotFound, validTeamId } from '@/server/team/http'
 import { resendInvite } from '@/server/team/service'
 

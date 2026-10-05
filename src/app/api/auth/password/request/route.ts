@@ -5,6 +5,7 @@ import { sendMail } from '@/server/mail/send'
 import { passwordResetEmail } from '@/server/mail/templates'
 import { BLOCKED_MESSAGE, consume } from '@/server/security/rate-limit'
 import { RESET_TTL_MS, clientIp, hashToken, newToken, resetIdentifier } from '../_lib/shared'
+import { readJson, SMALL_LIMIT_BYTES } from '@/server/http/body'
 
 export const runtime = 'nodejs'
 
@@ -14,7 +15,7 @@ const bodySchema = z.object({ email: z.string().trim().toLowerCase().email() })
 const GENERIC = { ok: true }
 
 export async function POST(req: NextRequest) {
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null))
+  const parsed = bodySchema.safeParse(await readJson(req, SMALL_LIMIT_BYTES))
   if (!parsed.success) return NextResponse.json({ error: 'Digite um e-mail válido.' }, { status: 400 })
   const { email } = parsed.data
 

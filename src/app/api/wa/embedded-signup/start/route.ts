@@ -3,6 +3,7 @@ import { denyUnless } from '@/server/auth/guard'
 import { getApiSession } from '@/server/whatsapp/auth'
 import { connectConfig, hostedSignupUrl } from '@/server/whatsapp/config'
 import { assertOficialAllowed, ConnectError, createSignupState } from '@/server/whatsapp/meta-connect'
+import { readTextLimited, SMALL_LIMIT_BYTES } from '@/server/http/body'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
   // Corpo opcional: { mode: 'sdk' | 'hosted' } (a tela pede 'hosted' quando o SDK do Facebook não carrega).
   let mode: 'sdk' | 'hosted' | undefined
-  const raw = await req.text().catch(() => '')
+  const raw = await readTextLimited(req, SMALL_LIMIT_BYTES).catch(() => '')
   if (raw.trim()) {
     let body: unknown
     try { body = JSON.parse(raw) } catch { return NextResponse.json({ error: 'Corpo inválido' }, { status: 400 }) }

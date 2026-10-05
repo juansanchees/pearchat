@@ -4,7 +4,8 @@ import { z } from 'zod'
 import { denyUnless } from '@/server/auth/guard'
 import { JANELA_PADRAO, requestPendingBatch } from '@/server/engine/pending'
 import { pendingFail } from '@/server/engine/pending-http'
-import { badRequest, readJson, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
+import { readJson } from '@/server/http/body'
 
 export const dynamic = 'force-dynamic'
 

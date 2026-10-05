@@ -6,6 +6,7 @@ import { exchangeEmbeddedSignupCode } from '@/server/whatsapp/cloud-api'
 import { connectConfig } from '@/server/whatsapp/config'
 import { isGraphError } from '@/server/whatsapp/graph'
 import { assertOficialAllowed, completeConnection, ConnectError, consumeSignupState } from '@/server/whatsapp/meta-connect'
+import { readJson } from '@/server/http/body'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   const deny = await denyUnless('wa.manage'); if (deny) return deny
   const session = await getApiSession()
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null))
+  const parsed = bodySchema.safeParse(await readJson(req))
   if (!parsed.success) return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
   const { state, code, phoneNumberId, wabaId, businessId, event } = parsed.data
   const { workspaceId, userId } = session

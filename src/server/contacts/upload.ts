@@ -1,3 +1,4 @@
+import { BodyTooLargeError, readBytesLimited } from '@/server/http/body'
 import { MAX_IMPORT_BYTES } from './import-parse'
 
 export type BodyResult = { ok: true; text: string } | { ok: false; status: 400 | 413; message: string }
@@ -13,11 +14,16 @@ export function decodeCsvBytes(buf: ArrayBuffer): string {
   }
 }
 
-async function fromMultipart(req: Request): Promise<BodyResult> {
+/** Corpo lido em streaming com teto (o multipart carrega alguns bytes de cabeçalho além do arquivo). */
+const MULTIPART_SLACK = 64 * 1024
+
+async function fromMultipart(req: Request, contentType: string): Promise<BodyResult> {
   let form: FormData
   try {
-    form = await req.formData()
-  } catch {
+    const raw = await readBytesLimited(req, MAX_IMPORT_BYTES + MULTIPART_SLACK)
+    form = await new Response(raw as BodyInit, { headers: { 'content-type': contentType } }).formData()
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) return TOO_BIG
     return { ok: false, status: 400, message: 'Envio inválido' }
   }
   const file = form.get('file')
@@ -33,11 +39,16 @@ export async function readCsvBody(req: Request): Promise<BodyResult> {
   if (declared > MAX_IMPORT_BYTES + 64 * 1024) return TOO_BIG
 
   const type = req.headers.get('content-type') ?? ''
-  if (type.includes('multipart/form-data')) return fromMultipart(req)
+  if (type.includes('multipart/form-data')) return fromMultipart(req, type)
   if (!type.includes('text/csv') && !type.includes('text/plain')) {
     return { ok: false, status: 400, message: 'Envie um arquivo CSV (multipart) ou text/csv' }
   }
-  const buf = await req.arrayBuffer()
-  if (buf.byteLength > MAX_IMPORT_BYTES) return TOO_BIG
-  return { ok: true, text: decodeCsvBytes(buf) }
+  let bytes: Uint8Array
+  try {
+    bytes = await readBytesLimited(req, MAX_IMPORT_BYTES)
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) return TOO_BIG
+    return { ok: false, status: 400, message: 'Envio inválido' }
+  }
+  return { ok: true, text: decodeCsvBytes(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer) }
 }

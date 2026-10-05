@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { readJsonLimited } from '@/server/http/body'
+import { MSG_LINK_PAUSADO } from './caps'
 import { clientIp, hashIp, rateAllow } from './security'
 
 const NO_STORE = { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' }
@@ -11,7 +13,11 @@ export const linkIndisponivel = () => json({ error: 'NAO_ENCONTRADO', message: '
 export const MSG_GENERICA = 'Não foi possível concluir o agendamento agora. Tente novamente em instantes.'
 export const generico = (status = 400) => json({ error: 'INDISPONIVEL', message: MSG_GENERICA }, status)
 
-export const tooMany = () => json({ error: 'MUITAS_TENTATIVAS', message: 'Muitas tentativas. Tente novamente mais tarde.' }, 429)
+/** Teto por negócio estourado: indisponível por um tempo (o dono já foi avisado). */
+export const linkPausado = () =>
+  NextResponse.json({ error: 'INDISPONIVEL_NO_MOMENTO', message: MSG_LINK_PAUSADO }, { status: 503, headers: { ...NO_STORE, 'Retry-After': '1800' } })
+
+export const tooMany =() => json({ error: 'MUITAS_TENTATIVAS', message: 'Muitas tentativas. Tente novamente mais tarde.' }, 429)
 
 /** Limite em memória por IP e rota (protege o banco; independente dos limites de negócio). */
 export function throttled(req: Request, bucket: string, max: number, windowMs: number): boolean {
@@ -21,13 +27,6 @@ export function throttled(req: Request, bucket: string, max: number, windowMs: n
 
 /** Corpo JSON com limite de tamanho; null se grande demais ou inválido. */
 export async function readSmallJson(req: Request, maxBytes = 4096): Promise<{ ok: true; body: unknown } | { ok: false; status: number }> {
-  const len = Number(req.headers.get('content-length') ?? '0')
-  if (len > maxBytes) return { ok: false, status: 413 }
-  const text = await req.text()
-  if (Buffer.byteLength(text) > maxBytes) return { ok: false, status: 413 }
-  try {
-    return { ok: true, body: JSON.parse(text) as unknown }
-  } catch {
-    return { ok: false, status: 400 }
-  }
+  const r = await readJsonLimited(req, maxBytes) // streaming: corpo chunked também respeita o teto
+  return r.ok ? { ok: true, body: r.body } : { ok: false, status: r.status }
 }
