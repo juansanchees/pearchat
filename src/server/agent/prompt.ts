@@ -145,11 +145,45 @@ const FLUXO_COM_CONFIRMACAO =
   '- FLUXO PARA CRIAR (padrão: com confirmação): (1) consulte os horários e ofereça 2 ou 3; (2) quando o cliente escolher ou concordar com um horário, NÃO crie ainda: pergunte em uma linha se pode confirmar, com o dia e a hora (e o serviço, se houver mais de um). Ex. (escreva no idioma da resposta): "Posso confirmar amanhã às 16h?" / "Posso confirmar Corte na terça, 06/10, às 15h?"; (3) SÓ depois de o cliente responder que sim a essa pergunta, chame criar_agendamento. Nunca crie na mesma resposta em que o cliente escolheu o horário. EXCEÇÃO: se as Instruções do dono do negócio disserem claramente para marcar direto, sem pedir confirmação (em qualquer redação), pule o passo (2): quando o cliente escolher um horário que você ofereceu, crie e avise. Esta é a única regra de agendamento que as instruções do dono podem mudar.'
 /** Fluxo de criação SEM confirmação (interruptor "Pedir confirmação antes de marcar" desligado pelo dono). */
 const FLUXO_SEM_CONFIRMACAO =
-  '- FLUXO PARA CRIAR (o dono desligou a confirmação): (1) consulte os horários e ofereça 2 ou 3; (2) quando o cliente escolher um horário que você ofereceu, chame criar_agendamento na mesma hora, sem perguntar "posso confirmar?", e avise em uma linha. Na escolha vaga, marque o primeiro horário oferecido dentro do período pedido e diga qual marcou.'
+  '- FLUXO PARA CRIAR (o dono dispensou a confirmação):(1) consulte os horários e ofereça 2 ou 3; (2) quando o cliente escolher um horário que você ofereceu, chame criar_agendamento na mesma hora, sem perguntar "posso confirmar?", e avise em uma linha. Na escolha vaga, marque o primeiro horário oferecido dentro do período pedido e diga qual marcou.'
+
+// As instruções do dono dispensam a confirmação ("pode marcar direto", "sem pedir confirmação", "sin confirmación",
+// "book right away")? O modelo pequeno não seguia a exceção escrita no prompt: com isto o fluxo sem confirmação entra
+// de fato. Negação antes da frase ("nunca marque sem confirmar") não conta.
+const SEM_CONFIRMACAO: { re: RegExp; negavel: boolean }[] = [
+  { re: /\b(?:marc|agend|reserv|confirm)\w* (?:direto|diretamente|na hora|de cara)\b/, negavel: true },
+  { re: /\bsem (?:pedir |perguntar |precisar de |precisar |esperar )?(?:a )?(?:confirmacao|confirmar)\b/, negavel: true },
+  { re: /\bnao (?:precisa|precisa de|e preciso|peca|pergunte|pedir|perguntar) (?:pedir |perguntar )?(?:a )?confirma\w*/, negavel: false },
+  { re: /\bdispens\w* (?:a )?confirma\w*/, negavel: true },
+  { re: /\bsin (?:pedir |preguntar |esperar )?(?:la )?confirma\w*/, negavel: true },
+  { re: /\b(?:agend|reserv|marc)\w* (?:directo|directamente|de una|enseguida)\b/, negavel: true },
+  { re: /\bno (?:hace falta|es necesario|pidas|preguntes) (?:pedir |preguntar )?(?:la )?confirma\w*/, negavel: false },
+  { re: /\bwithout (?:asking (?:for )?)?confirm\w*/, negavel: true },
+  { re: /\b(?:book|schedule)\w* (?:it )?(?:directly|right away|immediately|straight away)\b/, negavel: true },
+  { re: /\b(?:no need to|don'?t|do not) (?:ask (?:for )?)?confirm\w*/, negavel: false },
+]
+
+/** As instruções do dono pedem para marcar sem a pergunta de confirmação? */
+export function ownerSkipsBookingConfirmation(instrucoes: string): boolean {
+  const t = instrucoes
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[’`´]/g, "'")
+    .replace(/[^a-z0-9'\s.!?;]/g, ' ')
+    .replace(/\s+/g, ' ')
+  return SEM_CONFIRMACAO.some(({ re, negavel }) => {
+    const m = re.exec(t)
+    if (!m) return false
+    // Negação só vale dentro da mesma frase, até 3 palavras antes ("nunca marque sem confirmar").
+    const antes = (t.slice(Math.max(0, m.index - 40), m.index).split(/[.!?;]/).pop() ?? '').trim()
+    return !(negavel && /\b(?:nunca|nao|jamais|never|no|don't|dont|not)\b(?: \S+){0,3}$/.test(antes))
+  })
+}
 
 /** Regras de agendamento (só quando a IA tem as ferramentas de agenda). */
-function agendamentoRegras(a: NonNullable<BuildSystemPromptInput['agenda']>): string {
-  const confirmar = a.confirmar !== false
+function agendamentoRegras(a: NonNullable<BuildSystemPromptInput['agenda']>, instrucoes: string): string {
+  const confirmar = a.confirmar !== false && !ownerSkipsBookingConfirmation(instrucoes)
   const linhas = [
     'AGENDAMENTO (você tem ferramentas de agenda; elas agem somente na agenda do cliente desta conversa):',
     '- Ferramentas: listar_horarios_livres, criar_agendamento, consultar_agendamentos, remarcar_agendamento, cancelar_agendamento (e listar_servicos, que quase nunca precisa: a lista de serviços já está neste prompt).',
@@ -208,7 +242,7 @@ export function buildSystemPrompt({ empresa, agente, kb, handoffRules, servicos,
     )
   }
   partes.push(conduta(!!agenda))
-  if (agenda) partes.push(agendamentoRegras(agenda))
+  if (agenda) partes.push(agendamentoRegras(agenda, instrucoes))
   const extras: string[] = []
   if (midia?.audio) {
     extras.push('- Exceção para áudio: uma mensagem que começa com "[Áudio transcrito]" é a transcrição automática do que o cliente FALOU. Responda ao conteúdo normalmente, como se ele tivesse escrito aquilo (a transcrição pode ter pequenos erros; se algo não fizer sentido, peça para confirmar). Um "[Áudio]" sem transcrição você continua sem conseguir ouvir: peça que escreva.')

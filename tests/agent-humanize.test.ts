@@ -6,7 +6,7 @@ import { humanizeReply } from '../src/server/agent/humanize'
 import { FIXED } from '../src/server/agent/i18n'
 import { markUnknownMedia } from '../src/server/agent/llm'
 import { typingDelayMs } from '../src/server/agent/pace'
-import { buildSystemPrompt, HANDOFF_MARKER, HONESTIDADE_EXEMPLO } from '../src/server/agent/prompt'
+import { buildSystemPrompt, HANDOFF_MARKER, HONESTIDADE_EXEMPLO, ownerSkipsBookingConfirmation } from '../src/server/agent/prompt'
 import { promisesTeamAction } from '../src/server/agent/promises'
 
 const h = humanizeReply
@@ -226,6 +226,36 @@ describe('prompt', () => {
       assert.match(p, /Nunca ofereça horário que a ferramenta não devolveu/)
       assert.match(p, /Marcado: amanhã às 16h\./)
     }
+  })
+})
+
+describe('confirmação antes de marcar dispensada pelas instruções do dono', () => {
+  const sim = [
+    'Quando o cliente escolher um horário, pode marcar direto, sem pedir confirmação.',
+    'Não ofereça descontos. Pode marcar direto.',
+    'Não precisa pedir confirmação antes de agendar.',
+    'No hace falta pedir confirmación, agenda directo.',
+    'Book it right away when they pick a time.',
+  ]
+  const nao = [
+    '',
+    'Nunca marque sem confirmar com o cliente.',
+    'Antes de confirmar um pedido ou agendamento, confirme os detalhes com o cliente.',
+    'Never book without confirmation.',
+  ]
+  for (const t of sim) it(`dispensa: ${t}`, () => assert.equal(ownerSkipsBookingConfirmation(t), true))
+  for (const t of nao) it(`mantém: ${JSON.stringify(t)}`, () => assert.equal(ownerSkipsBookingConfirmation(t), false))
+  it('com a instrução escrita o prompt usa o fluxo sem confirmação, mesmo com o interruptor ligado', () => {
+    const p = buildSystemPrompt({
+      empresa: 'Studio X',
+      agente: { nome: 'Bia', tom: 'Amigável', prompt: 'Pode marcar direto, sem pedir confirmação.' },
+      kb: [],
+      handoffRules: [],
+      servicos: [{ nome: 'Corte', duracaoMin: 30 }],
+      agenda: { calendario: 'x', clienteNome: 'Ana', confirmar: true },
+    })
+    assert.match(p, /chame criar_agendamento na mesma hora/)
+    assert.match(p, /Remarcar ou cancelar \(SEMPRE com confirmação/)
   })
 })
 
