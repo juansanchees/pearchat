@@ -15,7 +15,7 @@ npx prisma db seed          # ou: npm run db:seed
 npm run dev
 ```
 
-Login de desenvolvimento (seed): `mariana@doceatelie.com.br` / `pearchat123`.
+Conta de demonstração (opcional, só em desenvolvimento): defina `SEED_DEMO_PASSWORD` (12+ caracteres, no seu `.env` local, nunca no repositório) antes de `npx prisma db seed`; sem a variável, o seed não cria a conta. O seed recusa rodar com `NODE_ENV=production` ou contra um banco que não seja local (a menos que `SEED_ALLOW_PRODUCTION=1` / `SEED_ALLOW_REMOTE=1`, de propósito). Para trocar a senha de uma conta existente: `scripts/rotate-demo-password.ts`.
 
 O app roda num **servidor Node custom** (`server.ts`): Next.js + Socket.io (path `/api/socket`) no mesmo processo.
 `npm run dev` executa `tsx watch server.ts`; em produção use `npm run build` e depois `npm start` (`tsx server.ts --prod`).

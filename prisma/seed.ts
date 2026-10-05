@@ -323,8 +323,35 @@ async function seedDrawers(workspaceId: string) {
   console.log(`Drawers de demonstração: ${kbCriados} resposta(s) criada(s); agente, follow-up e histórico garantidos.`)
 }
 
+/** Hosts de banco que contam como "máquina de desenvolvimento" (o seed nunca roda contra um banco remoto sem aviso). */
+const LOCAL_DB_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', 'postgres', 'db', 'host.docker.internal'])
+
+function assertSafeToSeed() {
+  if (process.env.NODE_ENV === 'production' && process.env.SEED_ALLOW_PRODUCTION !== '1') {
+    console.error('Recusado: NODE_ENV=production. O seed cria dados e uma conta de DEMONSTRAÇÃO; para forçar (nunca no banco de clientes), defina SEED_ALLOW_PRODUCTION=1.')
+    process.exit(1)
+  }
+  let host = ''
+  try {
+    host = new URL(process.env.DATABASE_URL ?? '').hostname.toLowerCase()
+  } catch {
+    // DATABASE_URL ausente/ilegível: o Prisma reclamará adiante.
+  }
+  if (host && !LOCAL_DB_HOSTS.has(host) && !host.endsWith('.localhost') && process.env.SEED_ALLOW_REMOTE !== '1') {
+    console.error('Recusado: DATABASE_URL não aponta para uma máquina local. Para semear um banco remoto de propósito (nunca o de produção), defina SEED_ALLOW_REMOTE=1.')
+    process.exit(1)
+  }
+}
+
 async function main() {
-  const email = 'mariana@doceatelie.com.br'
+  assertSafeToSeed()
+  // A senha da conta de demonstração NUNCA fica no repositório: vem do ambiente. Sem ela, a conta não é criada.
+  const demoPassword = process.env.SEED_DEMO_PASSWORD
+  if (!demoPassword || demoPassword.length < 12) {
+    console.warn('SEED_DEMO_PASSWORD ausente (ou com menos de 12 caracteres): a conta de demonstração NÃO foi criada. Defina a variável e rode o seed de novo.')
+    return
+  }
+  const email = (process.env.SEED_DEMO_EMAIL ?? 'mariana@doceatelie.com.br').trim().toLowerCase()
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) {
     console.log('Usuária do seed já existe; garantindo conversas de demonstração.')
@@ -336,7 +363,7 @@ async function main() {
     return
   }
 
-  const passwordHash = await bcrypt.hash('pearchat123', 10)
+  const passwordHash = await bcrypt.hash(demoPassword, 10)
   const workspace = await prisma.workspace.create({
     data: {
       nome: 'Doce Ateliê',
@@ -400,7 +427,7 @@ async function main() {
   await seedEvents(workspace.id)
   await seedServiceTypes(workspace.id)
   await seedDrawers(workspace.id)
-  console.log(`Seed criado: workspace ${workspace.id} (Doce Ateliê), login ${email} / pearchat123`)
+  console.log(`Seed criado: workspace ${workspace.id} (Doce Ateliê), login ${email} (senha: a de SEED_DEMO_PASSWORD)`)
 }
 
 main()
