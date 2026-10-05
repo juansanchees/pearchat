@@ -8,6 +8,7 @@
     "start": "tsx server.ts --prod",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "check:build-sem-env": "node scripts/check-build-sem-env.mjs",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",

@@ -136,7 +136,9 @@ export const HOUR = HOUR_MS
 export const DAY = DAY_MS
 
 const capKey = (name: string, key: string) => hmac(`cap:${name}`, key)
-const CAP_SLOT = hmac('cap-slot', 'x')
+// Preguiçoso: hmac() exige o AUTH_SECRET, que não existe durante o `next build` (o import do módulo não pode lançar).
+let capSlot: string | undefined
+const capSlotKey = (): string => (capSlot ??= hmac('cap-slot', 'x'))
 
 /**
  * Registra um uso em TODOS os tetos informados e bloqueia se algum passar do máximo (o uso bloqueado não é gravado).
@@ -146,16 +148,16 @@ export async function hitCaps(caps: Cap[], now: number = Date.now()): Promise<Ca
   maybeCleanup(now)
   const keys = caps.map((c) => capKey(c.name, c.key))
   const rows = await db.loginAttempt.createManyAndReturn({
-    data: keys.map((emailHash) => ({ emailHash, ipHash: CAP_SLOT, sucesso: false, createdAt: new Date(now) })),
+    data: keys.map((emailHash) => ({ emailHash, ipHash: capSlotKey(), sucesso: false, createdAt: new Date(now) })),
     select: { id: true },
   })
   const win = (c: Cap) => Math.min(c.windowMs, DAY_MS)
   const counts = await Promise.all(
-    caps.map((c, i) => db.loginAttempt.count({ where: { emailHash: keys[i], ipHash: CAP_SLOT, sucesso: false, createdAt: { gt: new Date(now - win(c)) } } })),
+    caps.map((c, i) => db.loginAttempt.count({ where: { emailHash: keys[i], ipHash: capSlotKey(), sucesso: false, createdAt: { gt: new Date(now - win(c)) } } })),
   )
   const over = caps.map((c, i) => ({ c, n: counts[i], i })).filter((x) => x.n > x.c.max)
   if (over.length === 0) return { blocked: false }
   await db.loginAttempt.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } }).catch(() => undefined)
-  const waits = await Promise.all(over.map((x) => retryAfterFor({ emailHash: keys[x.i], ipHash: CAP_SLOT }, x.c.max, win(x.c), now)))
+  const waits = await Promise.all(over.map((x) => retryAfterFor({ emailHash: keys[x.i], ipHash: capSlotKey() }, x.c.max, win(x.c), now)))
   return { blocked: true, retryAfter: Math.max(1, ...waits.filter((w): w is number => w !== null)), cap: over[0].c.name }
 }
