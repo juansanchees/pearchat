@@ -17,7 +17,7 @@ export const generico = (status = 400) => json({ error: 'INDISPONIVEL', message:
 export const linkPausado = () =>
   NextResponse.json({ error: 'INDISPONIVEL_NO_MOMENTO', message: MSG_LINK_PAUSADO }, { status: 503, headers: { ...NO_STORE, 'Retry-After': '1800' } })
 
-export const tooMany =() => json({ error: 'MUITAS_TENTATIVAS', message: 'Muitas tentativas. Tente novamente mais tarde.' }, 429)
+export const tooMany = () => json({ error: 'MUITAS_TENTATIVAS', message: 'Muitas tentativas. Tente novamente mais tarde.' }, 429)
 
 /** Limite em memória por IP e rota (protege o banco; independente dos limites de negócio). */
 export function throttled(req: Request, bucket: string, max: number, windowMs: number): boolean {

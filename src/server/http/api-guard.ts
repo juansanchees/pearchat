@@ -4,15 +4,17 @@
 //     de outro site, ou Sec-Fetch-Site: cross-site, é recusada.
 //  2. Corpo grande já declarado: 413 antes de a rota ler qualquer coisa (o corpo "chunked" é cortado na leitura, em body.ts).
 
+import { JSON_LIMIT_BYTES } from './body'
+
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 const MB = 1024 * 1024
-/** Limite de corpo por rota (bytes). Padrão 1 MB: todas as rotas JSON do app são bem menores. */
+/** Limite de corpo por rota (bytes). Padrão = o de readJson/parseBody (256 KB): é o maior JSON legítimo do app. */
 export function bodyLimitFor(pathname: string): number {
   if (/^\/api\/conversations\/[^/]+\/media$/.test(pathname)) return 17 * MB // arquivo de até 16 MB + multipart
   if (pathname === '/api/contacts/import') return 9 * MB // CSV de até 8 MB
   if (pathname === '/api/me/avatar' || /^\/api\/spaces\/[^/]+\/logo$/.test(pathname)) return 3 * MB // imagem de até 2 MB
-  return MB
+  return JSON_LIMIT_BYTES
 }
 
 type Req = { method: string; headers: { get(name: string): string | null }; nextUrl: { pathname: string } }

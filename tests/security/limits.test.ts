@@ -65,8 +65,8 @@ describe('corpo com limite de tamanho (item 7)', () => {
     assert.equal(hasBadText({ a: ['\uD800'] }), true)
   })
 
-  it('limites por rota no middleware: padrão 1 MB, uploads maiores só onde precisa', () => {
-    assert.equal(bodyLimitFor('/api/settings'), 1024 * 1024)
+  it('limites por rota no middleware: padrão 256 KB (o de readJson), uploads maiores só onde precisa', () => {
+    assert.equal(bodyLimitFor('/api/settings'), 256 * 1024)
     assert.ok(bodyLimitFor('/api/conversations/abc/media') > 16 * 1024 * 1024)
     assert.ok(bodyLimitFor('/api/contacts/import') > 8 * 1024 * 1024)
     assert.ok(bodyLimitFor('/api/me/avatar') < 4 * 1024 * 1024)

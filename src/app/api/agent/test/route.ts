@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server'
 import { denyUnless } from '@/server/auth/guard'
 import { db } from '@/lib/db'
 import { LlmError } from '@/server/agent/llm'
-import { AGENT_TEST_BODY_LIMIT, AGENT_TEST_PER_ORG_DAY, AGENT_TEST_PER_USER_HOUR } from '@/server/agent/limits'
+import { AGENT_TEST_BODY_LIMIT, hitAgentTestCaps } from '@/server/agent/limits'
 import { agentTestSchema, testAgent } from '@/server/agent/service'
-import { DAY, HOUR, hitCaps } from '@/server/security/rate-limit'
 import { apiSession, fail, parseBody, unauthorized } from '@/server/settings/http'
 
 export const dynamic = 'force-dynamic'
@@ -18,10 +17,7 @@ export async function POST(req: Request) {
   const body = await parseBody(req, agentTestSchema, AGENT_TEST_BODY_LIMIT)
   if ('error' in body) return body.error
 
-  const cap = await hitCaps([
-    { name: 'agent-test-user-hour', key: s.userId, max: AGENT_TEST_PER_USER_HOUR, windowMs: HOUR },
-    { name: 'agent-test-org-day', key: s.organizationId ?? s.workspaceId, max: AGENT_TEST_PER_ORG_DAY, windowMs: DAY },
-  ])
+  const cap = await hitAgentTestCaps(s.userId, s.organizationId ?? s.workspaceId)
   if (cap.blocked) {
     const res = fail('Você já fez muitos testes do agente por agora. Tente de novo mais tarde.', 429)
     res.headers.set('Retry-After', String(cap.retryAfter))
