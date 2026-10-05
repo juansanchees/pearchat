@@ -69,10 +69,17 @@ export async function createBiz(o: BizOpts = {}) {
   return { workspaceId: ws.id, instance: instanceNameFor(ws.id) }
 }
 
-/** Apaga os negócios criados por este processo (cascata: conversas, mensagens, jobs). */
+/**
+ * Apaga os negócios criados por este processo (cascata: conversas, mensagens, jobs). Nunca lança: com o banco fora,
+ * o `after` ainda precisa fechar os servidores falsos (senão o processo de teste não termina).
+ */
 export async function cleanupBiz(): Promise<void> {
-  if (created.length) await db.workspace.deleteMany({ where: { id: { in: created } } })
-  created.length = 0
+  try {
+    if (created.length) await db.workspace.deleteMany({ where: { id: { in: created } } })
+    created.length = 0
+  } catch (e) {
+    console.error(`[teste] limpeza dos negócios de teste falhou (${e instanceof Error ? e.message.trim().slice(-160) : 'erro'})`)
+  }
 }
 
 export async function convOf(workspaceId: string, phone: string) {
