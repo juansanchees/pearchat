@@ -182,7 +182,7 @@ describe('M2: teto por NEGÓCIO no link público de agendamento', () => {
     await avisarTeto(s.acc.workspaceId, 'mensagens')
     await avisarTeto(s.acc.workspaceId, 'agendamentos')
     assert.equal(await db.auditLog.count({ where: { organizationId: s.acc.organizationId, acao: 'booking.link_capped' } }), 1)
-    await avisarTeto('inexistente-' + randomIp())
+    await avisarTeto('inexistente-' + randomIp(), 'mensagens')
   })
 })
 
