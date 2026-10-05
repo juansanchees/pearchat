@@ -35,6 +35,12 @@ suiteNoDb('B7: erro de infraestrutura na releitura da sessão = 503 (sessão man
       ['PUT', '/api/settings', JSON.stringify({ nome: 'Invasor', email: u.email, empresa: 'X', horarioAtendimento: 'x', notifs: [] })],
       ['POST', '/api/agent/test', JSON.stringify({ mensagem: 'oi' })],
       ['POST', '/api/wa/disconnect', undefined],
+      // Sininho: sem sessão utilizável por falha do banco = 503 (o cliente tenta de novo no próximo ciclo), nunca 401 (que levaria ao login)
+      ['POST', '/api/notifications/sync', JSON.stringify({ visivel: true })],
+      ['POST', '/api/notifications/heartbeat', undefined],
+      ['GET', '/api/notifications', undefined],
+      ['POST', '/api/notifications/read', JSON.stringify({})],
+      ['DELETE', '/api/notifications', undefined],
     ] as const) {
       const r = await fetch(`${NODB}${path}`, { method, headers: json, body })
       assert.equal(r.status, 503, `${method} ${path}`)

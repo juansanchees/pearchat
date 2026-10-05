@@ -11,7 +11,7 @@ import { primaryLogin, secondFactorLogin } from '../src/server/security/login'
 import { beginSetup, confirmSetup, disableMfa, regenerateRecovery, readChallenge } from '../src/server/security/mfa'
 
 const schema = new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.get('schema')
-assert.equal(schema, 'pearchat_test_e', 'rode apenas no schema de teste')
+assert.match(schema ?? '', /^pearchat_test_/, 'rode apenas em um schema de teste')
 
 const uniq = () => randomBytes(5).toString('hex')
 const created: string[] = []

@@ -1,4 +1,4 @@
-// Testes HTTP contra o servidor de TESTE em http://localhost:3032 (schema pearchat_test_e). Uso: tsx --test tests/http.test.ts
+// Testes HTTP contra um servidor de TESTE (TEST_BASE; padrão http://localhost:3032) com banco em um schema pearchat_test_*. Uso: tsx --test tests/http.test.ts
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { randomBytes } from 'node:crypto'
@@ -9,7 +9,7 @@ import { beginSetup, confirmSetup } from '../src/server/security/mfa'
 import { primaryLogin } from '../src/server/security/login'
 
 const BASE = process.env.TEST_BASE ?? 'http://localhost:3032'
-assert.equal(new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.get('schema'), 'pearchat_test_e')
+assert.match(new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.get('schema') ?? '', /^pearchat_test_/, 'use um schema de teste')
 
 const uniq = () => randomBytes(5).toString('hex')
 const created: string[] = []
@@ -56,7 +56,9 @@ describe('página inicial e arquivos públicos', () => {
     const res = await fetch(`${BASE}/`, { redirect: 'manual' })
     assert.equal(res.status, 200)
     const html = await res.text()
-    assert.match(html, /Seu WhatsApp atendendo, agendando e vendendo por você/)
+    // O título da landing (h1) quebra a linha com <br> e destaca "por você." num <span>: compara só o texto.
+    const h1 = (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+    assert.equal(h1, 'Seu WhatsApp trabalhando por você.')
     assert.match(html, /A cobrança ainda não está ativa/)
     assert.match(html, /INFODREAMZ NEGOCIOS DIGITAIS LTDA/)
     assert.match(html, /application\/ld\+json/)

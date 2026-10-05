@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { PrismaClient } from '@prisma/client'
 
-assert.equal(new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.get('schema'), 'pearchat_test_e', 'rode pelo lançador do schema pearchat_test_e')
+assert.match(new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.get('schema') ?? '', /^pearchat_test_/, 'rode pelo lançador de um schema pearchat_test_*')
 
 export const queries: string[] = []
 export const counted = new PrismaClient({ log: [{ emit: 'event', level: 'query' }, 'error'] })

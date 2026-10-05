@@ -67,6 +67,26 @@ describe('rotas /api/notifications', () => {
     assert.equal((await call(dono, '/api/notifications/sync', { method: 'POST', body: '{nao json', headers: { 'content-type': 'application/json' } })).status, 400)
   })
 
+  it('convenções da onda 1A: Origin de outro site = 403 (sem Origin e com a própria origem passam); corpo de 300 KB = 413 no middleware', async () => {
+    const w = await makeWorld()
+    const dono = await login(w.owner.email)
+    const rotas = [['POST', '/api/notifications/sync', { visivel: true }], ['POST', '/api/notifications/heartbeat', undefined], ['POST', '/api/notifications/read', {}], ['DELETE', '/api/notifications/abc', undefined], ['DELETE', '/api/notifications', undefined]] as const
+    for (const [method, path, json] of rotas) {
+      const fora = await call(dono, path, { method, json, headers: { origin: 'https://site-malicioso.example' } })
+      assert.equal(fora.status, 403, `${method} ${path} com Origin de outro site`)
+      const cross = await call(dono, path, { method, json, headers: { 'sec-fetch-site': 'cross-site' } })
+      assert.equal(cross.status, 403, `${method} ${path} com Sec-Fetch-Site cross-site e sem Origin`)
+    }
+    // A própria origem (o que o navegador manda) e sem Origin (cliente que não é navegador) seguem normalmente
+    assert.equal((await call(dono, '/api/notifications/sync', { method: 'POST', json: { visivel: false }, headers: { origin: new URL(BASE).origin } })).status, 200)
+    assert.equal((await call(dono, '/api/notifications/heartbeat', { method: 'POST', headers: { origin: new URL(BASE).origin } })).status, 200)
+    // Leitura (GET) nunca depende da Origin
+    assert.equal((await call(dono, '/api/notifications', { headers: { origin: 'https://site-malicioso.example' } })).status, 200)
+    // 300 KB declarados: o middleware responde 413 antes da rota; 5 KB: a rota (teto de 4 KB) responde 413
+    assert.equal((await call(dono, '/api/notifications/sync', { method: 'POST', json: { visivel: true, lixo: 'x'.repeat(300 * 1024) } })).status, 413)
+    assert.equal((await call(dono, '/api/notifications/sync', { method: 'POST', json: { visivel: true, lixo: 'x'.repeat(5000) } })).status, 413)
+  })
+
   it('espaço e usuário SEMPRE da sessão: ?workspaceId= é ignorado; ids alheias dão 404', async () => {
     const w = await makeWorld()
     const agora = Date.now()

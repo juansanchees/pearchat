@@ -62,6 +62,7 @@ export function useNotifications(onAusente: (a: Ausente) => void) {
     emVoo.current = true
     ultima.current = agora
     const epocaInicial = epoca.current
+    let instavel = false
     try {
       const res = await fetch('/api/notifications/sync', {
         method: 'POST',
@@ -72,6 +73,13 @@ export function useNotifications(onAusente: (a: Ausente) => void) {
       redirectIfUnauthorized(res.status)
       if (res.status === 429) {
         pausadoAte.current = Date.now() + (Number(res.headers.get('Retry-After')) || 30) * 1000
+        return
+      }
+      if (res.status === 503) {
+        // Banco instável (o servidor não conseguiu conferir a sessão agora): a sessão segue valendo. Nada de logout nem de aviso:
+        // mantém o que já está na tela e tenta de novo no próximo ciclo (intervalo, foco ou tempo real).
+        instavel = true
+        pausadoAte.current = Date.now() + (Number(res.headers.get('Retry-After')) || 3) * 1000
         return
       }
       if (!res.ok) throw new Error(String(res.status))
@@ -86,7 +94,7 @@ export function useNotifications(onAusente: (a: Ausente) => void) {
       setFalhou(true)
     } finally {
       emVoo.current = false
-      setCarregado(true)
+      if (!instavel) setCarregado(true)
     }
   }, [])
 

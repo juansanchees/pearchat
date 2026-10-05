@@ -2,13 +2,16 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { auth } from '@/auth'
+import { unauthorizedResponse } from '@/server/auth/availability'
 import { normalizePapel } from '@/server/auth/permissions'
+import { BodyTooLargeError, hasBadText, readTextLimited } from '@/server/http/body'
 import type { Contexto } from './sources'
 import { TELAS } from './types'
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,64}$/
 
-export const unauthorized = () => NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+/** 401 sem sessão válida; 503 + Retry-After se o banco não deixou conferir a sessão agora (a sessão NÃO é inválida: o cliente tenta de novo). */
+export const unauthorized = unauthorizedResponse
 export const notFound = () => NextResponse.json({ error: 'Notificação não encontrada' }, { status: 404 })
 export const badRequest = (message = 'Pedido inválido') => NextResponse.json({ error: message }, { status: 400 })
 
@@ -56,16 +59,20 @@ export const tooMany = (retry: number) => json({ error: 'Muitas chamadas. Tente 
 
 const MAX_BODY = 4096
 
-/** Corpo JSON pequeno e com content-type JSON (um formulário de outro site não consegue enviar isso). */
+/** Corpo JSON pequeno e com content-type JSON (um formulário de outro site não consegue enviar isso). Leitura com limite: helper único (src/server/http/body.ts). */
 export async function lerCorpo(req: Request, vazioOk = false): Promise<{ ok: true; valor: unknown } | { ok: false; res: NextResponse }> {
-  const len = Number(req.headers.get('content-length') ?? 0)
-  if (len > MAX_BODY) return { ok: false, res: json({ error: 'Pedido grande demais' }, { status: 413 }) }
-  const texto = await req.text().catch(() => '')
-  if (texto.length > MAX_BODY) return { ok: false, res: json({ error: 'Pedido grande demais' }, { status: 413 }) }
+  let texto: string
+  try {
+    texto = await readTextLimited(req, MAX_BODY)
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) return { ok: false, res: json({ error: 'Pedido grande demais' }, { status: 413 }) }
+    return { ok: false, res: badRequest() }
+  }
   if (!texto.trim()) return vazioOk ? { ok: true, valor: {} } : { ok: false, res: badRequest() }
   if (!(req.headers.get('content-type') ?? '').toLowerCase().includes('application/json')) return { ok: false, res: json({ error: 'Content-Type deve ser application/json' }, { status: 415 }) }
   try {
-    return { ok: true, valor: JSON.parse(texto) as unknown }
+    const valor = JSON.parse(texto) as unknown
+    return hasBadText(valor) ? { ok: false, res: badRequest() } : { ok: true, valor }
   } catch {
     return { ok: false, res: badRequest() }
   }
