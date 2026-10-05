@@ -42,9 +42,32 @@ const PATTERNS: Pattern[] = [
   { re: /\b(?:i'll|i will|we'll|we will) (?:send|email|text)\b/, envio: true },
   { re: /\b(?:i've|i have|we've|we have) (?:forwarded|passed|escalated|submitted|opened|reported|requested)\b/ },
   { re: /\byou(?:'ll| will) hear (?:back|from)\b/ },
+  // "estou passando / te paso con / I'm passing": dizer que já está passando também exige a passagem de fato.
+  { re: /\b(?:estou|to|tou|ja estou) (?:passando|encaminhando|transferindo|repassando)\b/ },
+  { re: /\b(?:estoy|ya estoy) (?:pasando|derivando|transfiriendo|escalando)\b|\bte (?:paso|comunico|transfiero) con\b/ },
+  { re: /\b(?:i'm|i am|we're|we are) (?:passing|handing|transferring|forwarding|escalating|connecting)\b/ },
 ]
 
-const CONDITIONAL = /^(?:se (?:preferir|quiser)|caso (?:prefira|queira)|si (?:prefieres|quieres|lo prefieres|prefiere|quiere)|if you(?:'d)? (?:prefer|like|want|would like))\b/
+// Pedido de um dado ao cliente (e-mail, número do pedido, nome...): enquanto a IA ainda pede, não é hora de passar.
+const DATA_ITEM = '(?:e ?mail|correo|numero|nombre|nome|cpf|pedido|order|comprovante|comprobante|receipt|telefone|codigo)'
+const DATA_REQUEST: RegExp[] = [
+  new RegExp(`\\b(?:me )?(?:passa|passe|manda|mande|envia|envie|informa|informe|diz|diga|fala|confirma|confirme)\\b.{0,30}\\b${DATA_ITEM}\\b`),
+  new RegExp(`\\bpreciso (?:do|da|de) (?:seu |sua )?${DATA_ITEM}\\b|\\bqual (?:e )?(?:o )?(?:seu |sua )?${DATA_ITEM}\\b`),
+  new RegExp(`\\b(?:me )?(?:pasas|pasa|pasame|envias|enviame|indicas|indica|indicame|confirmas|confirma|confirmame|dices|dime|compartes|comparte|podrias|podria)\\b.{0,30}\\b${DATA_ITEM}\\b`),
+  new RegExp(`\\bnecesito (?:tu|su|el) ${DATA_ITEM}\\b`),
+  new RegExp(`\\b(?:send|give|share|tell|confirm)\\b.{0,20}\\b${DATA_ITEM}\\b|\\b(?:i'll |i will |i )?need (?:the|your) ${DATA_ITEM}\\b|\\bwhat(?:'s| is) (?:the|your) ${DATA_ITEM}\\b`),
+]
+
+/** A resposta pede um dado ao cliente? */
+export function requestsData(text: string): boolean {
+  const t = norm(text).replace(/-/g, ' ')
+  return DATA_REQUEST.some((re) => re.test(t))
+}
+
+const COND = "(?:se (?:voce |vc )?(?:preferir|quiser)|caso (?:voce )?(?:prefira|queira)|si (?:tu |usted )?(?:prefieres|quieres|lo prefieres|prefiere|quiere|lo deseas|deseas)|if you(?:'d)? (?:prefer|like|want|would like))\\b"
+const CONDITIONAL = new RegExp(`^${COND}`)
+/** Oferta condicional em qualquer ponto da frase ("Sou o assistente virtual; se preferir, chamo alguém"). */
+const CONDITIONAL_ANY = new RegExp(`(?:^|[,;:] )${COND}`)
 const HAS_URL = /(?:https?:\/\/|www\.)\S+/i
 
 function norm(s: string): string {
@@ -57,13 +80,20 @@ function norm(s: string): string {
     .replace(/[ \t]+/g, ' ')
 }
 
-/** A resposta promete uma ação da equipe (ou da própria IA) que exigiria alguém ser avisado? */
-export function promisesTeamAction(text: string): boolean {
-  const sentences = norm(text)
+const sentencesOf = (text: string): string[] =>
+  norm(text)
     .split(/(?<=[.!?…])\s+|\n+/)
     .map((s) => s.trim())
     .filter(Boolean)
-  for (const s of sentences) {
+
+/** Alguma frase é uma oferta condicional ("se preferir, chamo alguém da equipe")? */
+export function hasConditionalOffer(text: string): boolean {
+  return sentencesOf(text).some((s) => CONDITIONAL_ANY.test(s))
+}
+
+/** A resposta promete uma ação da equipe (ou da própria IA) que exigiria alguém ser avisado? */
+export function promisesTeamAction(text: string): boolean {
+  for (const s of sentencesOf(text)) {
     if (CONDITIONAL.test(s)) continue
     const url = HAS_URL.test(s)
     if (PATTERNS.some((p) => (!p.envio || !url) && p.re.test(s))) return true

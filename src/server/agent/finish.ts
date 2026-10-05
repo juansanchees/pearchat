@@ -6,7 +6,7 @@ import { humanizeReply } from './humanize'
 import type { ChatMessage } from './llm'
 import { typingPause } from './pace'
 import { HANDOFF_MARKER } from './prompt'
-import { promisesTeamAction } from './promises'
+import { hasConditionalOffer, promisesTeamAction, requestsData } from './promises'
 
 // Acabamento da resposta do modelo, comum ao motor (ai-reply.ts) e ao "Testar o agente" (service.ts):
 // 1) estilo (humanize.ts); 2) passagem para uma pessoa: pelo marcador, com a frase que o próprio modelo escreveu,
@@ -47,11 +47,19 @@ export function finishReply(raw: string, ctx: FinishContext): FinishedReply {
     agentName: ctx.agentName,
     clienteTexto: lastCustomerText(ctx.history),
   }
+  let base = raw
   if (raw.includes(HANDOFF_MARKER)) {
-    const sem = raw.split(HANDOFF_MARKER).join(' ').trim()
-    return { kind: 'handoff', motivo: MOTIVO_MODELO, note: HANDOFF_MODEL_NOTE, message: sem ? safeHandoffText(humanizeReply(sem, opts)) : null }
+    const sem = humanizeReply(raw.split(HANDOFF_MARKER).join(' ').trim(), opts)
+    // Marcador fora de hora: a resposta ainda pede um dado ao cliente (termina em pergunta) ou só OFERECE uma pessoa
+    // ("se preferir, chamo alguém"), sem dizer que passou. Aí não é passagem: vale como resposta normal (e a checagem de
+    // promessa abaixo ainda força a passagem se o texto prometer algo da equipe).
+    const pedeDado = /[?？]\s*$/.test(sem) || requestsData(sem)
+    if (!sem || !((pedeDado || hasConditionalOffer(sem)) && !promisesTeamAction(sem))) {
+      return { kind: 'handoff', motivo: MOTIVO_MODELO, note: HANDOFF_MODEL_NOTE, message: sem ? safeHandoffText(sem) : null }
+    }
+    base = sem
   }
-  const texto = humanizeReply(raw, opts)
+  const texto = humanizeReply(base, opts)
   if (promisesTeamAction(texto)) return { kind: 'handoff', motivo: MOTIVO_PROMESSA, note: NOTE_PROMESSA, message: safeHandoffText(texto) }
   return { kind: 'reply', texto }
 }

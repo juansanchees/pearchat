@@ -87,6 +87,8 @@ describe('promisesTeamAction (promessa da equipe sem passagem)', () => {
     'Our team will look into it.',
     "I'll forward this to billing.",
     'Someone will contact you shortly.',
+    'Ya estoy pasando tu caso al equipo.',
+    "I'm passing this to the team now.",
     FIXED.pt.valorSeguro,
     FIXED.en.valorSeguro,
     FIXED.es.valorSeguro,
@@ -126,6 +128,22 @@ describe('finishReply (estilo + passagem)', () => {
   })
   it('sem promessa: resposta normal, só com acabamento', () => {
     assert.deepEqual(finishReply('**Listo.** El enlace es https://exemplo.com/acesso', ctx), { kind: 'reply', texto: 'Listo. El enlace es https://exemplo.com/acesso' })
+  })
+  it('marcador fora de hora (ainda pedindo um dado, ou só oferecendo uma pessoa) não passa', () => {
+    for (const t of [
+      'Sí, te ayudo con eso. ¿Me pasas el email con el que compraste?',
+      "I'm sorry this happened. I can request a refund for you, but I'll need the email you used to buy.",
+      'Sim, é um assistente virtual. Se você quiser, eu passo sua conversa para a equipe.',
+    ]) {
+      const r = finishReply(`${t} ${HANDOFF_MARKER}`, ctx)
+      assert.equal(r.kind, 'reply', t)
+      assert.ok(r.kind === 'reply' && !r.texto.includes(HANDOFF_MARKER))
+    }
+  })
+  it('marcador com promessa da equipe continua passando, mesmo com pergunta no fim', () => {
+    const r = finishReply(`Le paso tu caso al equipo para reenviarte el acceso. ¿Algo más? ${HANDOFF_MARKER}`, ctx)
+    assert.equal(r.kind, 'handoff')
+    assert.equal(finishReply(`I'm passing this to the team; they'll reply here. ${HANDOFF_MARKER}`, ctx).kind, 'handoff')
   })
   it('frase de passagem com valor em dinheiro não sai (usa o texto fixo)', () => {
     const r = finishReply(`O estorno de R$ 99,90 vai ser feito pela equipe. ${HANDOFF_MARKER}`, ctx)
