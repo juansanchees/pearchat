@@ -66,8 +66,8 @@ const secoes: LegalSection[] = [
           <li><strong>Hostinger:</strong> hospedagem do servidor da aplicação, no Brasil.</li>
           <li><strong>Meta / WhatsApp:</strong> transporte das mensagens pelo WhatsApp.</li>
           <li><strong>Evolution API:</strong> software de conexão com o WhatsApp, auto-hospedado por nós (não envia dados a terceiros além do WhatsApp).</li>
-          <li><strong>Provedor de IA (OpenAI; podemos usar também a Anthropic):</strong> o conteúdo da conversa e as instruções do agente são enviados ao provedor para gerar a resposta do agente de IA. Só ocorre quando o agente de IA está em uso.</li>
-          <li><strong>Google:</strong> Google Agenda, somente se você conectar a sua conta.</li>
+          <li><strong>Provedor de IA (OpenAI; podemos usar também a Anthropic):</strong> o conteúdo da conversa e as instruções do agente são enviados ao provedor para gerar a resposta do agente de IA. Só ocorre quando o agente de IA está em uso. Se você ligar “IA pode agendar”, o provedor também recebe os horários livres calculados a partir da sua agenda (por exemplo, 14:00 e 16:00), nunca títulos nem detalhes de eventos do Google.</li>
+          <li><strong>Google:</strong> Google Agenda, somente se você conectar a sua conta (detalhes na seção “Uso de dados do Google”).</li>
         </UL>
         <P>Também podemos divulgar dados quando exigido por lei ou ordem de autoridade competente.</P>
       </>
@@ -88,7 +88,7 @@ const secoes: LegalSection[] = [
     corpo: (
       <>
         <P>Mantemos os dados enquanto a conta estiver ativa e pelo tempo necessário para cumprir obrigações legais ou exercer direitos em processos. Ao encerrar a conta, os dados da empresa, contatos, conversas e agenda são excluídos, salvo o que a lei nos obrigue a guardar.</P>
-        <P>Você pode pedir a exclusão da conta e dos dados pelo e-mail <Mail />. Ao desconectar o Google Agenda, os acessos guardados são removidos.</P>
+        <P>Você pode pedir a exclusão da conta e dos dados pelo e-mail <Mail />. Ao desconectar o Google Agenda, o acesso é revogado no Google e os acessos guardados são removidos (veja “Uso de dados do Google”).</P>
       </>
     ),
   },
@@ -119,17 +119,47 @@ const secoes: LegalSection[] = [
     titulo: 'Uso de dados do Google',
     corpo: (
       <>
-        <P>Se você entrar com o Google, o PearChat recebe o nome, o e-mail e a foto do seu perfil, usados apenas para criar e identificar a sua conta.</P>
-        <P>Se você conectar o Google Agenda, o PearChat pede acesso por meio do login do Google (OAuth), com os escopos:</P>
-        <UL>
-          <li><code>https://www.googleapis.com/auth/calendar.events</code>: ver, criar, atualizar e excluir eventos;</li>
-          <li><code>https://www.googleapis.com/auth/calendar.readonly</code>: ler a lista e os dados das suas agendas.</li>
-        </UL>
-        <P>Usamos esses dados apenas para: mostrar os compromissos na agenda do PearChat; verificar horários livres; e criar, atualizar e excluir os eventos que você mesmo agenda pelo PearChat (inclusive quando você autoriza o agente de IA a agendar).</P>
-        <P>Os dados do Google <strong>não são vendidos</strong>, <strong>não são usados para publicidade</strong> e <strong>não são usados para treinar modelos de IA generalizados</strong>. Não os transferimos a terceiros, exceto quando necessário para prestar o serviço que você pediu, para cumprir a lei ou como parte de uma operação societária, com aviso a você. Os acessos (tokens) ficam criptografados em repouso.</P>
-        <P>O uso e a transferência, para qualquer outro app, de informações recebidas das APIs do Google seguem a <A href="https://developers.google.com/terms/api-services-user-data-policy">Política de Dados do Usuário dos Serviços de API do Google</A>, incluindo os requisitos de Uso Limitado.</P>
         <P>
-          <strong>Como revogar o acesso:</strong> no PearChat, em Agenda → Desconectar; ou diretamente na sua conta Google, em <A href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</A>.
+          Esta seção explica, de forma específica, como o PearChat acessa, usa, guarda e compartilha as informações que recebe das APIs do Google. Há dois usos separados: entrar com o Google e conectar o Google Agenda. O segundo é opcional.
+        </P>
+        <P>
+          <strong>Entrar com o Google.</strong> Se você entrar com o Google, o PearChat recebe o nome, o e-mail e a foto do seu perfil (escopos <code>openid</code>, <code>email</code> e <code>profile</code>), usados apenas para criar e identificar a sua conta.
+        </P>
+        <P>
+          <strong>Permissões do Google Agenda.</strong> Se você conectar o Google Agenda, o PearChat pede acesso por meio do login do Google (OAuth). A tela do Google mostra cada permissão e deixa você desmarcar; sem as três a conexão não é feita. Os escopos pedidos são:
+        </P>
+        <UL>
+          <li><code className="break-all">https://www.googleapis.com/auth/calendar.events</code>: ver, criar, alterar e excluir eventos das suas agendas. Usamos para mostrar na Agenda do PearChat os eventos das agendas que você escolher e para criar, atualizar e remover, no seu Google Agenda, os agendamentos feitos pelo PearChat. Só alteramos ou apagamos eventos que o próprio PearChat criou.</li>
+          <li><code className="break-all">https://www.googleapis.com/auth/calendar.calendarlist.readonly</code>: ver a lista das suas agendas, somente leitura. Usamos para você escolher quais agendas o PearChat considera.</li>
+          <li><code className="break-all">https://www.googleapis.com/auth/calendar.freebusy</code>: ver apenas os intervalos em que você está ocupado ou livre, sem título nem detalhes. Usamos para oferecer só horários livres.</li>
+        </UL>
+        <P><strong>O que lemos do Google Agenda:</strong></P>
+        <UL>
+          <li>A lista das suas agendas: nome, cor, se é a principal e o seu nível de acesso (dono, editor ou leitor).</li>
+          <li>Os horários ocupados (início e fim) das agendas que você marcar.</li>
+          <li>Os eventos das agendas que você marcar, somente do período que está na tela: título, início, fim, se dura o dia todo e se você recusou o convite (eventos recusados ou cancelados não aparecem). Se o evento tiver outros campos, como descrição, local ou lista de participantes, o PearChat os ignora na hora e não os grava.</li>
+          <li>As mudanças dos eventos que o PearChat criou: a cada cerca de 2 minutos o PearChat consulta as mudanças da agenda onde criou eventos, só para saber se você moveu ou apagou um deles e manter o agendamento igual. As demais mudanças são ignoradas e não são gravadas.</li>
+        </UL>
+        <P><strong>O que enviamos ao Google:</strong> ao criar ou atualizar um agendamento, o PearChat envia o título (normalmente o nome do serviço), o horário e, na descrição, o nome e o telefone do cliente informados pelo seu negócio, mais a frase “Criado pelo PearChat”. Esses dados passam a ficar na sua agenda do Google.</P>
+        <P><strong>O que guardamos e por quanto tempo:</strong></P>
+        <UL>
+          <li>Enquanto o Google Agenda estiver conectado: os acessos (tokens), criptografados em repouso com AES-256-GCM; a lista de agendas (nome, cor, nível de acesso, quais você marcou e em qual os novos agendamentos são criados); o e-mail da conta Google conectada; e marcadores técnicos de sincronização. Tudo isso é apagado quando você desconecta.</li>
+          <li>Os identificadores dos eventos que o PearChat criou no Google, para atualizá-los ou removê-los depois. O vínculo é removido quando você desconecta.</li>
+          <li>Não gravamos no nosso banco de dados os eventos que você já tinha no Google. Eles são buscados na hora para aparecer na tela e ficam apenas na memória do servidor por até 45 segundos.</li>
+          <li>Os agendamentos feitos no PearChat (serviço, horário, nome e telefone do cliente) são registros do seu negócio no PearChat e seguem a seção “Retenção e exclusão”, mesmo que você desconecte o Google.</li>
+        </UL>
+        <P><strong>O que a IA recebe:</strong> se você ligar a opção “IA pode agendar”, o provedor de IA recebe apenas os horários livres que o PearChat calcula (por exemplo, 14:00 e 16:00), para o agente oferecer ao cliente. Ele nunca recebe títulos, descrições, participantes nem qualquer outro detalhe dos eventos do seu Google Agenda, nem a lista das suas agendas.</P>
+        <P><strong>Quem pode ver:</strong> nenhuma pessoa da equipe do PearChat lê os seus dados do Google Agenda, exceto com a sua autorização expressa (por exemplo, num pedido de suporte), quando for necessário para investigar abuso ou segurança, ou para cumprir a lei. Como não gravamos os eventos que vêm do Google, não há esse conteúdo para consultar no nosso banco. As pessoas do seu próprio espaço que têm acesso à Agenda no PearChat veem os eventos na tela, como você.</P>
+        <P><strong>Com quem compartilhamos:</strong> os dados do Google <strong>não são vendidos</strong>, <strong>não são usados para publicidade</strong> (inclusive personalizada) e <strong>não são usados para treinar modelos de IA ou de aprendizado de máquina generalizados</strong>. Só os transferimos a terceiros quando necessário para prestar o serviço que você pediu: aos prestadores de infraestrutura que operam o PearChat (banco de dados e servidor, listados na seção “Com quem compartilhamos”) e ao provedor de IA, nos termos acima. Também podemos transferi-los para cumprir a lei ou numa operação societária (fusão ou aquisição), com aviso a você.</P>
+        <P><strong>Desconectar, revogar e excluir:</strong></P>
+        <UL>
+          <li><strong>Desconectar no PearChat</strong> (Agenda, Preferências, botão Desconectar): o PearChat pede ao Google que revogue o acesso e apaga os tokens, a lista de agendas, os marcadores de sincronização e o vínculo com os eventos. Se o Google estiver fora do ar nesse momento, o pedido de revogação pode falhar; mesmo assim apagamos tudo do nosso lado, e você pode revogar direto no Google. Os eventos que o PearChat já criou continuam na sua agenda do Google, e os agendamentos continuam no PearChat.</li>
+          <li><strong>Revogar pelo Google:</strong> em <A href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</A>. Quando o PearChat percebe a revogação (na renovação seguinte do acesso), deixa de usar o Google para essa conta e pede que você reconecte ou desconecte.</li>
+          <li><strong>Encerrar a conta</strong> (pedido pelo e-mail <Mail />): a conexão com o Google Agenda e tudo o que ela guarda é excluída do nosso banco. Para o Google também encerrar o acesso, desconecte o Google Agenda no PearChat antes de pedir o encerramento, ou revogue pelo link acima.</li>
+        </UL>
+        <P><strong>Uso Limitado.</strong> O uso e a transferência, para qualquer outro app, de informações recebidas das APIs do Google seguem a <A href="https://developers.google.com/terms/api-services-user-data-policy">Política de Dados do Usuário dos Serviços de API do Google</A>, incluindo os requisitos de Uso Limitado. Usamos os dados do Google Agenda apenas para oferecer as funções de agenda descritas acima.</P>
+        <P>
+          <em lang="en">PearChat&apos;s use and transfer to any other app of information received from Google APIs will adhere to <A href="https://developers.google.com/terms/api-services-user-data-policy#limited-use">Google API Services User Data Policy</A>, including the Limited Use requirements.</em>
         </P>
       </>
     ),
