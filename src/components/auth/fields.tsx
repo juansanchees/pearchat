@@ -11,7 +11,7 @@ import { GoogleG } from '@/components/brand/google-g'
 // texto #1F1F1F em Roboto Medium 14/20, "G" colorido de 20 px com 12 px de margem à esquerda e 10 px até o texto.
 const roboto = Roboto({ weight: '500', subsets: ['latin'], display: 'swap' })
 const googleBtnCls =
-  'pc-btn w-full gap-[10px] border-[#747775] bg-white px-3 py-2.5 text-[14px] font-medium leading-5 text-[#1F1F1F] hover:bg-[#f2f2f2]'
+  'pc-btn w-full gap-[10px] border-[#747775] bg-white px-3 py-[9px] text-[14px] font-medium leading-5 text-[#1F1F1F] hover:bg-[#f2f2f2]'
 
 export function Spinner({ className = '' }: { className?: string }) {
   return (
