@@ -22,6 +22,9 @@ export const DEFINITIVE_DISCONNECT_CODES = new Set([401, 402, 403, 406])
 
 export const isDefinitiveDisconnect = (reason: number | undefined): boolean => reason !== undefined && DEFINITIVE_DISCONNECT_CODES.has(reason)
 
+/** Evento de conexão processado mais de 5 s depois de chegar = reprocessamento (ver handleEvolutionEvent). */
+const STALE_CONNECTION_EVENT_MS = 5_000
+
 /** Tratador da caixa de entrada para o provedor "evolution". Lança se algo falhou (a caixa repete; tudo é idempotente). */
 export async function handleEvolutionPayload(json: unknown, ctx: { receivedAt: Date }): Promise<void> {
   await handleEvolutionEvent(normalizeEvolutionEvent(json), ctx)
@@ -31,9 +34,15 @@ export async function handleEvolutionEvent(event: EvolutionEvent, ctx: { receive
   if (event.kind === 'ignored') return
   const session = await db.whatsAppSession.findFirst({
     where: { evolutionInstance: event.instance },
-    select: { workspaceId: true, status: true, numero: true, connectedAt: true },
+    select: { workspaceId: true, status: true, numero: true, connectedAt: true, updatedAt: true },
   })
   if (!session) return
+  // Evento de conexão ATRASADO (reprocessado da caixa de entrada depois de uma falha) não desfaz um estado mais novo:
+  // um "close" velho aplicado depois do "open" deixaria as automações pausadas com o WhatsApp conectado.
+  if (event.kind === 'connection' && Date.now() - ctx.receivedAt.getTime() > STALE_CONNECTION_EVENT_MS && session.updatedAt > ctx.receivedAt) {
+    log('wa', `evento de conexão atrasado ignorado (instância ${event.instance}): já há estado mais novo`)
+    return
+  }
   const { workspaceId } = session
   const current = statusToKind(session.status)
   const failures: unknown[] = []

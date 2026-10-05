@@ -7,6 +7,7 @@ import { after, before, beforeEach, describe, it } from 'node:test'
 import { POST } from '../../src/app/api/wa/evolution/route'
 import { runDueAiJobs, sweepPending } from '../../src/server/engine/ai-reply'
 import { ingestInboundMessage } from '../../src/server/messages/ingest'
+import { drainInbox, storeInbox } from '../../src/server/whatsapp/inbox'
 import { evoConnection, startFakeEvolution } from '../_fakes/fake-evolution'
 import type { FakeEvolution } from '../_fakes/fake-evolution'
 import { startFakeLlm } from '../_fakes/fake-llm'
@@ -115,6 +116,16 @@ describe('queda passageira x desconexão definitiva', () => {
       await db.auditLog.deleteMany({ where: { organizationId: org.id } })
       await db.organization.delete({ where: { id: org.id } })
     }
+  })
+
+  it('"close" velho reprocessado da caixa de entrada depois do "open" não desfaz a conexão', async () => {
+    const { workspaceId, instance } = await createBiz({ followUp: true })
+    const stored = await storeInbox('evolution', JSON.stringify(evoConnection(instance, 'close', 428)))
+    await db.webhookInbox.update({ where: { id: stored.id }, data: { receivedAt: new Date(Date.now() - 60_000) } })
+    await postEvo(evoConnection(instance, 'open')) // estado mais novo já aplicado
+    await drainInbox()
+    assert.ok((await db.webhookInbox.findUnique({ where: { id: stored.id } }))?.processedAt)
+    assert.equal((await automations(workspaceId)).status, 'CONECTADO')
   })
 
   it('close enquanto espera a leitura do QR não derruba a tela do QR', async () => {
