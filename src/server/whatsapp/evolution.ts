@@ -46,12 +46,12 @@ export function evolutionFetchFailure(e: unknown, isSend = true): WhatsAppProvid
 }
 
 /** Prazo padrão das chamadas à Evolution (envio de texto incluído). EVOLUTION_TIMEOUT_MS sobrescreve (testes). */
-const DEFAULT_TIMEOUT_MS = (() => {
+function defaultTimeoutMs(): number {
   const n = Number(process.env.EVOLUTION_TIMEOUT_MS)
   return Number.isFinite(n) && n >= 100 ? n : 15_000
-})()
+}
 
-async function evo(method: string, path: string, body?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<unknown> {
+async function evo(method: string, path: string, body?: unknown, timeoutMs = defaultTimeoutMs()): Promise<unknown> {
   const apiKey = process.env.EVOLUTION_API_KEY
   if (!apiKey) throw new Error('EVOLUTION_API_KEY não configurada')
   let res: Response
