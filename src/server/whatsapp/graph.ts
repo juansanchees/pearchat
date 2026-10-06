@@ -14,6 +14,8 @@ const DEFAULT_TIMEOUT_MS = 20_000
 const RATE_CODES = new Set([4, 17, 32, 613, 80007, 130429, 131056])
 
 export class GraphError extends Error {
+  /** POST que pode ter sido processado pela Meta (timeout depois de enviar): não repetir às cegas. */
+  public uncertain = false
   constructor(
     message: string,
     public readonly status: number,
@@ -120,7 +122,10 @@ export async function graph<T = unknown>(req: GraphRequest): Promise<T> {
       const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
       last = new GraphError(timedOut ? 'Graph API demorou demais' : 'Graph API inacessível', 0, null, null, null)
       // Timeout em POST pode ter sido processado: não repete. Falha de conexão (sem resposta) repete.
-      if (method === 'POST' && timedOut) throw last
+      if (method === 'POST' && timedOut) {
+        last.uncertain = true
+        throw last
+      }
       continue
     }
     const text = await res.text()

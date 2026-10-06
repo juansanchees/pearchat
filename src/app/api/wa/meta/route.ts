@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { BodyTooLargeError, readTextLimited } from '@/server/http/body'
-import { enqueueMetaPayload } from '@/server/whatsapp/meta-webhook'
+import { inboxLog, kickInboxRow, storeInbox } from '@/server/whatsapp/inbox'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,14 +47,21 @@ export async function POST(req: Request) {
   if (raw.length > MAX_BODY_BYTES || !validSignature(raw, req.headers.get('x-hub-signature-256'))) {
     return new NextResponse(null, { status: 401 })
   }
-  let json: unknown
   try {
-    json = JSON.parse(raw)
+    JSON.parse(raw)
   } catch {
     return new NextResponse(null, { status: 400 })
   }
-  // Responde 200 já: a Meta reenvia por até 7 dias se demorar ou falhar. O processamento segue em fila (ordem preservada)
-  // e as duplicatas são absorvidas por idempotência (id da mensagem).
-  void enqueueMetaPayload(json)
+  // Só responde 200 DEPOIS de gravar o evento na caixa de entrada: se o processo cair em seguida, o agendador drena.
+  // Falha ao gravar = 5xx e a Meta reentrega (por até 7 dias). Reentrega idêntica não duplica (mesmo corpo).
+  let stored: Awaited<ReturnType<typeof storeInbox>>
+  try {
+    stored = await storeInbox('meta', raw)
+  } catch (e) {
+    inboxLog('error', 'gravacao-falhou', { provider: 'meta', erro: e instanceof Error ? e.message.slice(0, 200) : 'erro' })
+    return new NextResponse(null, { status: 503 })
+  }
+  // Processamento em segundo plano, em ordem de chegada (a Meta pede resposta rápida).
+  if (!stored.done) kickInboxRow(stored.id)
   return new NextResponse(null, { status: 200 })
 }

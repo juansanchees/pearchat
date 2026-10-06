@@ -1,18 +1,18 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { statusToKind } from '@/lib/mappers'
-import { ingestInboundMessage, ingestOutboundFromPhone, updateMessageStatus } from '@/server/messages/ingest'
-import { queueHistoryMessages } from '@/server/whatsapp/history-import'
+import { handleEvolutionEvent } from '@/server/whatsapp/evolution-webhook'
+import { inboxLog, processInboxRow, storeInbox } from '@/server/whatsapp/inbox'
 import { normalizeEvolutionEvent } from '@/server/whatsapp/normalize'
-import { getProvider } from '@/server/whatsapp'
-import { disableAutomations, setStatus } from '@/server/whatsapp/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-/** Resposta do celular mais velha que isto não assume a conversa (é tratada como histórico). */
-const OUTBOUND_TAKEOVER_MAX_AGE_MS = 10 * 60_000
+/**
+ * Teto do corpo: o histórico do pareamento chega em lotes grandes e, se a Evolution estiver configurada com base64 no
+ * webhook (global ou de instância antiga), um vídeo de ~30 MB vira ~40 MB. 413 a Evolution não repete: o evento se perderia.
+ * Fica fora do teto de 256 KB do middleware (matcher em src/middleware.ts).
+ */
+const MAX_BODY_BYTES = 40 * 1024 * 1024
 
 function safeEqual(a: string, b: string): boolean {
   const ha = createHmac('sha256', 'cmp').update(a).digest()
@@ -20,85 +20,54 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(ha, hb)
 }
 
+/**
+ * Webhook da Evolution API 2.3.7. Regra de durabilidade: mensagem, status, eco de envio e conexão só recebem 2xx DEPOIS
+ * de gravados na caixa de entrada (WebhookInbox). Se a gravação falha, responde 503 e a Evolution reentrega (ela repete
+ * 5xx/timeout até 10 vezes, de 5 s a 5 min: WEBHOOK_RETRY_*). Falha no PROCESSAMENTO (depois de gravado) responde 200:
+ * a caixa de entrada repete com espera e o agendador drena o pendente (inclusive após queda/deploy).
+ * QR e histórico do pareamento não passam pela caixa: QR é efêmero e o histórico tem passagens próprias de reimportação.
+ */
 export async function POST(req: Request) {
   const expected = process.env.EVOLUTION_API_KEY
   const got = req.headers.get('apikey')
   if (!expected || !got || !safeEqual(got, expected)) return new NextResponse(null, { status: 401 })
 
-  const json: unknown = await req.json().catch(() => null)
+  const declared = Number(req.headers.get('content-length') ?? 0)
+  if (declared > MAX_BODY_BYTES) return new NextResponse(null, { status: 413 })
+  const raw = await req.text().catch(() => null)
+  if (raw === null) return new NextResponse(null, { status: 400 })
+  if (raw.length > MAX_BODY_BYTES) return new NextResponse(null, { status: 413 })
+  let json: unknown = null
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    return new NextResponse(null, { status: 200 }) // não é JSON: nada a fazer (e 4xx a Evolution não repete mesmo)
+  }
   const event = normalizeEvolutionEvent(json)
   if (event.kind === 'ignored') return new NextResponse(null, { status: 200 })
 
-  try {
-    const session = await db.whatsAppSession.findFirst({
-      where: { evolutionInstance: event.instance },
-      select: { workspaceId: true, status: true, numero: true, connectedAt: true },
-    })
-    if (!session) return new NextResponse(null, { status: 200 })
-    const { workspaceId } = session
-    const current = statusToKind(session.status)
-
-    switch (event.kind) {
-      case 'qr':
-        if (current !== 'conectado') await setStatus(workspaceId, 'aguardando_qr', { qr: event.qr })
-        break
-      case 'connection':
-        if (event.status === 'conectado') {
-          const numero = await getProvider('rapida')
-            .fetchNumero?.(workspaceId)
-            .catch(() => undefined)
-          await setStatus(workspaceId, 'conectado', { numero: numero ?? session.numero })
-        } else if (event.status === 'desconectado') {
-          // Enquanto espera a leitura do QR a Evolution também reporta "close": não derruba a tela do QR.
-          if (current === 'conectado' || current === 'conectando') {
-            await setStatus(workspaceId, 'desconectado')
-            await disableAutomations(workspaceId)
-          }
-        } else if (current !== 'aguardando_qr' && current !== 'conectado') {
-          // "connecting" durante a espera do QR é ambíguo: mantém aguardando_qr.
-          await setStatus(workspaceId, 'conectando')
-        }
-        break
-      case 'messages':
-        for (const m of event.inbound) {
-          await ingestInboundMessage({
-            workspaceId,
-            from: m.from,
-            nome: m.nome,
-            body: m.body,
-            providerMessageId: m.providerMessageId,
-            timestamp: m.timestamp,
-            media: m.media,
-          })
-        }
-        // Respostas dadas pelo celular do dono. Só assumem a conversa se forem recentes e posteriores à conexão
-        // (mensagens antigas que chegam por aqui são histórico: gravadas como importadas, sem assumir).
-        for (const m of event.outbound) {
-          const age = Date.now() - m.timestamp.getTime()
-          const afterConnect = !session.connectedAt || m.timestamp.getTime() >= session.connectedAt.getTime() - 60_000
-          await ingestOutboundFromPhone({
-            workspaceId,
-            to: m.to,
-            body: m.body,
-            providerMessageId: m.providerMessageId,
-            timestamp: m.timestamp,
-            takeOver: age < OUTBOUND_TAKEOVER_MAX_AGE_MS && afterConnect,
-            media: m.media,
-          })
-        }
-        break
-      case 'history':
-        // Histórico do pareamento: grava em lote, sem acionar IA/follow-up/campanhas.
-        queueHistoryMessages(workspaceId, event.messages)
-        break
-      case 'status':
-        for (const u of event.updates) {
-          await updateMessageStatus({ workspaceId, providerMessageId: u.providerMessageId, status: u.status })
-        }
-        break
+  if (event.kind === 'qr' || event.kind === 'history') {
+    try {
+      await handleEvolutionEvent(event, { receivedAt: new Date() })
+    } catch (e) {
+      inboxLog('warn', 'evento-direto-falhou', { provider: 'evolution', tipo: event.kind, erro: e instanceof Error ? e.message.slice(0, 200) : 'erro' })
     }
+    return new NextResponse(null, { status: 200 })
+  }
+
+  let stored: Awaited<ReturnType<typeof storeInbox>>
+  try {
+    stored = await storeInbox('evolution', raw)
   } catch (e) {
-    console.error('[wa/evolution] falha ao processar evento:', e instanceof Error ? e.message : 'erro')
+    // Nada foi gravado: 5xx para a Evolution reentregar.
+    inboxLog('error', 'gravacao-falhou', { provider: 'evolution', tipo: event.kind, erro: e instanceof Error ? e.message.slice(0, 200) : 'erro' })
+    return new NextResponse(null, { status: 503 })
+  }
+  // Processa já (ordem natural dos eventos); falha aqui não perde nada: fica na caixa e é repetida.
+  if (!stored.done) {
+    await processInboxRow(stored.id).catch((e) =>
+      inboxLog('warn', 'processamento-adiado', { provider: 'evolution', id: stored.id, erro: e instanceof Error ? e.message.slice(0, 200) : 'erro' }),
+    )
   }
   return new NextResponse(null, { status: 200 })
 }

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Bateria da conexão oficial (Meta) contra o app em 127.0.0.1:3035 e a Graph FALSA em 127.0.0.1:3036.
-// Uso (app em 127.0.0.1:3035 com Graph falsa em 3036, schema pearchat_test_d, WA_MOCK=false, META_OFICIAL_BETA_EMAILS='beta@teste.local, Beta2@teste.local'):
+// Uso (app em 127.0.0.1:3035 com Graph falsa em 3036, um schema de teste pearchat_test_*, WA_MOCK=false, META_OFICIAL_BETA_EMAILS='beta@teste.local, Beta2@teste.local'):
 //   node tests/meta/fake-graph.mjs &   e depois   tsx --test tests/meta/meta.test.ts
 import assert from 'node:assert/strict'
 import { after, before, describe, it } from 'node:test'
@@ -12,7 +12,7 @@ import { CloudApiProvider } from '../../src/server/whatsapp/cloud-api'
 const BASE = 'http://127.0.0.1:3035'
 const GRAPH = 'http://127.0.0.1:3036'
 const SECRET = 'segredo-de-teste-meta'
-assert.equal(new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.get('schema'), 'pearchat_test_d')
+assert.match(new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.get('schema') ?? '', /^pearchat_test_[a-z0-9_]+$/, 'use um schema de teste')
 
 const uniq = () => randomBytes(4).toString('hex')
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
@@ -122,7 +122,7 @@ after(async () => {
 describe('0. ambiente', () => {
   it('schema de teste e servidor no ar', async () => {
     const r = await db.$queryRawUnsafe<Array<{ current_schema: string }>>('select current_schema()')
-    assert.equal(r[0]!.current_schema, 'pearchat_test_d')
+    assert.match(r[0]!.current_schema, /^pearchat_test_[a-z0-9_]+$/)
     assert.equal((await fetch(`${BASE}/api/health`)).status, 200)
   })
 })

@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import { automationAllowed } from '@/server/billing/entitlements'
 import { FU_MENSAGENS_PADRAO } from '@/server/followup/service'
 import { canSendFreeformTo } from './freeform'
-import { contactRef, OutboundError, sendAndRecord } from './outbound'
+import { contactRef, OutboundAlreadySentError, OutboundCancelledError, OutboundError, sendAndRecord } from './outbound'
 import type { OutboundContent } from './outbound'
 import { getConnected, log, logError, personalize, shortError, spNextHour, spParts, templateFirstName } from './util'
 
@@ -246,10 +246,32 @@ async function executeJob(job: Job): Promise<Outcome> {
   }
 
   try {
-    await sendAndRecord({ session, conversationId: conv.id, to, author: 'IA', content, countAtendimento: freeform })
-    await finishJob(job.id, 'enviado')
+    const sent = await sendAndRecord({
+      session,
+      conversationId: conv.id,
+      to,
+      author: 'IA',
+      content,
+      countAtendimento: freeform,
+      // Um job de follow-up envia no máximo uma mensagem (retomada após queda não repete).
+      sendKey: `fu:${job.id}`,
+      // Pessoa assumiu (ou o cliente respondeu) entre a checagem e o envio: não envia.
+      guard: async () => {
+        const c = await db.conversation.findUnique({ where: { id: conv.id }, select: { mode: true, messages: { orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1, select: { direction: true } } } })
+        if (c?.mode === 'HUMANO') return 'Atendimento assumido'
+        if (c?.messages[0]?.direction === 'IN') return 'Cliente respondeu'
+        return null
+      },
+    })
+    // Sem confirmação do provedor: conta como enviado (nunca reenvia às cegas; a reconciliação acerta o status).
+    await finishJob(job.id, 'enviado', sent.uncertainSince ? 'enviado sem confirmação do WhatsApp' : undefined)
     return 'enviado'
   } catch (e) {
+    if (e instanceof OutboundCancelledError) return skip('cancelado', e.message)
+    if (e instanceof OutboundAlreadySentError) {
+      await finishJob(job.id, 'enviado')
+      return 'enviado'
+    }
     await finishJob(job.id, 'erro', e instanceof OutboundError ? e.message : shortError(e))
     return 'erro'
   }
@@ -267,7 +289,13 @@ async function rescueStaleJobs(now: Date): Promise<void> {
   })
   for (const j of stale) {
     const sent = await db.message.findFirst({
-      where: { conversationId: j.conversationId, direction: 'OUT', author: 'IA', createdAt: { gte: j.updatedAt } },
+      where: {
+        conversationId: j.conversationId,
+        OR: [
+          { sendKey: `fu:${j.id}`, NOT: { status: 'FALHOU' } },
+          { direction: 'OUT', author: 'IA', createdAt: { gte: j.updatedAt } },
+        ],
+      },
       select: { id: true },
     })
     await db.followUpJob.updateMany({

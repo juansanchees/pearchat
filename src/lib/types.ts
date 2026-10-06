@@ -87,6 +87,10 @@ export interface AgentDTO {
   handoffRules: string[]
   canSchedule: boolean
   idioma: AgentIdioma
+  /** Ritmo natural: "digitando…" e pausa proporcional antes de a IA responder. */
+  ritmoNatural: boolean
+  /** Agenda: perguntar "posso confirmar?" antes de criar (remarcar/cancelar confirmam sempre). */
+  confirmarAgendamento: boolean
 }
 
 export interface KnowledgeItemDTO {

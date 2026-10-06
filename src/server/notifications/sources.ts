@@ -114,6 +114,8 @@ async function carregarConversas(workspaceId: string, ids: string[]): Promise<Ma
 function motivoDaPassagem(error: string): string | null {
   if (error.startsWith(HANDOFF_RULE_PREFIX)) return curto(error.slice(HANDOFF_RULE_PREFIX.length)) ?? 'regra de passagem'
   if (error === HANDOFF_MODEL_NOTE) return 'decisão da IA'
+  // Passagem forçada pelo acabamento da resposta (src/server/agent/finish.ts, NOTE_PROMESSA): "passagem pelo modelo (…)".
+  if (error.startsWith(`${HANDOFF_MODEL_NOTE} (`)) return 'a IA prometeu uma ação da equipe'
   if (error.startsWith(HANDOFF_LIMIT_NOTE)) return 'limite de respostas de IA do plano'
   if (error === HANDOFF_BILLING_NOTE) return 'assinatura inativa'
   return null
