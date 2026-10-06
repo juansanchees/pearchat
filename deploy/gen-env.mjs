@@ -1,12 +1,13 @@
 // Gera deploy/.env.production a partir do .env local. Não imprime valores.
 // Segredos já existentes em deploy/.env.production são preservados. URL pública: PUBLIC_URL=https://pearchat.online node deploy/gen-env.mjs
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, copyFileSync, chmodSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const out = join(root, 'deploy', '.env.production')
+const out = process.env.GEN_ENV_OUT ?? join(root, 'deploy', '.env.production')
+const srcFile = process.env.GEN_ENV_SRC ?? join(root, '.env')
 const port = process.env.PEARCHAT_PORT ?? '8088' // porta publicada só em 127.0.0.1 na VPS
 const url = (process.env.PUBLIC_URL ?? 'https://pearchat.online').replace(/\/+$/, '') // URL pública (AUTH_URL / NEXT_PUBLIC_APP_URL)
 
@@ -21,7 +22,7 @@ const parse = (txt) => {
   }
   return o
 }
-const src = parse(readFileSync(join(root, '.env'), 'utf8'))
+const src = parse(readFileSync(srcFile, 'utf8'))
 const prev = existsSync(out) ? parse(readFileSync(out, 'utf8')) : {}
 const keep = (k) => prev[k] || randomBytes(32).toString('base64url') // segredos novos só na 1ª geração
 
@@ -45,6 +46,7 @@ const env = {
   EVOLUTION_WEBHOOK_URL: 'http://app:3000/api/wa/evolution',
   EVOLUTION_DB_PASSWORD: keep('EVOLUTION_DB_PASSWORD'),
   PEARCHAT_PORT: port,
+  HEALTH_TOKEN: keep('HEALTH_TOKEN'), // libera os detalhes de /api/health para o monitor (gerado 1x)
   META_APP_ID: prev.META_APP_ID ?? '', META_APP_SECRET: prev.META_APP_SECRET ?? '', META_CONFIG_ID: prev.META_CONFIG_ID ?? '',
   META_VERIFY_TOKEN: prev.META_VERIFY_TOKEN ?? '', META_SYSTEM_USER_TOKEN: prev.META_SYSTEM_USER_TOKEN ?? '',
   NEXT_PUBLIC_META_APP_ID: prev.NEXT_PUBLIC_META_APP_ID ?? '', NEXT_PUBLIC_META_CONFIG_ID: prev.NEXT_PUBLIC_META_CONFIG_ID ?? '',
@@ -77,6 +79,16 @@ const env = {
 const preserved = Object.keys(prev).filter((k) => !(k in env))
 for (const k of preserved) env[k] = prev[k]
 for (const k of ['DATABASE_URL', 'ENCRYPTION_KEY']) if (!env[k]) throw new Error(`${k} ausente no .env local`)
+// Cópia de segurança datada antes de sobrescrever um arquivo existente (permissão 600).
+if (existsSync(out)) {
+  const bak = `${out}.bak-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 13)}`
+  copyFileSync(out, bak)
+  try {
+    chmodSync(bak, 0o600)
+  } catch {
+    // Windows: sem chmod
+  }
+}
 // Valores entre aspas simples: compatível com env_file do compose e com --env-file (sem expansão de $).
 writeFileSync(out, Object.entries(env).map(([k, v]) => `${k}='${String(v).replace(/'/g, '')}'`).join('\n') + '\n', { mode: 0o600 })
 console.log(`gerado ${out} (${Object.keys(env).length} variáveis${preserved.length ? `; preservadas as não gerenciadas: ${preserved.join(', ')}` : ''})`)

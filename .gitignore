@@ -50,3 +50,8 @@ deploy/.env.production
 
 # hash do ultimo deploy (gerado por deploy.sh)
 .deploy-commit
+
+# configuracao local de publicacao e da conta de fumaca (segredos/enderecos de quem opera)
+deploy/.deploy.env
+deploy/.validate.env
+deploy/.env.production.bak-*

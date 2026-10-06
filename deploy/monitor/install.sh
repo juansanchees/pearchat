@@ -22,15 +22,29 @@ chmod 640 /var/log/pearchat-monitor.log /var/log/pearchat-backup.log
 
 if [ ! -f "$CONF" ]; then
   cat > "$CONF" <<'EOF'
-# Configuracao opcional do monitor do PearChat (lida por check.sh). Permissao 600.
-# Canais de alerta (use um ou mais). Tambem podem ficar em deploy/.env.production.
-# Webhook generico (POST JSON {"text","content"}): Discord, Slack, ou Telegram
-# (https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=<ID>):
-#MONITOR_WEBHOOK_URL=
-# E-mail pela Resend (RESEND_API_KEY e MAIL_FROM ja existem no .env.production):
-#MONITOR_EMAIL_TO=voce@exemplo.com
-# Libera detalhes de /api/health (agendador, jobs presos). Defina o MESMO valor no .env.production (le o app) e recrie o app:
+# Configuracao opcional do monitor do PearChat (lida por check.sh). Permissao 600. NUNCA commite este arquivo.
+# Canais de alerta: use um ou mais (tambem podem ficar em deploy/.env.production). Teste: bash deploy/monitor/check.sh --test-alert
+# 0) E-MAIL (canal principal; exige o servico de e-mail Resend configurado: RESEND_API_KEY e MAIL_FROM no .env.production).
+#    Varios destinos separados por virgula. Preencha NO SERVIDOR; nunca commite este arquivo.
+#ALERT_EMAIL_TO=
+# 1) Webhook generico (POST JSON {"title","text","content","status","host","time"}): Slack, Discord, n8n, Zapier...
+#ALERT_WEBHOOK_URL=
+# 2) Telegram: bot do @BotFather (token) e chat_id (passo a passo em docs/operacao/monitoramento.md)
+#ALERT_TELEGRAM_BOT_TOKEN=
+#ALERT_TELEGRAM_CHAT_ID=
+# 3) ntfy (app de celular gratis): use um topico dificil de adivinhar
+#ALERT_NTFY_URL=https://ntfy.sh/pearchat-troque-por-um-nome-longo-e-secreto
+#ALERT_NTFY_TOKEN=
+# (MONITOR_EMAIL_TO e o nome ANTIGO de ALERT_EMAIL_TO e continua valendo.)
+# Batimento (heartbeat): um servico externo (Healthchecks.io, Better Stack) recebe um GET a cada 5 min e AVISA quando parar
+# de receber (cobre a VPS inteira fora do ar, quando este monitor cai junto):
+#ALERT_HEARTBEAT_URL=
+# Libera os detalhes de /api/health (agendador, filas, WhatsApp, IA). O deploy gera HEALTH_TOKEN no .env.production se faltar;
+# o monitor le de la. So defina aqui se quiser outro valor (o app so enxerga o do .env.production).
 #HEALTH_TOKEN=
+# Limites (padroes): MON_SEND_FAIL_MIN=5 MON_QUEUE_MIN=20 MON_INBOX_MAX=100 MON_DISK_MAX_PCT=85 MON_BACKUP_MAX_H=36
+# MON_REQUIRE_REMOTE_BACKUP=1 (0 = parar de lembrar que o backup nao tem copia externa)
+# Minutos de WhatsApp desconectado para alertar: HEALTH_WA_DOWN_MIN (padrao 30), definido no .env.production (quem le e o app).
 EOF
   chmod 600 "$CONF"
 fi
@@ -64,9 +78,12 @@ fi
 getv() { local v="${!1:-}"; if [ -z "$v" ] && [ -f "$CONF" ]; then v="$(grep -m1 "^$1=" "$CONF" | cut -d= -f2- || true)"; fi; [ -n "$v" ] || v="$(grep -m1 "^$1=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d "'\"" || true)"; printf '%s' "$v"; }
 ch=0
 [ -n "$(getv MONITOR_WEBHOOK_URL)" ] && ch=1
-[ -n "$(getv RESEND_API_KEY)" ] && [ -n "$(getv MAIL_FROM)" ] && [ -n "$(getv MONITOR_EMAIL_TO)" ] && ch=1
+[ -n "$(getv ALERT_WEBHOOK_URL)" ] && ch=1
+[ -n "$(getv ALERT_TELEGRAM_BOT_TOKEN)" ] && [ -n "$(getv ALERT_TELEGRAM_CHAT_ID)" ] && ch=1
+[ -n "$(getv ALERT_NTFY_URL)" ] && ch=1
+[ -n "$(getv RESEND_API_KEY)" ] && [ -n "$(getv MAIL_FROM)" ] && { [ -n "$(getv ALERT_EMAIL_TO)" ] || [ -n "$(getv MONITOR_EMAIL_TO)" ]; } && ch=1
 echo "monitor instalado: cron a cada 5 min (/etc/cron.d/pearchat-monitor), logs em /var/log/pearchat-monitor.log"
 if [ "$ch" = 1 ]; then echo "canal de alerta: configurado (teste: bash $HERE/check.sh --test-alert)"
-else echo "ATENCAO: nenhum canal de alerta configurado (MONITOR_WEBHOOK_URL ou MONITOR_EMAIL_TO + RESEND_API_KEY/MAIL_FROM em $CONF). Hoje o monitor so REGISTRA em /var/log/pearchat-monitor.log; ninguem sera avisado."; fi
+else echo "ATENCAO: nenhum canal de alerta configurado (ALERT_EMAIL_TO com RESEND_API_KEY/MAIL_FROM, ALERT_WEBHOOK_URL, ALERT_TELEGRAM_BOT_TOKEN+ALERT_TELEGRAM_CHAT_ID ou ALERT_NTFY_URL em $CONF; veja docs/operacao/monitoramento.md). Enquanto isso, use o monitor EXTERNO (UptimeRobot) descrito la: ele avisa por e-mail sem depender da Resend. Hoje o monitor so REGISTRA em /var/log/pearchat-monitor.log; ninguem sera avisado."; fi
 [ -n "$(getv HEALTH_TOKEN)" ] || echo "dica: sem HEALTH_TOKEN o monitor nao checa agendador nem jobs presos (so banco e disponibilidade)."
 echo "install do monitor: ok"

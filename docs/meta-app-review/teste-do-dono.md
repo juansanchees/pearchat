@@ -16,7 +16,7 @@ Edite o arquivo de variáveis de produção (o mesmo que o deploy usa; `deploy/g
 | `META_GRAPH_VERSION` | `v25.0` |
 | `META_SIGNUP_MODE` | `sdk` (popup do Facebook; cai sozinho para o link hospedado se o SDK não carregar) ou `hosted` |
 | `META_OFICIAL_BETA` | `false` (só os e-mails abaixo veem a conexão oficial) |
-| `META_OFICIAL_BETA_EMAILS` | `j.dslsanches@gmail.com` (lista separada por vírgula; o e-mail da SUA conta no PearChat) |
+| `META_OFICIAL_BETA_EMAILS` | o e-mail da SUA conta no PearChat (lista separada por vírgula) |
 | `META_SYSTEM_USER_TOKEN` | só para `META_SIGNUP_MODE=hosted` e para o script do número de teste (item 5) |
 | `META_FEATURE_TYPE` | vazio. Se o popup não oferecer a opção de continuar usando o app WhatsApp Business, tente `whatsapp_business_app_onboarding` |
 
@@ -77,11 +77,11 @@ do WhatsApp, e a conclusão vem pelo webhook `account_update` (`PARTNER_ADDED`):
 
 ## 5. Teste com o número de teste da Meta (sem Cadastro incorporado)
 
-O número de teste (WABA 2120737805987231, Phone Number ID 1414370481751066) vive no seu Business Manager. Para ligá-lo a um workspace do
+O número de teste (WABA `<WABA_ID>`, Phone Number ID `<PHONE_NUMBER_ID>`) vive no seu Business Manager. Para ligá-lo a um workspace do
 PearChat, com `META_SYSTEM_USER_TOKEN` configurado, rode no servidor:
 
 ```
-docker compose exec app npx tsx scripts/meta-link-number.ts j.dslsanches@gmail.com 2120737805987231 1414370481751066
+docker compose exec app npx tsx scripts/meta-link-number.ts <seu-email> <WABA_ID> <PHONE_NUMBER_ID>
 ```
 
 O script confere que o número é da WABA, assina o app nos webhooks e marca a sessão como conectada. O número de teste só envia

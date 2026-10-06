@@ -1,0 +1,155 @@
+# Integração contínua do PearChat: roda em todo push e pull request. NENHUM segredo neste arquivo (o único "token" usado é
+# o GITHUB_TOKEN automático do próprio GitHub, para o gitleaks ler o repositório).
+#
+# Jobs:
+#   verificar   instala, gera o Prisma, tsc, eslint, testes unitários SEM banco, regra das migrações, scripts de shell e autotestes
+#   auditoria   npm audit (NÃO bloqueia enquanto o Next 14 estiver; ver docs/operacao/publicacao.md)
+#   segredos    gitleaks no histórico inteiro
+#   build       next build + compose/Caddyfile/Dockerfile validados com as ferramentas oficiais
+#   integracao  testes que precisam de Postgres (DESLIGADO por padrão: ligue com a variável de repositório CI_INTEGRATION=true)
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Tipos (tsc)
+        run: npm run typecheck
+      - name: Lint (eslint)
+        run: npm run lint
+      - name: Testes unitários (sem banco)
+        run: npx tsx --test tests/boot-guard.test.ts tests/health-check.test.ts tests/agent-language.test.ts tests/initials.test.ts
+      - name: Migrações só podem ADICIONAR
+        run: node scripts/check-migrations.mjs
+      - name: Scripts de shell (sintaxe e shellcheck)
+        run: |
+          set -e
+          for f in $(git ls-files '*.sh'); do bash -n "$f"; done
+          shellcheck --severity=error $(git ls-files '*.sh')
+      - name: Scripts .mjs (sintaxe)
+        run: for f in $(git ls-files 'deploy/*.mjs' 'deploy/**/*.mjs'); do node --check "$f"; done
+      - name: Autotestes de publicação, monitor e backup
+        run: |
+          set -e
+          bash deploy/selftest.sh
+          bash deploy/monitor/selftest.sh
+          bash deploy/monitor/selftest-http.sh 3044
+          bash deploy/backup/selftest.sh
+
+  auditoria:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # NÃO bloqueante: o Next 14.2 tem avisos que só o Next 15 resolve (docs/operacao/publicacao.md). Remova o
+      # continue-on-error quando o Next for atualizado.
+      - name: npm audit (somente produção, nível alto)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+
+  segredos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # o gitleaks varre o histórico inteiro
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: next build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_APP_URL: https://exemplo.invalid
+          NEXT_TELEMETRY_DISABLED: "1"
+      - name: Dockerfile (hadolint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: error
+      - name: Caddyfile válido (caddy validate)
+        run: |
+          docker run --rm -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: compose de produção válido (valores de mentira)
+        run: |
+          printf '%s\n' "NEXT_PUBLIC_APP_URL='https://exemplo.invalid'" "EVOLUTION_API_KEY='x'" "EVOLUTION_DB_PASSWORD='x'" > deploy/.env.production
+          docker compose -p pearchat -f deploy/docker-compose.prod.yml --env-file deploy/.env.production config -q
+          rm -f deploy/.env.production
+      - name: Imagem do app (docker build)
+        run: docker build -t pearchat-app:ci --build-arg NEXT_PUBLIC_APP_URL=https://exemplo.invalid .
+      - name: Varredura da imagem (trivy; só informa)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: pearchat-app:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+
+  # Testes que precisam de Postgres. DESLIGADO: ligue criando a variável de repositório CI_INTEGRATION=true
+  # (Settings > Secrets and variables > Actions > Variables). Roda só tests/security.test.ts, que usa o schema de teste
+  # pearchat_test_e num Postgres efêmero do próprio Actions. Ainda não foi exercitado no GitHub: comece com a variável ligada
+  # num branch de teste. Os testes http/meta/lid exigem o app rodando em portas fixas e ficam fora do CI por enquanto.
+  integracao:
+    if: ${{ vars.CI_INTEGRATION == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-efemero
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ci:ci-efemero@localhost:5432/ci?schema=pearchat_test_e
+      AUTH_SECRET: ci-efemero-ci-efemero-ci-efemero-ci
+      ENCRYPTION_KEY: Y2ktZWZlbWVyby1jaS1lZmVtZXJvLWNpLWVmZW1lcm8=
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npx tsx --test tests/security.test.ts

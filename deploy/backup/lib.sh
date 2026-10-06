@@ -86,6 +86,13 @@ bk_shred_tree() {
   rm -rf -- "$dir"
 }
 
+# Impressao digital da chave de criptografia (12 primeiros caracteres do sha256 do ARQUIVO, que nao tem quebra de linha).
+# NAO revela a chave. Serve para o dono conferir que a copia guardada FORA do servidor e a mesma:
+#   printf '%s' '<chave guardada>' | sha256sum | cut -c1-12      (deve dar o mesmo valor de "chaveImpressao" em last-status.json)
+bk_key_fingerprint() {
+  if [[ -s "$1" ]]; then sha256sum "$1" | cut -c1-12; else printf 'ausente'; fi
+}
+
 # Escapa texto para dentro de uma string JSON.
 bk_json_str() {
   local s="$1"
