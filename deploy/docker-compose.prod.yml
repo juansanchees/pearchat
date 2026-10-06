@@ -30,6 +30,8 @@ services:
         NEXT_PUBLIC_META_CONFIG_ID: ${NEXT_PUBLIC_META_CONFIG_ID:-}
     image: pearchat-app:latest
     restart: unless-stopped
+    init: true
+    stop_grace_period: 40s
     env_file: .env.production
     ports:
       # somente loopback (diagnostico na VPS); o acesso publico e pelo Caddy
