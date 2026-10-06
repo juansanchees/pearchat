@@ -203,6 +203,12 @@ export function checkProductionEnv(env: Env): Issue[] {
   if (isOn(env.ENGINE_DISABLED)) {
     warn('ENGINE_DISABLED', 'ENGINE_DISABLED=true: o MOTOR DE AUTOMAÇÕES ESTÁ DESLIGADO (sem resposta da IA, disparos, follow-up nem lembretes). Só deve ser assim de propósito.')
   }
+  // Desligamento gracioso: o servidor espera SHUTDOWN_GRACE_MS e tem uma trava final em +8 s; o Docker mata o processo em
+  // stop_grace_period (40 s no compose). Acima de ~30 s a trava final já não cabe e o SIGKILL corta o desligamento no meio.
+  const graceMs = Number(get('SHUTDOWN_GRACE_MS'))
+  if (get('SHUTDOWN_GRACE_MS') && Number.isFinite(graceMs) && graceMs > 30_000) {
+    warn('SHUTDOWN_GRACE_MS', `SHUTDOWN_GRACE_MS=${graceMs} é maior que 30000: com stop_grace_period de 40 s o Docker mata o app (SIGKILL) antes do fim do desligamento gracioso. Use 25000 (padrão) ou aumente APP_STOP_GRACE junto.`)
+  }
   if (!get('RESEND_API_KEY') || !get('MAIL_FROM')) {
     warn('EMAIL', 'RESEND_API_KEY/MAIL_FROM ausentes: e-mails (verificação, redefinição de senha) não são enviados.')
   }

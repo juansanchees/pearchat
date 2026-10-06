@@ -100,7 +100,10 @@ export async function GET(req: Request) {
         body.detalhes = 'erro'
       }
       try {
-        Object.assign(body, await withTimeout(inboxStats(), DB_TIMEOUT_MS))
+        const caixa = await withTimeout(inboxStats(), DB_TIMEOUT_MS)
+        // Campos planos (lidos por deploy/monitor/check.sh) + o objeto "caixaEntrada" (só contagens e idade).
+        Object.assign(body, caixa)
+        body.caixaEntrada = { pendentes: caixa.inboxPendentes, mortas: caixa.inboxMortas, mortas24h: caixa.inboxMortas24h, maisAntigaSeg: caixa.inboxMaisAntigoSeg }
       } catch {
         body.inboxTabela = 'erro'
       }

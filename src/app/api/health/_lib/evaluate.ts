@@ -21,6 +21,8 @@ export type Signals = {
   iaRecusadas: number | null
   inboxPendentes: number | null
   inboxMaisAntigoSeg: number | null
+  /** Eventos que desistiram (INBOX_MAX_ATTEMPTS) nas últimas 24 h: mensagem que NÃO entrou e pede reprocesso manual. */
+  inboxMortas24h?: number | null
   /** Horas desde o último backup BOM; null = sem arquivo de status (backup não instalado/visível: não alarma). */
   backupIdadeH: number | null
 }

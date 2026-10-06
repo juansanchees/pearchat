@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { db } from '@/lib/db'
+import { inboxStats as inboxCounts } from '@/server/whatsapp/inbox'
 
 // Peças compartilhadas por /api/health (detalhes para o monitor da VPS) e /api/health/check (monitor externo).
 

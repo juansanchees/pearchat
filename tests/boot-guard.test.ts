@@ -183,6 +183,25 @@ describe('guarda de produção: avisos que NÃO recusam', () => {
     const w = issues.find((i) => i.code === 'ENGINE_DISABLED')
     assert.ok(w && w.level === 'aviso' && /DESLIGADO/.test(w.msg))
   })
+  it('variáveis opcionais da onda 1B e da IA mais humana (ritmo natural, motor, envio incerto, desligamento) não recusam', () => {
+    const env: Env = {
+      ...good(),
+      AI_RITMO_NATURAL: 'true',
+      ENGINE_SINGLE_INSTANCE: 'true',
+      ENGINE_MAX_CONCURRENCY: '4',
+      ENGINE_TICK_MS: '5000',
+      EVOLUTION_TIMEOUT_MS: '15000',
+      DELIVERY_UNCERTAIN_MS: '180000',
+      SHUTDOWN_GRACE_MS: '25000',
+      DATABASE_URL: 'postgresql://postgres.abcdefgh:SenhaForte9xQ@aws-0-sa-east-1.pooler.supabase.com:5432/postgres?schema=pearchat&connection_limit=8&pool_timeout=20',
+    }
+    assert.deepEqual(checkProductionEnv(env), [], 'nem erro nem aviso')
+  })
+  it('SHUTDOWN_GRACE_MS acima de 30 s avisa (a trava final de +8 s não cabe nos 40 s do compose), sem recusar', () => {
+    const issues = checkProductionEnv({ ...good(), SHUTDOWN_GRACE_MS: '45000' })
+    assert.deepEqual(issues.filter((i) => i.level === 'erro'), [])
+    assert.ok(issues.some((i) => i.level === 'aviso' && i.code === 'SHUTDOWN_GRACE_MS'))
+  })
   it('HEALTH_TOKEN ausente e e-mail não configurado só avisam', () => {
     const env = good()
     delete env.HEALTH_TOKEN

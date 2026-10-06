@@ -5,7 +5,7 @@
 #   verificar   instala, gera o Prisma, tsc, eslint, testes unitários SEM banco, regra das migrações, scripts de shell e autotestes
 #   auditoria   npm audit (NÃO bloqueia enquanto o Next 14 estiver; ver docs/operacao/publicacao.md)
 #   segredos    gitleaks no histórico inteiro
-#   build       next build + compose/Caddyfile/Dockerfile validados com as ferramentas oficiais
+#   build       build sem variáveis do servidor (npm run check:build-sem-env, como no Docker) + compose/Caddyfile/Dockerfile validados
 #   integracao  testes que precisam de Postgres (DESLIGADO por padrão: ligue com a variável de repositório CI_INTEGRATION=true)
 name: ci
 
@@ -37,7 +37,11 @@ jobs:
       - name: Lint (eslint)
         run: npm run lint
       - name: Testes unitários (sem banco)
-        run: npx tsx --test tests/boot-guard.test.ts tests/health-check.test.ts tests/agent-language.test.ts tests/initials.test.ts
+        run: >-
+          npx tsx --test
+          tests/boot-guard.test.ts tests/health-check.test.ts tests/agent-language.test.ts tests/agent-humanize.test.ts
+          tests/initials.test.ts tests/google-calendar-scopes.test.ts
+          tests/security/session.test.ts tests/realtime/handshake.test.ts
       - name: Migrações só podem ADICIONAR
         run: node scripts/check-migrations.mjs
       - name: Scripts de shell (sintaxe e shellcheck)
@@ -92,8 +96,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: next build
-        run: npm run build
+      # Simula o build do Docker: sem NENHUMA variável do servidor (só as NEXT_PUBLIC_*). Roda prisma generate + next build.
+      # Substitui o "npm run build" simples: pega código que depende de segredo/banco na CARGA do módulo (derruba o build só no Docker).
+      - name: Build sem variáveis do servidor (como no Docker)
+        run: npm run check:build-sem-env
         env:
           NEXT_PUBLIC_APP_URL: https://exemplo.invalid
           NEXT_TELEMETRY_DISABLED: "1"

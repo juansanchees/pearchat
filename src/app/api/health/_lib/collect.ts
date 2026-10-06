@@ -102,7 +102,7 @@ async function collect(): Promise<Signals> {
     safe(inboxStats), // consulta que falha => null ("não sei", sem alarme)
     backupIdadeH(),
   ])
-  const inboxOk = inbox !== null && inbox.inboxTabela !== 'ausente'
+  const inboxOk = inbox !== null
   return {
     ...base,
     waCaidosComIa: wa,
@@ -112,6 +112,7 @@ async function collect(): Promise<Signals> {
     iaRecusadas: recusadas,
     inboxPendentes: inboxOk ? inbox.inboxPendentes : null,
     inboxMaisAntigoSeg: inboxOk ? inbox.inboxMaisAntigoSeg : null,
+    inboxMortas24h: inboxOk ? inbox.inboxMortas24h : null,
     backupIdadeH: backup,
   }
 }
