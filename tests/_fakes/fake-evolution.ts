@@ -1,5 +1,5 @@
 // Evolution API 2.3.7 FALSA (só 127.0.0.1): envio de texto com modos de falha, consulta de mensagens enviadas
-// (/chat/findMessages), estado da instância e construtores de payloads de webhook no formato da 2.3.7.
+// (/chat/findMessages), "digitando" (/chat/sendPresence, registrado e respondido na hora), estado da instância e construtores de payloads de webhook no formato da 2.3.7.
 // Origem: servidor falso de tests/lid-contacts.test.ts e .claude/tmp/diag-envio, ampliado para os cenários de envio incerto.
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -28,6 +28,7 @@ export async function startFakeEvolution(port = 0) {
   const delivered: Delivered[] = []
   const attempts: { number: string; text: string }[] = []
   const findCalls: string[] = []
+  const presences: { number: string; presence: string; delay: number; at: number }[] = []
   let seq = 0
   let onDelivered: ((d: Delivered) => void | Promise<void>) | null = null
   const sockets = new Set<import('node:net').Socket>()
@@ -69,6 +70,11 @@ export async function startFakeEvolution(port = 0) {
         if (mode.kind === 'garbage') return send(201, '<html>ok</html>')
         return send(201, { key: { remoteJid, fromMe: true, id: d.id }, status: 'PENDING', message: { conversation: text } })
       }
+      if (url.startsWith('/chat/sendPresence')) {
+        // A Evolution real só responde depois do `delay`; aqui responde na hora (o app não espera por ela: usa o próprio timer).
+        presences.push({ number: String(body.number ?? ''), presence: String(body.presence ?? ''), delay: Number(body.delay ?? 0), at: Date.now() })
+        return send(201, { presence: body.presence })
+      }
       if (url.startsWith('/chat/findMessages')) {
         const where = (body.where ?? {}) as { key?: { remoteJid?: string; fromMe?: boolean } }
         const jid = where.key?.remoteJid ?? ''
@@ -96,6 +102,8 @@ export async function startFakeEvolution(port = 0) {
     delivered,
     attempts,
     findCalls,
+    /** Pedidos de "digitando" (ritmo natural da IA). */
+    presences,
     /** Modos dos próximos envios, em ordem (os seguintes voltam a "ok"). */
     queue(...modes: SendMode[]) {
       sendModes.push(...modes)
@@ -119,6 +127,7 @@ export async function startFakeEvolution(port = 0) {
       delivered.length = 0
       attempts.length = 0
       findCalls.length = 0
+      presences.length = 0
       onDelivered = null
     },
     async close() {

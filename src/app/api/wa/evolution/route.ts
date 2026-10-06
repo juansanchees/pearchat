@@ -7,8 +7,12 @@ import { normalizeEvolutionEvent } from '@/server/whatsapp/normalize'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-/** Teto do corpo (o histórico do pareamento chega em lotes grandes; base64 de mídia está desligado no webhook). */
-const MAX_BODY_BYTES = 25 * 1024 * 1024
+/**
+ * Teto do corpo: o histórico do pareamento chega em lotes grandes e, se a Evolution estiver configurada com base64 no
+ * webhook (global ou de instância antiga), um vídeo de ~30 MB vira ~40 MB. 413 a Evolution não repete: o evento se perderia.
+ * Fica fora do teto de 256 KB do middleware (matcher em src/middleware.ts).
+ */
+const MAX_BODY_BYTES = 40 * 1024 * 1024
 
 function safeEqual(a: string, b: string): boolean {
   const ha = createHmac('sha256', 'cmp').update(a).digest()
