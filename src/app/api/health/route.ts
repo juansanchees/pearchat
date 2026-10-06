@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { inboxStats } from '@/server/whatsapp/inbox'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,11 +69,12 @@ export async function GET(req: Request) {
     if (dbOk) {
       try {
         const limite = new Date(agora - STUCK_MIN * 60_000)
-        const [ia, followUp, wa] = await withTimeout(
+        const [ia, followUp, wa, caixa] = await withTimeout(
           Promise.all([
             db.aiJob.count({ where: { status: { in: ['pendente', 'executando'] }, runAt: { lt: limite } } }),
             db.followUpJob.count({ where: { status: { in: ['pendente', 'executando'] }, runAt: { lt: limite } } }),
             db.whatsAppSession.groupBy({ by: ['status'], _count: { _all: true } }),
+            inboxStats(),
           ]),
           DB_TIMEOUT_MS,
         )
@@ -80,6 +82,8 @@ export async function GET(req: Request) {
         const conectados = wa.filter((r) => r.status === 'CONECTADO').reduce((n, r) => n + r._count._all, 0)
         body.jobsPresos = { ia, followUp, soma: ia + followUp, acimaDeMin: STUCK_MIN }
         body.whatsapp = { conectados, desconectados: total - conectados, total }
+        // Caixa de entrada dos webhooks (só contagens): pendentes, desistidas e idade da mais antiga pendente.
+        body.caixaEntrada = caixa
       } catch {
         body.detalhes = 'erro'
       }

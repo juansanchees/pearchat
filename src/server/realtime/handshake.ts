@@ -4,8 +4,9 @@
 //   recusa com SOCKET_UNAUTHORIZED. O cliente não insiste (o fluxo de sessão encerrada age pelas APIs).
 // - EXCEÇÃO ao reler (timeout, pool esgotado, "Can't reach database server"): recusa com SOCKET_UNAVAILABLE. A sessão
 //   continua válida; o cliente tenta de novo com espera crescente (src/lib/socket-client.ts).
-// Mesmo critério de `judgeSession` (src/server/auth/availability.ts, branch do agente de conta/sessão): quando as duas
-// ondas forem integradas, este módulo pode passar a chamar aquele (a semântica é a mesma).
+// Fonte única do critério: `judgeSession` (src/server/auth/availability.ts), o mesmo das APIs (503 x 401). Este módulo
+// só traduz o veredito para os códigos de erro do Socket.io.
+import { judgeSession } from '@/server/auth/availability'
 
 export const SOCKET_UNAUTHORIZED = 'unauthorized'
 export const SOCKET_UNAVAILABLE = 'unavailable'
@@ -22,13 +23,9 @@ export type HandshakeVerdict<A extends HandshakeActive = HandshakeActive> =
  * só uma resposta do banco pode recusar como `unauthorized`.
  */
 export async function judgeHandshake<A extends HandshakeActive>(resolve: () => Promise<A | null>, tokenSessionVersion: number): Promise<HandshakeVerdict<A>> {
-  let active: A | null
-  try {
-    active = await resolve()
-  } catch (error) {
-    return { kind: SOCKET_UNAVAILABLE, error }
-  }
+  const v = await judgeSession(resolve, tokenSessionVersion)
+  if (v.kind === 'ok') return { kind: 'ok', active: v.active }
   // Sessão revogada ("sair de todos os dispositivos"), usuário desativado ou sem espaço: resposta definitiva.
-  if (!active || active.blocked || tokenSessionVersion !== active.sessionVersion) return { kind: SOCKET_UNAUTHORIZED }
-  return { kind: 'ok', active }
+  if (v.kind === 'invalid') return { kind: SOCKET_UNAUTHORIZED }
+  return { kind: SOCKET_UNAVAILABLE, error: v.error }
 }

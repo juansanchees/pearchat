@@ -4,6 +4,7 @@ import { cleanup, contar, db, makeWorld, ago, amanha, diaSp, seedAiJob, seedConv
 import assert from 'node:assert/strict'
 import { after, describe, it } from 'node:test'
 import { PLANS } from '../../src/lib/plans'
+import { NOTE_PROMESSA } from '../../src/server/agent/finish'
 import { spMonthKey } from '../../src/server/calendar/time'
 import { HANDOFF_BILLING_NOTE, HANDOFF_LIMIT_NOTE, HANDOFF_MODEL_NOTE } from '../../src/server/engine/handoff-reasons'
 import { nomesResumo, quandoAgenda, resumoAusente } from '../../src/server/notifications/format'
@@ -208,6 +209,15 @@ describe('tipos de notificação a partir de dados semeados (dono)', () => {
     const p = um((await sync(w.ctx(w.owner, w.w1.id), new Date(agora))).itens, 'passou_para_voce')
     assert.equal(p.titulo, 'A IA passou 3 conversas para a equipe')
     assert.match(p.corpo ?? '', /A, B e C/)
+  })
+
+  it('passagem forçada pelo acabamento da IA (promessa da equipe) também vira "passou para você"', async () => {
+    const w = await makeWorld()
+    const agora = Date.now()
+    const { conv } = await seedConv(w.w1.id, { nome: 'Prometida', mode: 'HUMANO', unread: 1, criadaMin: 3000, ultimaMin: 5 }, agora)
+    await seedAiJob(w.w1.id, conv.id, { runMin: 5, error: NOTE_PROMESSA }, agora)
+    const p = um((await sync(w.ctx(w.owner, w.w1.id), new Date(agora))).itens, 'passou_para_voce')
+    assert.match(`${p.titulo} ${p.corpo ?? ''}`, /Prometida/)
   })
 
   it('mais de 5 agendamentos novos no mesmo intervalo: 5 itens próprios + "N agendamentos novos"', async () => {
