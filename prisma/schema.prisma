@@ -288,6 +288,7 @@ model WhatsAppSession {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([metaWabaId])
+  @@index([evolutionInstance])
 }
 
 model Contact {
@@ -378,11 +379,19 @@ model Message {
   failReason        String?
   // Quem enviou a mensagem pelo app (migração 0015). Sem relação: o histórico sobrevive à saída da pessoa.
   senderUserId      String?
+  // Robustez do envio (migration 0021). sendKey: chave de idempotência de um envio automático (ex.: "ai:<jobId>"):
+  // o mesmo job nunca grava/envia duas mensagens. uncertainSince: o provedor pode ter aceitado o envio, mas não
+  // confirmou (timeout/queda): fica PENDENTE e só é reenviado depois da reconciliação (engine/delivery.ts).
+  sendKey           String?
+  uncertainSince    DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, providerMessageId])
+  @@unique([conversationId, sendKey])
   @@index([conversationId, createdAt])
+  @@index([providerMessageId])
+  @@index([status, createdAt])
 }
 
 model AiAgent {
@@ -866,4 +875,27 @@ model NotificationCursor {
 
   @@id([userId, workspaceId])
   @@index([workspaceId])
+}
+
+// ---- Caixa de entrada dos webhooks (migration 0021, robustez do caminho da mensagem) ----
+// Todo evento de mensagem/status/conexão da Evolution e da Meta é gravado AQUI antes da resposta 2xx e processado a
+// partir daqui: queda/deploy entre o 200 e o processamento não perde nada (o agendador drena o pendente). O corpo é
+// guardado cifrado (AES-256-GCM, ENCRYPTION_KEY) e apagado alguns dias depois de processado. Nunca vai para log.
+model WebhookInbox {
+  id            String    @id @default(cuid())
+  provider      String // evolution | meta
+  dedupeKey     String // sha256 do corpo cru: reentrega idêntica do provedor não duplica
+  payload       String // corpo cru cifrado
+  receivedAt    DateTime  @default(now())
+  processedAt   DateTime?
+  // Desistiu depois de MAX tentativas (fica guardado para diagnóstico/reprocesso manual).
+  deadAt        DateTime?
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lockedUntil   DateTime?
+  lastError     String?
+
+  @@unique([provider, dedupeKey])
+  @@index([processedAt, nextAttemptAt])
+  @@index([receivedAt])
 }

@@ -56,8 +56,13 @@ export class ProviderUnsupportedError extends Error {
   }
 }
 
-/** Erro HTTP de um provedor. `body` pode conter dados do provedor: não logue por inteiro. */
+/**
+ * Erro HTTP de um provedor. `body` pode conter dados do provedor: não logue por inteiro.
+ * `uncertain` = o pedido pode ter sido ACEITO pelo provedor (timeout depois de enviar, conexão caiu no meio, resposta 2xx
+ * ilegível): o envio NÃO pode ser repetido às cegas; a mensagem fica "incerta" até a reconciliação (engine/delivery.ts).
+ */
 export class WhatsAppProviderError extends Error {
+  public uncertain = false
   constructor(
     message: string,
     public readonly status: number,
@@ -67,6 +72,15 @@ export class WhatsAppProviderError extends Error {
     this.name = 'WhatsAppProviderError'
   }
 }
+
+/** Marca o erro como "o provedor pode ter aceitado" (ver WhatsAppProviderError.uncertain). */
+export function uncertainError(message: string, status = 0): WhatsAppProviderError {
+  const e = new WhatsAppProviderError(message, status, null)
+  e.uncertain = true
+  return e
+}
+
+export const isUncertainSendError = (e: unknown): boolean => e instanceof WhatsAppProviderError && e.uncertain
 
 /** API oficial: mais de 24 h desde a última mensagem do cliente (erro 131047 da Meta). Só um modelo aprovado pode ser enviado. */
 export class WindowClosedError extends WhatsAppProviderError {

@@ -4,6 +4,7 @@ import type { MessageDTO } from '@/lib/types'
 import { spMonthKey } from '@/server/calendar/time'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { getProvider, WindowClosedError } from '@/server/whatsapp'
+import { runProviderSend } from '@/server/engine/outbound'
 import { loadConversationItem, senderFirstNames, toMessageDTO } from './dto'
 import { registerManualReply } from './takeover'
 
@@ -100,13 +101,13 @@ async function sendUserMessageOnce(input: {
 
   let sent
   let failure: string | null = null
-  try {
-    const { providerMessageId } = await provider.sendText(workspaceId, to, body)
-    sent = await db.message.update({
-      where: { id: pending.id },
-      data: { providerMessageId, status: 'ENVIADA' },
-    })
-  } catch (e) {
+  // "Enviar" separado de "gravar o id": aceito pelo provedor nunca vira FALHOU por falha de banco; timeout/queda depois
+  // de enviar fica PENDENTE "sem confirmação" (a pessoa não é induzida a reenviar e duplicar).
+  const outcome = await runProviderSend(pending, () => provider.sendText(workspaceId, to, body))
+  if (outcome.kind !== 'failed') {
+    sent = outcome.message
+  } else {
+    const e = outcome.error
     if (e instanceof WindowClosedError) {
       // A Meta recusou por janela de 24 h (a conta de tempo local divergiu): nada foi enviado, não deixa mensagem.
       await db.message.delete({ where: { id: pending.id } }).catch(() => {})

@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { automationAllowed } from '@/server/billing/entitlements'
-import { contactRef, ensureConversation, OutboundError, sendAndRecord } from './outbound'
+import { contactRef, ensureConversation, OutboundAlreadySentError, OutboundError, sendAndRecord } from './outbound'
 import type { OutboundContent } from './outbound'
 import { bumpUsage, getConnected, log, logError, personalize, shortError, silenceEnd, spNextHour, spStartOfDay, spStartOfNextDay, templateFirstName } from './util'
 
@@ -130,10 +130,14 @@ async function processCampaign(c: CampaignRow, now: Date): Promise<boolean> {
         if (!text.trim()) throw new OutboundError('Mensagem vazia')
         content = { kind: 'text', text }
       }
-      await sendAndRecord({ session, conversationId: conv.id, to: contactRef(contact), author: 'USER', content })
+      // Um destinatário recebe no máximo uma mensagem por campanha (retomada após queda não repete). Envio sem
+      // confirmação conta como enviado: nunca reenvia às cegas.
+      await sendAndRecord({ session, conversationId: conv.id, to: contactRef(contact), author: 'USER', content, sendKey: `cp:${next.id}` })
     } catch (e) {
-      erro = e instanceof OutboundError ? e.message : shortError(e)
-      logError('campaigns', `envio falhou (campanha ${c.id}, destinatário ${next.id})`, e)
+      if (!(e instanceof OutboundAlreadySentError)) {
+        erro = e instanceof OutboundError ? e.message : shortError(e)
+        logError('campaigns', `envio falhou (campanha ${c.id}, destinatário ${next.id})`, e)
+      }
     }
   }
 
@@ -183,8 +187,12 @@ async function rescueStaleRecipients(now: Date): Promise<void> {
   })
   for (const r of stale) {
     const claimedAt = r.sentAt ?? new Date(0)
+    // O envio deste destinatário (sendKey) ou, para envios antigos sem chave, qualquer OUT depois da reivindicação.
     const went = await db.message.findFirst({
-      where: { direction: 'OUT', createdAt: { gte: claimedAt }, conversation: { contactId: r.contactId } },
+      where: {
+        conversation: { contactId: r.contactId },
+        OR: [{ sendKey: `cp:${r.id}`, NOT: { status: 'FALHOU' } }, { direction: 'OUT', sendKey: null, createdAt: { gte: claimedAt } }],
+      },
       select: { id: true },
     })
     const upd = await db.campaignRecipient.updateMany({

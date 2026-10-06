@@ -404,11 +404,22 @@ export async function runDueHistoryImports(): Promise<number> {
 
 // ---------------------------------------------------------------- Webhook (MESSAGES_SET)
 
-const gq = globalThis as unknown as { __pearchat_history_queue?: Promise<void> }
+const gq = globalThis as unknown as { __pearchat_history_queue?: Promise<void>; __pearchat_history_queued?: number }
+/**
+ * Teto de lotes esperando na fila em memória (M8). Acima disto o lote é descartado com log: o histórico tem passagens
+ * próprias de reimportação pela API da Evolution (1, 3, 10 e 30 min depois de conectar), que cobrem o que ficar de fora.
+ */
+const MAX_QUEUED_HISTORY_BATCHES = 50
 
 /** Histórico recebido pelo webhook: grava em lote, uma fila por processo (não estoura o pool do banco). */
 export function queueHistoryMessages(workspaceId: string, messages: HistoryMessage[], opts: ImportOptions = {}): void {
   const cfg: Cfg = { ...DEFAULTS, ...opts }
+  const queued = gq.__pearchat_history_queued ?? 0
+  if (queued >= MAX_QUEUED_HISTORY_BATCHES) {
+    logH(`workspace ${workspaceId}: fila do histórico cheia (${queued} lotes); lote descartado (a reimportação cobre)`)
+    return
+  }
+  gq.__pearchat_history_queued = queued + 1
   const prev = gq.__pearchat_history_queue ?? Promise.resolve()
   gq.__pearchat_history_queue = prev
     .then(async () => {
@@ -445,6 +456,9 @@ export function queueHistoryMessages(workspaceId: string, messages: HistoryMessa
       logH(`workspace ${workspaceId}: lote do webhook com ${ordered.length} chats, ${inseridas} mensagens`)
     })
     .catch((e) => logH(`lote do webhook falhou (${shortErr(e)})`))
+    .finally(() => {
+      gq.__pearchat_history_queued = Math.max(0, (gq.__pearchat_history_queued ?? 1) - 1)
+    })
 }
 
 // ---------------------------------------------------------------- Status para a API/UI
