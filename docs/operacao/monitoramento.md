@@ -38,7 +38,8 @@ Pronto: é **um monitor só**. Não precisa de mais nada.
 | `fila_parada=N` | N tarefas de automação estão atrasadas há mais de 15 minutos | reiniciar o app; ver se a chave da IA tem crédito |
 | `falhas_de_envio=N` | várias mensagens falharam e nenhuma saiu | WhatsApp/Evolution com problema |
 | `ia_sem_credito=N` | a IA (OpenAI) está recusando as chamadas | ver crédito, limite de gasto e a chave no painel da OpenAI (`chaves.md`) |
-| `entrada_acumulada=N` | mensagens recebidas estão se acumulando sem ser processadas | reiniciar o app |
+| `entrada_acumulada=N` | N mensagens recebidas (caixa de entrada dos webhooks) estão pendentes há muito tempo ou em quantidade grande | reiniciar o app; se continuar, ver o log do app |
+| `entrada_morta=N` | N eventos de mensagem desistiram depois de várias tentativas nas últimas 24 horas (a mensagem não entrou) | ver o log do app e pedir ao cliente que reenvie; quem publica pode reprocessar |
 | `backup_atrasado` | o último backup bom tem mais de 2 dias | ver `deploy/backup/restore.md` e o log do backup |
 
 Os avisos só falam de **tipos de problema e quantidades**: nunca nome nem telefone de cliente.

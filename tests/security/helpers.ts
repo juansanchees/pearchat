@@ -5,8 +5,8 @@ import { randomBytes } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { db } from '../../src/lib/db'
 
-export const TEST_SCHEMA = 'pearchat_test_a'
-assert.equal(new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.get('schema'), TEST_SCHEMA, `rode apenas no schema ${TEST_SCHEMA}`)
+export const TEST_SCHEMA = new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.get('schema') ?? ''
+assert.match(TEST_SCHEMA, /^pearchat_test_[a-z0-9_]+$/, 'rode apenas num schema de teste (pearchat_test_*)')
 
 /** O ambiente tem serviço de e-mail (simulado)? `node test-env.mjs --mail` liga; sem a flag, não há serviço. */
 export const MAIL_ON = Boolean(process.env.RESEND_API_KEY && process.env.MAIL_FROM)

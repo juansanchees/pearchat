@@ -54,8 +54,8 @@ async function uncertainScenario(mode: Parameters<FakeEvolution['queue']>[0]) {
 
 before(async () => {
   await isolateSchema()
-  evo = await startFakeEvolution(3023)
-  llm = await startFakeLlm(3022, () => ({ text: REPLY }))
+  evo = await startFakeEvolution(Number(process.env.FAKE_EVO_PORT ?? 3023))
+  llm = await startFakeLlm(Number(process.env.FAKE_LLM_PORT ?? 3022), () => ({ text: REPLY }))
   Object.assign(process.env, {
     EVOLUTION_API_URL: evo.url,
     EVOLUTION_API_KEY: KEY,

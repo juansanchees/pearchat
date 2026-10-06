@@ -34,8 +34,8 @@ async function oneConversation() {
 
 before(async () => {
   await isolateSchema()
-  evo = await startFakeEvolution(3023)
-  llm = await startFakeLlm(3022, () => ({ text: REPLY }))
+  evo = await startFakeEvolution(Number(process.env.FAKE_EVO_PORT ?? 3023))
+  llm = await startFakeLlm(Number(process.env.FAKE_LLM_PORT ?? 3022), () => ({ text: REPLY }))
   Object.assign(process.env, { EVOLUTION_API_URL: evo.url, EVOLUTION_API_KEY: KEY, EVOLUTION_TIMEOUT_MS: '5000', OPENAI_BASE_URL: llm.url, OPENAI_API_KEY: 'chave-falsa-de-teste', LLM_TIMEOUT_MS: '10000' })
   delete process.env.ANTHROPIC_API_KEY
   delete process.env.ENGINE_MAX_CONCURRENCY

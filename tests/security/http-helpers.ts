@@ -6,7 +6,7 @@ import { randomIp, type TestUser } from './helpers'
 export const BASE = process.env.TEST_BASE_URL
 /** Servidor de teste SEM banco (porta 3049, banco inalcançável): simula a queda do banco sem tocar em nada. */
 export const NODB = process.env.TEST_BASE_URL_NODB
-export const APP_ORIGIN = 'http://onda1a.localhost:3048' // = AUTH_URL do lançador
+export const APP_ORIGIN = process.env.TEST_APP_ORIGIN ?? 'http://onda1a.localhost:3048' // = AUTH_URL do lançador (porta própria: TEST_APP_ORIGIN)
 
 export type Res = { status: number; headers: Headers; json: () => Promise<Record<string, unknown>>; text: () => Promise<string> }
 
