@@ -397,6 +397,15 @@ export class EvolutionProvider implements WhatsAppProvider {
     return parsed.data.profilePictureUrl || null
   }
 
+  /**
+   * POST /chat/sendPresence/{instance} com `{ number, presence, delay }` (Evolution 2.3.7, presenceSchema). A Evolution manda
+   * "composing", espera `delay` ms e manda "paused" ANTES de responder: o tempo limite cobre o delay e mais uma folga.
+   */
+  async sendPresence(workspaceId: string, to: ContactRef, opts: { presence: 'composing' | 'paused'; delayMs: number }): Promise<void> {
+    const delay = Math.max(0, Math.min(20_000, Math.round(opts.delayMs)))
+    await evo('POST', `/chat/sendPresence/${encodeURIComponent(instanceNameFor(workspaceId))}`, { number: evolutionRecipient(to), presence: opts.presence, delay }, delay + 10_000)
+  }
+
   async canSendFreeform(): Promise<boolean> {
     return true
   }

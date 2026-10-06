@@ -41,6 +41,11 @@ export interface WhatsAppProvider {
    * (src/server/contacts/photo.ts). A API oficial não entrega foto de cliente: não implementa.
    */
   fetchProfilePicture?(workspaceId: string, contact: ContactRef): Promise<string | null>
+  /**
+   * Opcional: mostra "digitando…" (composing) ao contato por `delayMs` (ritmo natural da IA). A API oficial não implementa.
+   * Quem chama não depende do resultado: falha aqui nunca impede o envio.
+   */
+  sendPresence?(workspaceId: string, to: ContactRef, opts: { presence: 'composing' | 'paused'; delayMs: number }): Promise<void>
   /** Opcional: baixa a mídia de uma mensagem recebida, SÓ pelo provedor configurado (nunca por URL vinda do webhook). */
   fetchMedia?(
     workspaceId: string,

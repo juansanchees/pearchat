@@ -1,0 +1,2 @@
+ALTER TABLE "AiAgent" ADD COLUMN "ritmoNatural" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "AiAgent" ADD COLUMN "confirmarAgendamento" BOOLEAN NOT NULL DEFAULT true;

@@ -4,6 +4,7 @@ import { generateReply, LlmError } from '@/server/agent/llm'
 import type { ChatMessage } from '@/server/agent/llm'
 import { detectReplyLanguage, FIXED, LIMITE_TODOS, parseIdiomaConfig, resolveReplyLanguage } from '@/server/agent/i18n'
 import { buildSystemPrompt, HANDOFF_MARKER } from '@/server/agent/prompt'
+import { finishAiReply } from '@/server/agent/finish'
 import { createToolRunner, miniCalendar } from '@/server/agent/tools'
 import { remarcarContext } from '@/server/calendar/confirmation'
 import { serviceTypesForPrompt } from '@/server/calendar/service-types'
@@ -16,7 +17,7 @@ import { loadConversationItem, toMessageDTO } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { canSendFreeformTo } from './freeform'
 import { automationAllowed } from '@/server/billing/entitlements'
-import { HANDOFF_BILLING_NOTE, HANDOFF_LIMIT_NOTE, HANDOFF_MODEL_NOTE, handoffRuleNote } from './handoff-reasons'
+import { HANDOFF_BILLING_NOTE, HANDOFF_LIMIT_NOTE, handoffRuleNote } from './handoff-reasons'
 import { contactRef, OutboundAlreadySentError, OutboundCancelledError, OutboundError, sendAndRecord } from './outbound'
 import { cancelPendingFollowUps } from './followup'
 import { isManualNote, keepManual, plainNote } from './ai-job-notes'
@@ -423,6 +424,7 @@ async function execute(job: AiJob): Promise<JobResult> {
     ? {
         calendario: miniCalendar(nowDate),
         clienteNome: displayName(conv.contact.nome, conv.contact) || null,
+        confirmar: agent.confirmarAgendamento,
         contexto: [...(await remarcarContext(workspaceId, conv.contactId, nowDate)), ...(await discardedWriteNotice(conversationId, new Date(nowDate.getTime() - 15 * 60_000)))],
       }
     : undefined
@@ -468,6 +470,10 @@ async function execute(job: AiJob): Promise<JobResult> {
   }
   await saveToolLog(job, runner)
 
+  // Acabamento (src/server/agent/finish.ts): estilo, passagem quando a resposta promete ação da equipe e, com o ritmo
+  // natural ligado, "digitando…" + pausa proporcional ao texto. Fica ANTES da revalidação: mensagem nova na pausa descarta.
+  const fin = await finishAiReply(texto, { history, tom: tomFromDb(agent.tom), agentName: agent.nome, pace: agent.ritmoNatural ? { session, to } : null })
+
   // Revalida: a conversa pode ter virado HUMANO, a IA ter sido desligada, ou chegado mais mensagens.
   const [conv2, el2, newest] = await Promise.all([
     db.conversation.findFirst({ where: { id: conversationId, workspaceId }, select: { mode: true } }),
@@ -478,9 +484,9 @@ async function execute(job: AiJob): Promise<JobResult> {
   if (!el2.ok) return { kind: 'done', note: `cancelado: ${el2.reason}` }
   if (newest?.id !== last.id) return { kind: 'done', note: 'superado: chegou mensagem nova durante a geração' }
 
-  if (texto.includes(HANDOFF_MARKER)) {
-    await handoff({ session, conv, jobId: job.id, motivo: 'regra de passagem (decisão da IA)', message: genericHandoffMessage(responsavel, lang) })
-    return { kind: 'done', note: HANDOFF_MODEL_NOTE }
+  if (fin.kind === 'handoff') {
+    await handoff({ session, conv, jobId: job.id, motivo: fin.motivo, message: fin.message ?? genericHandoffMessage(responsavel, lang) })
+    return { kind: 'done', note: fin.note }
   }
 
   let sent: Message
@@ -490,7 +496,7 @@ async function execute(job: AiJob): Promise<JobResult> {
       conversationId,
       to,
       author: 'IA',
-      content: { kind: 'text', text: stripRepeatedGreeting(texto, history) },
+      content: { kind: 'text', text: stripRepeatedGreeting(fin.texto, history) },
       countAtendimento: true,
       emit: false,
       sendKey: aiSendKey(job.id),
