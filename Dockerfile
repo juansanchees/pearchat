@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # PearChat: Next.js 14 + Socket.io (servidor custom server.ts rodado com tsx).
-FROM node:22-slim AS base
+FROM node:25-slim AS base
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
