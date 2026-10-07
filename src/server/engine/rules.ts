@@ -1,5 +1,6 @@
 import { FIXED, type Idioma } from '@/server/agent/i18n'
-import { norm, spParts } from './util'
+import { tzParts } from '@/lib/timezone'
+import { norm } from './util'
 
 // ---- Regras de passagem para humano ----
 
@@ -206,9 +207,9 @@ export function detectHandoffRule(customerText: string, rules: string[]): Handof
 
 const DIAS_SEMANA = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
 
-/** "sábado, 03/10/2026, 14:35" no fuso de São Paulo (para o modelo saber "hoje" e "agora"). */
-export function formatAgora(d: Date): string {
-  const p = spParts(d)
+/** "sábado, 03/10/2026, 14:35" no fuso do espaço (para o modelo saber "hoje" e "agora"). */
+export function formatAgora(d: Date, tz: string): string {
+  const p = tzParts(d, tz)
   const [y, m, day] = p.ymd.split('-')
   return `${DIAS_SEMANA[p.dow]}, ${day}/${m}/${y}, ${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
 }
@@ -297,9 +298,12 @@ function isOpen(exp: Expediente, dow: number, min: number): boolean {
   })
 }
 
-/** O agente pode responder agora? `horario`: sempre | fora_expediente | fins_de_semana. */
-export function agentMayReplyAt(horario: string, horarioAtendimento: string | null, at: Date): boolean {
-  const p = spParts(at)
+/**
+ * O agente pode responder agora? `horario`: sempre | fora_expediente | fins_de_semana. O dia da semana e a hora são os do
+ * relógio do espaço (`tz` = Workspace.timezone): "Seg a sáb, 8h às 18h" de um negócio no México é 8h do México.
+ */
+export function agentMayReplyAt(horario: string, horarioAtendimento: string | null, at: Date, tz: string): boolean {
+  const p = tzParts(at, tz)
   if (horario === 'fins_de_semana') return p.dow === 0 || p.dow === 6
   if (horario === 'fora_expediente') {
     const exp = parseExpediente(horarioAtendimento ?? HORARIO_ATENDIMENTO_PADRAO)

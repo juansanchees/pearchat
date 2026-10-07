@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { db } from '@/lib/db'
+import { normTz } from '@/lib/timezone'
 import type { AgentDTO, AgentHorario, AgentTestResultDTO, AgentTom, KnowledgeItemDTO } from '@/lib/types'
 import { generateReply, hasLlmKey, simulateReply } from './llm'
 import { detectHandoffRule, formatAgora, genericHandoffMessage } from '@/server/engine/rules'
@@ -157,8 +158,9 @@ export async function testAgent(
   const [agent, kb, ws] = await Promise.all([
     getAgent(workspaceId),
     listKnowledge(workspaceId),
-    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true, horarioAtendimento: true } }),
+    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true, horarioAtendimento: true, timezone: true } }),
   ])
+  const tz = normTz(ws.timezone)
   const nome = input.nome ?? agent.nome
   const tom = input.tom ?? agent.tom
   const prompt = input.prompt ?? agent.prompt
@@ -175,7 +177,7 @@ export async function testAgent(
 
   const servicos = await serviceTypesForPrompt(workspaceId)
   // Com o agendamento ligado as ferramentas de LEITURA valem; as de escrita só simulam (dryRun) e não criam nada.
-  const runner = (input.canSchedule ?? agent.canSchedule) && servicos.length > 0 ? createToolRunner({ workspaceId, conversationId: null, contactId: null, dryRun: true }) : null
+  const runner = (input.canSchedule ?? agent.canSchedule) && servicos.length > 0 ? createToolRunner({ workspaceId, conversationId: null, contactId: null, timezone: tz, dryRun: true }) : null
   const system = buildSystemPrompt({
     empresa: ws.nome,
     agente: { nome, tom, prompt },
@@ -183,10 +185,11 @@ export async function testAgent(
     handoffRules,
     servicos,
     horarioAtendimento: ws.horarioAtendimento,
-    agora: formatAgora(new Date()),
+    agora: formatAgora(new Date(), tz),
+    fuso: tz,
     idioma,
     idiomaDetectado: idioma === 'auto' ? detectReplyLanguage(historico) : null,
-    agenda: runner ? { calendario: miniCalendar(new Date()), clienteNome: 'Cliente de teste', confirmar: input.confirmarAgendamento ?? agent.confirmarAgendamento } : undefined,
+    agenda: runner ? { calendario: miniCalendar(new Date(), tz), clienteNome: 'Cliente de teste', confirmar: input.confirmarAgendamento ?? agent.confirmarAgendamento } : undefined,
   })
   const r = await generateReply({
     system,

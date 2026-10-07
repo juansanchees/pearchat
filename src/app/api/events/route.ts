@@ -21,6 +21,7 @@ import {
   toEventDto,
 } from '@/server/calendar/service'
 import { addMin, parseInstant } from '@/server/calendar/time'
+import { getWorkspaceTz } from '@/server/workspace-locale'
 import { findOverlappingTx, resolveContactTx, withBookingLock } from './_booking'
 import type { EventListResponse, EventWriteResponse, GoogleSyncStatus } from '@/server/calendar/types'
 
@@ -28,17 +29,17 @@ export const dynamic = 'force-dynamic'
 
 const MAX_RANGE_MS = 62 * 24 * 60 * 60 * 1000
 
-const instant = z.string().transform((s, ctx) => {
-  const d = parseInstant(s)
-  if (!d) ctx.addIssue({ code: 'custom', message: 'Data inválida' })
-  return d ?? new Date(NaN)
-})
-
-const querySchema = z.object({ from: instant, to: instant })
+/** Instante (ISO com offset/Z) ou data pura "YYYY-MM-DD" (meia-noite no fuso `tz` do espaço). */
+const instantIn = (tz: string) =>
+  z.string().transform((s, ctx) => {
+    const d = parseInstant(s, tz)
+    if (!d) ctx.addIssue({ code: 'custom', message: 'Data inválida' })
+    return d ?? new Date(NaN)
+  })
 
 /**
  * GET /api/events?from=&to=
- * from/to: ISO 8601 com offset/Z ou "YYYY-MM-DD" (meia-noite de São Paulo). Intervalo máx. 62 dias.
+ * from/to: ISO 8601 com offset/Z ou "YYYY-MM-DD" (meia-noite no fuso do espaço). Intervalo máx. 62 dias.
  * Devolve eventos que se sobrepõem a [from, to). Resposta: EventListResponse.
  */
 export async function GET(req: NextRequest) {
@@ -47,7 +48,8 @@ export async function GET(req: NextRequest) {
   if (!workspaceId) return unauthorized()
 
   const sp = req.nextUrl.searchParams
-  const parsed = querySchema.safeParse({ from: sp.get('from') ?? '', to: sp.get('to') ?? '' })
+  const tz = await getWorkspaceTz(workspaceId)
+  const parsed = z.object({ from: instantIn(tz), to: instantIn(tz) }).safeParse({ from: sp.get('from') ?? '', to: sp.get('to') ?? '' })
   if (!parsed.success) return badRequest('Parâmetros inválidos: informe from e to')
   const { from, to } = parsed.data
   if (to <= from || to.getTime() - from.getTime() > MAX_RANGE_MS) {

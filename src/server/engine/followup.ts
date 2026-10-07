@@ -4,7 +4,8 @@ import { FU_MENSAGENS_PADRAO } from '@/server/followup/service'
 import { canSendFreeformTo } from './freeform'
 import { contactRef, OutboundAlreadySentError, OutboundCancelledError, OutboundError, sendAndRecord } from './outbound'
 import type { OutboundContent } from './outbound'
-import { getConnected, log, logError, personalize, shortError, spNextHour, spParts, templateFirstName } from './util'
+import { nextHourTz, normTz, tzParts } from '@/lib/timezone'
+import { getConnected, log, logError, personalize, shortError, templateFirstName } from './util'
 
 // Follow-up automático. Planejamento (cria FollowUpJob) + execução (envia) + cancelamento (ingest).
 //
@@ -29,15 +30,16 @@ const MAX_PAGES = 50
 const MAX_SENDS_PER_WORKSPACE_PER_TICK = 1
 export const FOLLOWUP_TEMPLATE = 'retomada_conversa'
 
-const inQuietHours = (d: Date): boolean => {
+/** `d` cai entre 21h e 8h no relógio do espaço (`tz`)? */
+export const inQuietHours = (d: Date, tz: string): boolean => {
   // Só para testes em modo demo: ignora a janela de 21h às 8h.
   if (process.env.WA_MOCK === 'true' && process.env.ENGINE_FOLLOWUP_ANYTIME === 'true') return false
-  const h = spParts(d).hour
+  const h = tzParts(d, tz).hour
   return h >= QUIET_START || h < QUIET_END
 }
 
-/** Se `d` cai entre 21h e 8h, devolve as 8h seguintes. */
-export const adjustToSendWindow = (d: Date): Date => (inQuietHours(d) ? spNextHour(d, QUIET_END) : d)
+/** Se `d` cai entre 21h e 8h (relógio do espaço), devolve as 8h seguintes desse relógio. */
+export const adjustToSendWindow = (d: Date, tz: string): Date => (inQuietHours(d, tz) ? nextHourTz(d, QUIET_END, tz) : d)
 
 /** Cancela os follow-ups pendentes da conversa (ex.: "Cliente respondeu"). */
 export async function cancelPendingFollowUps(conversationId: string, motivo: string): Promise<number> {
@@ -106,13 +108,14 @@ export async function planFollowUps(): Promise<number> {
   await replanPendingJobs()
   const rules = await db.followUpRule.findMany({
     where: { enabled: true, workspace: { arquivadoEm: null, whatsappSession: { is: { status: 'CONECTADO' } } } },
+    include: { workspace: { select: { timezone: true } } },
   })
   let created = 0
   for (const rule of rules) {
     // Um workspace com problema não impede o planejamento dos outros.
     try {
       if (!(await automationAllowed(rule.workspaceId))) continue // modo restrito: não planeja follow-up
-      created += await planRule(rule, now)
+      created += await planRule({ ...rule, timezone: normTz(rule.workspace.timezone) }, now)
     } catch (e) {
       logError('followup', `planejamento do workspace ${rule.workspaceId} falhou`, e)
     }
@@ -121,7 +124,7 @@ export async function planFollowUps(): Promise<number> {
   return created
 }
 
-type Rule = { workspaceId: string; esperaHoras: number; tentativas: number }
+type Rule = { workspaceId: string; esperaHoras: number; tentativas: number; timezone: string }
 
 async function planRule(rule: Rule, now: Date): Promise<number> {
   let created = 0
@@ -171,7 +174,7 @@ async function planRule(rule: Rule, now: Date): Promise<number> {
         const prev = doneJobs[0]
         if (prev && prev.status === STATUS.erro && prev.runAt > cutoff) continue
 
-        if (await createJobOnce(c.id, doneJobs.length + 1, adjustToSendWindow(now), now)) created++
+        if (await createJobOnce(c.id, doneJobs.length + 1, adjustToSendWindow(now, rule.timezone), now)) created++
       }
       if (convs.length < PAGE) break
       cursor = convs[convs.length - 1]?.id
@@ -180,7 +183,7 @@ async function planRule(rule: Rule, now: Date): Promise<number> {
   return created
 }
 
-type Job = { id: string; conversationId: string; tentativa: number }
+type Job = { id: string; conversationId: string; tentativa: number; timezone: string }
 type Outcome = 'enviado' | 'erro' | 'ignorado'
 
 async function finishJob(id: string, status: 'enviado' | 'erro' | 'cancelado', error?: string): Promise<void> {
@@ -218,7 +221,7 @@ async function executeJob(job: Job): Promise<Outcome> {
   // Alguém (a pessoa do atendimento) respondeu à mão depois do planejamento: o relógio reinicia.
   const wait = rule.esperaHoras * 3_600_000
   if (now.getTime() - last.createdAt.getTime() < wait) {
-    const next = adjustToSendWindow(new Date(last.createdAt.getTime() + wait))
+    const next = adjustToSendWindow(new Date(last.createdAt.getTime() + wait), job.timezone)
     await db.followUpJob.update({ where: { id: job.id }, data: { status: STATUS.pendente, runAt: next } })
     return 'ignorado'
   }
@@ -318,20 +321,23 @@ export async function runDueFollowUps(): Promise<number> {
     },
     orderBy: { runAt: 'asc' },
     take: 200,
-    select: { id: true, conversationId: true, tentativa: true, conversation: { select: { workspaceId: true } } },
+    select: { id: true, conversationId: true, tentativa: true, conversation: { select: { workspaceId: true, workspace: { select: { timezone: true } } } } },
   })
   if (due.length === 0) return 0
-  // Janela de envio: reagenda para 8h em vez de enviar de madrugada.
-  if (inQuietHours(now)) {
-    await db.followUpJob.updateMany({
-      where: { id: { in: due.map((j) => j.id) }, status: STATUS.pendente },
-      data: { runAt: spNextHour(now, QUIET_END) },
-    })
-    return 0
+  // Janela de envio (relógio de CADA espaço): reagenda para as 8h do espaço em vez de enviar de madrugada.
+  const quiet = new Map<string, string[]>() // fuso -> ids
+  const ready: typeof due = []
+  for (const j of due) {
+    const tz = normTz(j.conversation.workspace.timezone)
+    if (inQuietHours(now, tz)) quiet.set(tz, [...(quiet.get(tz) ?? []), j.id])
+    else ready.push(j)
+  }
+  for (const [tz, ids] of Array.from(quiet)) {
+    await db.followUpJob.updateMany({ where: { id: { in: ids }, status: STATUS.pendente }, data: { runAt: nextHourTz(now, QUIET_END, tz) } })
   }
   let sent = 0
   const perWorkspace = new Map<string, number>()
-  for (const job of due) {
+  for (const job of ready) {
     const wsId = job.conversation.workspaceId
     if ((perWorkspace.get(wsId) ?? 0) >= MAX_SENDS_PER_WORKSPACE_PER_TICK) continue
     if (!(await automationAllowed(wsId))) {
@@ -342,7 +348,7 @@ export async function runDueFollowUps(): Promise<number> {
     try {
       const claim = await db.followUpJob.updateMany({ where: { id: job.id, status: STATUS.pendente }, data: { status: STATUS.executando } })
       if (claim.count !== 1) continue
-      const outcome = await executeJob(job)
+      const outcome = await executeJob({ id: job.id, conversationId: job.conversationId, tentativa: job.tentativa, timezone: normTz(job.conversation.workspace.timezone) })
       if (outcome !== 'ignorado') perWorkspace.set(wsId, (perWorkspace.get(wsId) ?? 0) + 1)
       if (outcome === 'enviado') sent++
     } catch (e) {

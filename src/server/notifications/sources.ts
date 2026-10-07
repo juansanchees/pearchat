@@ -7,6 +7,7 @@ import type { Papel } from '@/server/auth/permissions'
 import { HANDOFF_BILLING_NOTE, HANDOFF_LIMIT_NOTE, HANDOFF_MODEL_NOTE, HANDOFF_RULE_PREFIX } from '@/server/engine/handoff-reasons'
 import { getAiQuota } from '@/server/settings/service'
 import { spMonthKey } from '@/server/calendar/time'
+import { getWorkspaceTz } from '@/server/workspace-locale'
 import { AGENDA_TITULO, diaDoAgendamento, quandoAgenda } from './format'
 import { AGENDA_MAX_INDIVIDUAIS } from './types'
 import type { NotifDados, NotifTipo } from './types'
@@ -273,6 +274,8 @@ async function coletarAgenda(ctx: Contexto, j: Janela, infos: Map<string, ConvIn
     if (i) contatosRemarcou.add(i.contactId)
   }
   const janela = { gt: since, lte: upTo }
+  // "Hoje/amanhã" e o dia do link da Agenda no relógio do espaço.
+  const tz = await getWorkspaceTz(workspaceId)
   const rows = await db.event.findMany({
     where: {
       workspaceId,
@@ -338,8 +341,8 @@ async function coletarAgenda(ctx: Contexto, j: Janela, infos: Map<string, ConvIn
         key: `ag:${it.tipo}:${it.id}:${it.at.getTime()}`,
         at: it.at,
         titulo: AGENDA_TITULO[it.tipo],
-        corpo: `${it.cliente} · ${quandoAgenda(iso, it.at.getTime())}`,
-        link: `/agenda?dia=${diaDoAgendamento(iso)}`,
+        corpo: `${it.cliente} · ${quandoAgenda(iso, it.at.getTime(), tz)}`,
+        link: `/agenda?dia=${diaDoAgendamento(iso, tz)}`,
         dados: { cliente: it.cliente, inicio: iso, ...(it.origem ? { origem: it.origem } : {}) },
       })
     }

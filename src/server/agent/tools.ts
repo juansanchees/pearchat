@@ -15,8 +15,8 @@ import {
   resolveService,
   slotsOfDay,
 } from '@/server/calendar/scheduling'
-import { spToDate } from '@/server/calendar/time'
-import { spParts } from '@/server/engine/util'
+import { toInstant } from '@/server/calendar/time'
+import { addDaysYmd, ymdOf } from '@/lib/timezone'
 
 // Ferramentas de agenda que o modelo pode chamar (function calling). REGRAS DE SEGURANÇA:
 // - todas rodam no workspace e no contato da CONVERSA (vêm do servidor, nunca do modelo);
@@ -40,6 +40,8 @@ export type ToolContext = {
   /** null = "Testar o agente" (sem conversa): leitura vale, escrita só simula. */
   conversationId: string | null
   contactId: string | null
+  /** Fuso do espaço (Workspace.timezone): dias e horas que o modelo vê e manda são do relógio do negócio. */
+  timezone: string
   now?: () => Date
   dryRun?: boolean
 }
@@ -80,7 +82,7 @@ export const TOOL_DEFS: ToolDef[] = [
     parameters: {
       type: 'object',
       properties: {
-        data: { type: 'string', description: 'Dia no formato AAAA-MM-DD (fuso de São Paulo).' },
+        data: { type: 'string', description: 'Dia no formato AAAA-MM-DD (no fuso do negócio, o mesmo do calendário do prompt).' },
         servico: { type: 'string', description: 'Nome do serviço, como na lista de serviços.' },
         periodo: {
           type: 'string',
@@ -100,7 +102,7 @@ export const TOOL_DEFS: ToolDef[] = [
       type: 'object',
       properties: {
         servico: { type: 'string', description: 'Nome do serviço.' },
-        inicio: { type: 'string', description: 'Início no horário de São Paulo, formato AAAA-MM-DDTHH:MM (ex.: 2026-10-05T15:00).' },
+        inicio: { type: 'string', description: 'Início no horário local do negócio, formato AAAA-MM-DDTHH:MM (ex.: 2026-10-05T15:00).' },
         nome: { type: 'string', description: 'Nome do cliente, se ele disse.' },
       },
       required: ['servico', 'inicio'],
@@ -120,7 +122,7 @@ export const TOOL_DEFS: ToolDef[] = [
       type: 'object',
       properties: {
         agendamentoId: { type: 'string', description: 'Id devolvido por consultar_agendamentos.' },
-        novoInicio: { type: 'string', description: 'Novo início, formato AAAA-MM-DDTHH:MM (São Paulo).' },
+        novoInicio: { type: 'string', description: 'Novo início no horário local do negócio, formato AAAA-MM-DDTHH:MM.' },
       },
       required: ['agendamentoId', 'novoInicio'],
       additionalProperties: false,
@@ -160,6 +162,7 @@ function parseOffers(json: Prisma.JsonValue | null | undefined, now: number): Of
  */
 export function createToolRunner(ctx: ToolContext) {
   const nowFn = ctx.now ?? (() => new Date())
+  const tz = ctx.timezone
   const log: ToolLogEntry[] = []
   const simulated: string[] = []
   let offers: Offer[] | null = null
@@ -205,7 +208,7 @@ export function createToolRunner(ctx: ToolContext) {
     const t = now.getTime()
     const novos: Offer[] = []
     const reg = (date: string, hs: string[]) => {
-      for (const h of hs) novos.push({ s: rs.st.id, i: spToDate(date, h).toISOString(), t })
+      for (const h of hs) novos.push({ s: rs.st.id, i: toInstant(date, h, tz).toISOString(), t })
     }
     const per = a.periodo
     const filtra = (hs: string[]) => (per ? hs.filter((h) => noPeriodo(h, per)) : hs)
@@ -234,7 +237,7 @@ export function createToolRunner(ctx: ToolContext) {
     // Com período pedido, ofertas antigas desse serviço e dia fora do período deixam de valer: o servidor só aceita criar/remarcar dentro dele.
     await addOffers(
       novos,
-      per ? (o) => !(o.s === rs.st.id && localIso(new Date(o.i)).slice(0, 10) === a.data && !noPeriodo(localIso(new Date(o.i)).slice(11, 16), per)) : undefined,
+      per ? (o) => !(o.s === rs.st.id && localIso(new Date(o.i), tz).slice(0, 10) === a.data && !noPeriodo(localIso(new Date(o.i), tz).slice(11, 16), per)) : undefined,
     )
     return res
   }
@@ -242,13 +245,13 @@ export function createToolRunner(ctx: ToolContext) {
   async function criar(a: z.infer<typeof schemas.criar_agendamento>): Promise<Result> {
     const rs = await resolveService(ctx.workspaceId, a.servico)
     if (!rs.ok) return failRes(rs.codigo, rs.erro, { servicos: rs.servicos })
-    const inicio = parseLocalInstant(a.inicio)
-    if (!inicio) return failRes('DATA_INVALIDA', 'Início inválido. Use AAAA-MM-DDTHH:MM (horário de São Paulo).')
+    const inicio = parseLocalInstant(a.inicio, tz)
+    if (!inicio) return failRes('DATA_INVALIDA', 'Início inválido. Use AAAA-MM-DDTHH:MM (horário local do negócio).')
     if (!(await wasOffered(rs.st.id, inicio))) return naoOferecido()
     const dry = ctx.dryRun || !ctx.contactId
     const r = await createIaBooking({ workspaceId: ctx.workspaceId, contactId: ctx.contactId, st: rs.st, inicio, nome: a.nome, now: nowFn(), dryRun: dry })
     if (!r.ok) return failRes(r.codigo, r.erro, r.alternativas ? { alternativas: r.alternativas } : {})
-    const quando = quandoExtenso(inicio)
+    const quando = quandoExtenso(inicio, tz)
     if (r.simulado) {
       simulated.push(`agendaria ${rs.st.nome} para ${quando}`)
       return { ok: true, simulacao: true, mensagem: `[simulação] agendaria ${rs.st.nome} para ${quando}. Nada foi gravado; responda ao cliente como se tivesse agendado.` }
@@ -257,7 +260,7 @@ export function createToolRunner(ctx: ToolContext) {
       ok: true,
       agendamentoId: r.event.id,
       servico: rs.st.nome,
-      inicio: localIso(inicio),
+      inicio: localIso(inicio, tz),
       quando,
       duracaoMin: rs.st.duracaoMin,
       ...(r.jaExistia ? { observacao: 'Esse agendamento já existia; nada foi duplicado.' } : {}),
@@ -270,13 +273,13 @@ export function createToolRunner(ctx: ToolContext) {
     if (list.length === 0) return { ok: true, agendamentos: [], observacao: 'O cliente não tem agendamentos futuros.' }
     return {
       ok: true,
-      agendamentos: list.map((e) => ({ id: e.id, servico: e.servico, inicio: localIso(e.inicio), quando: quandoExtenso(e.inicio), confirmacao: e.confirmacao })),
+      agendamentos: list.map((e) => ({ id: e.id, servico: e.servico, inicio: localIso(e.inicio, tz), quando: quandoExtenso(e.inicio, tz), confirmacao: e.confirmacao })),
     }
   }
 
   async function remarcar(a: z.infer<typeof schemas.remarcar_agendamento>): Promise<Result> {
-    const novoInicio = parseLocalInstant(a.novoInicio)
-    if (!novoInicio) return failRes('DATA_INVALIDA', 'Início inválido. Use AAAA-MM-DDTHH:MM (horário de São Paulo).')
+    const novoInicio = parseLocalInstant(a.novoInicio, tz)
+    if (!novoInicio) return failRes('DATA_INVALIDA', 'Início inválido. Use AAAA-MM-DDTHH:MM (horário local do negócio).')
     if (!ctx.contactId) return failRes('NAO_ENCONTRADO', 'Modo de teste: não há agendamentos reais para remarcar.')
     const cur = await db.event.findFirst({
       where: { id: a.agendamentoId, workspaceId: ctx.workspaceId, contactId: ctx.contactId, status: 'ativo' },
@@ -289,19 +292,19 @@ export function createToolRunner(ctx: ToolContext) {
     if (!serviceId || !(await wasOffered(serviceId, novoInicio))) return naoOferecido()
     const r = await rescheduleIaBooking({ workspaceId: ctx.workspaceId, contactId: ctx.contactId, eventId: a.agendamentoId, novoInicio, now: nowFn(), dryRun: ctx.dryRun })
     if (!r.ok) return failRes(r.codigo, r.erro, r.alternativas ? { alternativas: r.alternativas } : {})
-    const quando = quandoExtenso(novoInicio)
+    const quando = quandoExtenso(novoInicio, tz)
     if (r.simulado) {
       simulated.push(`remarcaria para ${quando}`)
       return { ok: true, simulacao: true, mensagem: `[simulação] remarcaria para ${quando}. Nada foi gravado; responda ao cliente como se tivesse remarcado.` }
     }
-    return { ok: true, agendamentoId: r.event.id, inicio: localIso(novoInicio), quando }
+    return { ok: true, agendamentoId: r.event.id, inicio: localIso(novoInicio, tz), quando }
   }
 
   async function cancelar(a: z.infer<typeof schemas.cancelar_agendamento>): Promise<Result> {
     if (!ctx.contactId) return failRes('NAO_ENCONTRADO', 'Modo de teste: não há agendamentos reais para cancelar.')
     const r = await cancelIaBooking({ workspaceId: ctx.workspaceId, contactId: ctx.contactId, eventId: a.agendamentoId, now: nowFn(), dryRun: ctx.dryRun })
     if (!r.ok) return failRes(r.codigo, r.erro)
-    const quando = quandoExtenso(r.event.inicio)
+    const quando = quandoExtenso(r.event.inicio, tz)
     if (r.simulado) {
       simulated.push(`cancelaria o horário de ${quando}`)
       return { ok: true, simulacao: true, mensagem: `[simulação] cancelaria o agendamento de ${quando}. Nada foi gravado; responda como se tivesse cancelado.` }
@@ -349,14 +352,15 @@ export function createToolRunner(ctx: ToolContext) {
 
 export type ToolRunner = ReturnType<typeof createToolRunner>
 
-/** Data de hoje e dias da semana dos próximos 14 dias, para o prompt (o modelo erra a conta de calendário sozinho). */
-export function miniCalendar(now: Date, dias = 14): string {
+/**
+ * Data de hoje e dias da semana dos próximos 14 dias, para o prompt (o modelo erra a conta de calendário sozinho). "Hoje" é
+ * o dia no relógio do espaço (`tz`), não o do servidor (UTC).
+ */
+export function miniCalendar(now: Date, tz: string, dias = 14): string {
   const out: string[] = []
-  const base = spParts(now).ymd
+  const base = ymdOf(now, tz)
   for (let i = 0; i < dias; i++) {
-    const d = new Date(`${base}T00:00:00Z`)
-    d.setUTCDate(d.getUTCDate() + i)
-    const ymd = d.toISOString().slice(0, 10)
+    const ymd = addDaysYmd(base, i)
     const rot = i === 0 ? 'hoje' : i === 1 ? 'amanhã' : null
     out.push(`${ymd} = ${diaSemanaOf(ymd)}${rot ? ` (${rot})` : ''}`)
   }

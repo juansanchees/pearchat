@@ -83,6 +83,8 @@ export async function createTemplate(workspaceId: string, input: z.infer<typeof 
 /** Ids (cuid) só têm letras, números, _ e -: qualquer outra coisa nem vai ao banco (NUL daria erro 500). */
 const ID_OK = /^[A-Za-z0-9_-]{1,64}$/
 
+// O nome da lista "Aniversariantes de <mês>" usa o mês da criação no fuso padrão (é só um rótulo; a seleção dos
+// destinatários, feita na criação, usa o fuso do espaço).
 const toCampaignDTO = (c: Campaign): CampaignDTO => ({
   id: c.id,
   lista: c.lista,
@@ -101,7 +103,7 @@ const toCampaignDTO = (c: Campaign): CampaignDTO => ({
 export async function listCampaigns(workspaceId: string): Promise<CampaignDTO[]> {
   const [rows, ws] = await Promise.all([
     db.campaign.findMany({ where: { workspaceId }, orderBy: { createdAt: 'desc' }, take: 50 }),
-    db.workspace.findUnique({ where: { id: workspaceId }, select: { disparosSilencioAtivo: true, disparosSilencioInicio: true, disparosSilencioFim: true } }),
+    db.workspace.findUnique({ where: { id: workspaceId }, select: { disparosSilencioAtivo: true, disparosSilencioInicio: true, disparosSilencioFim: true, timezone: true } }),
   ])
   const now = new Date()
   // Em andamento (ou agendada que já chegou na hora) e dentro do horário de silêncio: "Aguardando horário permitido".

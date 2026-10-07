@@ -1,13 +1,14 @@
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { addDaysStr } from '@/server/booking/availability'
-import { spToDate } from '@/server/calendar/time'
+import { toInstant } from '@/server/calendar/time'
 import { HANDOFF_LIKE_ANY, HANDOFF_LIKE_LIMIT, HANDOFF_LIKE_RULE, HANDOFF_RULE_PREFIX_END } from '@/server/engine/handoff-reasons'
-import { spParts } from '@/server/engine/util'
+import { DEFAULT_TZ, normTz, ymdOf } from '@/lib/timezone'
 import type { Periodo, ResultsDto } from './types'
 
-// Consultas AGREGADAS no banco (nunca trazem mensagens para a memória). Fuso de São Paulo = UTC-3 fixo, como no
-// resto do app: "createdAt - 3 h" dá o relógio de parede de São Paulo. Mensagens importadas do WhatsApp
+// Consultas AGREGADAS no banco (nunca trazem mensagens para a memória). Dias, dias da semana e faixas do dia são do relógio
+// do fuso do ESPAÇO (Workspace.timezone): `("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE <fuso>` dá a hora de parede (as
+// colunas guardam o instante em UTC, sem fuso). Mensagens importadas do WhatsApp
 // (imported = true) não são atendimento feito pelo app e ficam fora de TODOS os números.
 
 const SESSION_GAP_HOURS = 6
@@ -20,10 +21,10 @@ const FU_WINDOW = Prisma.raw(`interval '${FOLLOWUP_WINDOW_HOURS} hours'`)
 type Num = number | bigint | null
 const n = (v: Num | undefined): number => (v === null || v === undefined ? 0 : Number(v))
 
-export function periodBounds(periodo: Periodo, now: Date = new Date()): { de: string; ate: string; from: Date; to: Date } {
-  const ate = spParts(now).ymd
+export function periodBounds(periodo: Periodo, now: Date = new Date(), tz: string = DEFAULT_TZ): { de: string; ate: string; from: Date; to: Date } {
+  const ate = ymdOf(now, tz)
   const de = addDaysStr(ate, -(periodo - 1))
-  return { de, ate, from: spToDate(de, '00:00'), to: spToDate(addDaysStr(ate, 1), '00:00') }
+  return { de, ate, from: toInstant(de, '00:00', tz), to: toInstant(addDaysStr(ate, 1), '00:00', tz) }
 }
 
 const cache = new Map<string, { at: number; value: ResultsDto }>()
@@ -34,17 +35,19 @@ export async function getResults(workspaceId: string, periodo: Periodo, now: Dat
   const hit = cache.get(key)
   if (hit && now.getTime() - hit.at < CACHE_TTL_MS && now.getTime() >= hit.at) return hit.value
 
-  const ws = await db.workspace.findUnique({ where: { id: workspaceId }, select: { arquivadoEm: true } })
+  const ws = await db.workspace.findUnique({ where: { id: workspaceId }, select: { arquivadoEm: true, timezone: true } })
   if (!ws || ws.arquivadoEm) return null
 
-  const value = await compute(workspaceId, periodo, now)
+  const value = await compute(workspaceId, periodo, now, normTz(ws.timezone))
   cache.set(key, { at: now.getTime(), value })
   if (cache.size > 500) for (const [k, v] of Array.from(cache)) if (now.getTime() - v.at >= CACHE_TTL_MS) cache.delete(k)
   return value
 }
 
-export async function compute(ws: string, periodo: Periodo, now: Date): Promise<ResultsDto> {
-  const { de, ate, from, to } = periodBounds(periodo, now)
+export async function compute(ws: string, periodo: Periodo, now: Date, tz: string = DEFAULT_TZ): Promise<ResultsDto> {
+  const { de, ate, from, to } = periodBounds(periodo, now, tz)
+  // Hora de parede da mensagem no fuso do espaço (o fuso vai como parâmetro, nunca como texto do SQL).
+  const local = Prisma.sql`((m."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${tz}::text)`
   const lookback = new Date(from.getTime() - SESSION_GAP_HOURS * 3_600_000)
 
   const [tot, dias, grade, mediana, ia, motivos, ev, tipos, agSit, disp, fu] = await Promise.all([
@@ -57,15 +60,15 @@ export async function compute(ws: string, periodo: Periodo, now: Date): Promise<
         AND m."createdAt" >= ${from} AND m."createdAt" < ${to}`),
 
     db.$queryRaw<{ dia: string; n: Num }[]>(Prisma.sql`
-      SELECT to_char(m."createdAt" - interval '3 hours', 'YYYY-MM-DD') AS dia, COUNT(*)::int AS n
+      SELECT to_char(${local}, 'YYYY-MM-DD') AS dia, COUNT(*)::int AS n
       FROM "Message" m JOIN "Conversation" c ON c."id" = m."conversationId"
       WHERE c."workspaceId" = ${ws} AND m."imported" = false AND m."direction" = 'IN'
         AND m."createdAt" >= ${from} AND m."createdAt" < ${to}
       GROUP BY 1`),
 
     db.$queryRaw<{ dow: Num; faixa: Num; n: Num }[]>(Prisma.sql`
-      SELECT EXTRACT(DOW FROM (m."createdAt" - interval '3 hours'))::int AS dow,
-             (EXTRACT(HOUR FROM (m."createdAt" - interval '3 hours'))::int / 6) AS faixa,
+      SELECT EXTRACT(DOW FROM ${local})::int AS dow,
+             (EXTRACT(HOUR FROM ${local})::int / 6) AS faixa,
              COUNT(*)::int AS n
       FROM "Message" m JOIN "Conversation" c ON c."id" = m."conversationId"
       WHERE c."workspaceId" = ${ws} AND m."imported" = false AND m."direction" = 'IN'

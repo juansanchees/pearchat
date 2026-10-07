@@ -2,7 +2,8 @@ import { db } from '@/lib/db'
 import { automationAllowed } from '@/server/billing/entitlements'
 import { contactRef, ensureConversation, OutboundAlreadySentError, OutboundError, sendAndRecord } from './outbound'
 import type { OutboundContent } from './outbound'
-import { bumpUsage, getConnected, log, logError, personalize, shortError, silenceEnd, spNextHour, spStartOfDay, spStartOfNextDay, templateFirstName } from './util'
+import { nextHourTz, normTz, startOfDayTz, startOfNextDayTz } from '@/lib/timezone'
+import { bumpUsage, getConnected, log, logError, personalize, shortError, silenceEnd, templateFirstName } from './util'
 
 // Envio de disparos: no máximo UM destinatário por campanha por vez, com intervalo aleatório entre
 // intervaloMin e intervaloMax segundos (Campaign.nextSendAt). Cada passo é reivindicado com UPDATE condicional.
@@ -40,12 +41,14 @@ function dueCampaigns(now: Date) {
     },
     orderBy: { createdAt: 'asc' },
     take: 50,
-    include: { workspace: { select: { disparosSilencioAtivo: true, disparosSilencioInicio: true, disparosSilencioFim: true } } },
+    include: { workspace: { select: { disparosSilencioAtivo: true, disparosSilencioInicio: true, disparosSilencioFim: true, timezone: true } } },
   })
 }
 
 async function processCampaign(c: CampaignRow, now: Date): Promise<boolean> {
   const { workspaceId } = c
+  // Silêncio, "hoje" do limite diário e a hora de retomada seguem o relógio do espaço (Workspace.timezone).
+  const tz = normTz(c.workspace.timezone)
   // Horário de silêncio: não envia; o próximo envio fica para o fim da janela (campanha agendada para dentro
   // dela também começa só no fim).
   const fimSilencio = silenceEnd(now, c.workspace)
@@ -76,10 +79,10 @@ async function processCampaign(c: CampaignRow, now: Date): Promise<boolean> {
   // Conexão rápida: limite diário de segurança por workspace.
   if (!session.official) {
     const sentToday = await db.campaignRecipient.count({
-      where: { status: 'enviado', sentAt: { gte: spStartOfDay(now) }, campaign: { workspaceId } },
+      where: { status: 'enviado', sentAt: { gte: startOfDayTz(now, tz) }, campaign: { workspaceId } },
     })
     if (sentToday >= dailyLimit()) {
-      await db.campaign.update({ where: { id: c.id }, data: { nextSendAt: spNextHour(spStartOfNextDay(now), RESUME_HOUR) } })
+      await db.campaign.update({ where: { id: c.id }, data: { nextSendAt: nextHourTz(startOfNextDayTz(now, tz), RESUME_HOUR, tz) } })
       log('campaigns', `campanha ${c.id}: limite diário atingido; retoma amanhã`)
       return false
     }

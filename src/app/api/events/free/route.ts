@@ -20,9 +20,11 @@ import {
   addMin,
   isValidDateStr,
   overlaps,
-  spToDate,
-  toSpHM,
+  toHM,
+  toInstant,
 } from '@/server/calendar/time'
+import { addDaysYmd } from '@/lib/timezone'
+import { getWorkspaceTz } from '@/server/workspace-locale'
 import type { FreeSlotsResponse } from '@/server/calendar/types'
 
 export const dynamic = 'force-dynamic'
@@ -36,7 +38,7 @@ const querySchema = z.object({
 
 /**
  * GET /api/events/free?date=YYYY-MM-DD&duracaoMin=
- * Inícios livres (08:00 até 18:00 - duração, passo de 30 min, horário de São Paulo).
+ * Inícios livres (08:00 até 18:00 - duração, passo de 30 min, no fuso do espaço).
  * duracaoMin omitido -> duração padrão da conexão (ou 60). Resposta: FreeSlotsResponse.
  */
 export async function GET(req: NextRequest) {
@@ -69,8 +71,10 @@ export async function GET(req: NextRequest) {
     ? await db.event.findFirst({ where: { id: ignoreId, workspaceId }, select: { googleEventId: true, inicio: true, duracaoMin: true } })
     : null
 
-  const dayStart = spToDate(date, '00:00')
-  const dayEnd = addMin(dayStart, 24 * 60)
+  const tz = await getWorkspaceTz(workspaceId)
+  const dayStart = toInstant(date, '00:00', tz)
+  // Meia-noite seguinte pelo relógio do espaço (num dia de virada do horário de verão o dia tem 23 ou 25 h).
+  const dayEnd = toInstant(addDaysYmd(date, 1), '00:00', tz)
 
   const local = await db.event.findMany({
     where: {
@@ -103,10 +107,10 @@ export async function GET(req: NextRequest) {
   const horarios: string[] = []
   const lastStart = DAY_END_HOUR * 60 - duracaoMin
   for (let m = DAY_START_HOUR * 60; m <= lastStart; m += SLOT_STEP_MIN) {
-    const ini = spToDate(date, `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`)
+    const ini = toInstant(date, `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, tz)
     const fim = addMin(ini, duracaoMin)
     // Horário que já começou não é oferecido (agendar no passado é recusado em POST/PATCH /api/events).
-    if (ini.getTime() > Date.now() && !busy.some((b) => overlaps(ini, fim, b.start, b.end))) horarios.push(toSpHM(ini))
+    if (ini.getTime() > Date.now() && !busy.some((b) => overlaps(ini, fim, b.start, b.end))) horarios.push(toHM(ini, tz))
   }
 
   return NextResponse.json({ date, duracaoMin, horarios, googleConsultado } satisfies FreeSlotsResponse)

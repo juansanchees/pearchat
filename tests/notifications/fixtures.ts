@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { db } from '../../src/lib/db'
-import { addDays, spInstant, toSp } from '../../src/components/agenda/time'
+import { addDays, toZoned, zonedInstant } from '../../src/components/agenda/time'
 import type { Contexto } from '../../src/server/notifications/service'
 
 export { db }
@@ -129,10 +129,10 @@ export async function seedAiJob(workspaceId: string, conversationId: string, o: 
 
 /** Amanhã às `hm` (horário de São Paulo), como instante. */
 export function amanha(hm: string, now = new Date()): Date {
-  const hoje = toSp(now.toISOString()).date
-  return new Date(spInstant(addDays(hoje, 1), hm))
+  const hoje = toZoned(now.toISOString()).date
+  return new Date(zonedInstant(addDays(hoje, 1), hm))
 }
-export const diaSp = (d: Date) => toSp(d.toISOString()).date
+export const diaSp = (d: Date) => toZoned(d.toISOString()).date
 
 export async function seedEvent(
   workspaceId: string,

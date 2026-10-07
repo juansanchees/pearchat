@@ -10,7 +10,7 @@ import { cleanup, makeAccount, randomIp, uniq } from './helpers'
 import { db } from '../../src/lib/db'
 import { AGENT_TEST_BODY_LIMIT, AGENT_TEST_PER_ORG_DAY, AGENT_TEST_PER_USER_HOUR, hitAgentTestCaps } from '../../src/server/agent/limits'
 import { agentTestSchema } from '../../src/server/agent/service'
-import { addDaysStr, spToday } from '../../src/server/booking/availability'
+import { addDaysStr, todayIn } from '../../src/server/booking/availability'
 import {
   MAX_CONFIRMACOES_NOVOS_POR_HORA,
   MAX_LINK_POR_HORA,
@@ -86,7 +86,7 @@ type Setup = Awaited<ReturnType<typeof bookingSetup>>
 
 const phone = () => `119${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`
 const HORAS = Array.from({ length: 20 }, (_, i) => `${String(8 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`)
-const dia = (n: number) => addDaysStr(spToday(), n)
+const dia = (n: number) => addDaysStr(todayIn(), n)
 
 function book(s: Setup, i: number, over: { telefoneRaw?: string; ipHash?: string; date?: string } = {}) {
   return createPublicBooking({

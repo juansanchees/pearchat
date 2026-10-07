@@ -2,7 +2,9 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { decrypt, encrypt } from '@/server/whatsapp/crypto'
-import { TZ_NAME, spToDate } from './time'
+import { getWorkspaceTz } from '@/server/workspace-locale'
+import { addDaysYmd } from '@/lib/timezone'
+import { toInstant } from './time'
 
 // Integração Google Agenda via fetch (sem SDK). Nunca logar tokens.
 
@@ -400,13 +402,13 @@ export async function freeBusy(
   timeMax: Date,
 ): Promise<BusyInterval[]> {
   if (calendarIds.length === 0) return []
-  const token = await getValidAccessToken(workspaceId)
+  const [token, tz] = await Promise.all([getValidAccessToken(workspaceId), getWorkspaceTz(workspaceId)])
   const res = await gfetch(token, '/freeBusy', {
     method: 'POST',
     body: JSON.stringify({
       timeMin: timeMin.toISOString(),
       timeMax: timeMax.toISOString(),
-      timeZone: TZ_NAME,
+      timeZone: tz,
       items: calendarIds.map((id) => ({ id })),
     }),
   })
@@ -439,7 +441,7 @@ const eventsPageSchema = z.object({
   nextSyncToken: z.string().optional(),
 })
 
-/** Evento do Google já normalizado (instantes em Date; dia inteiro à meia-noite de São Paulo, fim exclusivo). */
+/** Evento do Google já normalizado (instantes em Date; dia inteiro à meia-noite do fuso do espaço, fim exclusivo). */
 export interface GoogleEventRead {
   /** id do evento dentro da agenda */
   id: string
@@ -450,8 +452,11 @@ export interface GoogleEventRead {
   diaInteiro: boolean
 }
 
-/** Converte um item de events.list. Devolve null para cancelados, recusados, sem horário ou não úteis. */
-export function normalizeGoogleEvent(raw: unknown, calendarId: string): GoogleEventRead | null {
+/**
+ * Converte um item de events.list. Devolve null para cancelados, recusados, sem horário ou não úteis. Evento de dia inteiro
+ * (só data) vai da meia-noite à meia-noite do fuso do espaço (`tz`).
+ */
+export function normalizeGoogleEvent(raw: unknown, calendarId: string, tz: string): GoogleEventRead | null {
   const p = rawEventSchema.safeParse(raw)
   if (!p.success) return null
   const e = p.data
@@ -466,10 +471,12 @@ export function normalizeGoogleEvent(raw: unknown, calendarId: string): GoogleEv
     return { id: e.id, calendarId, titulo, inicio, fim: fim > inicio ? fim : new Date(inicio.getTime() + 60_000), diaInteiro: false }
   }
   if (e.start?.date) {
-    const inicio = spToDate(e.start.date, '00:00')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(e.start.date)) return null
+    const inicio = toInstant(e.start.date, '00:00', tz)
     if (Number.isNaN(inicio.getTime())) return null
-    let fim = e.end?.date ? spToDate(e.end.date, '00:00') : new Date(inicio.getTime() + 86_400_000)
-    if (Number.isNaN(fim.getTime()) || fim <= inicio) fim = new Date(inicio.getTime() + 86_400_000)
+    const umDia = () => toInstant(addDaysYmd(e.start!.date!, 1), '00:00', tz)
+    let fim = e.end?.date && /^\d{4}-\d{2}-\d{2}$/.test(e.end.date) ? toInstant(e.end.date, '00:00', tz) : umDia()
+    if (Number.isNaN(fim.getTime()) || fim <= inicio) fim = umDia()
     return { id: e.id, calendarId, titulo, inicio, fim, diaInteiro: true }
   }
   return null
@@ -482,7 +489,7 @@ export async function listCalendarEvents(
   timeMin: Date,
   timeMax: Date,
 ): Promise<GoogleEventRead[]> {
-  const token = await getValidAccessToken(workspaceId)
+  const [token, tz] = await Promise.all([getValidAccessToken(workspaceId), getWorkspaceTz(workspaceId)])
   const out: GoogleEventRead[] = []
   let pageToken: string | undefined
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -491,7 +498,7 @@ export async function listCalendarEvents(
       orderBy: 'startTime',
       timeMin: timeMin.toISOString(),
       timeMax: timeMax.toISOString(),
-      timeZone: TZ_NAME,
+      timeZone: tz,
       maxResults: '250',
     })
     if (pageToken) qs.set('pageToken', pageToken)
@@ -500,7 +507,7 @@ export async function listCalendarEvents(
     const parsed = eventsPageSchema.safeParse(await res.json())
     if (!parsed.success) throw new GoogleError('Resposta de eventos inválida')
     for (const item of parsed.data.items) {
-      const ev = normalizeGoogleEvent(item, calendarId)
+      const ev = normalizeGoogleEvent(item, calendarId, tz)
       if (ev) out.push(ev)
     }
     pageToken = parsed.data.nextPageToken
@@ -540,7 +547,7 @@ export async function syncCalendarEvents(
   calendarId: string,
   syncToken: string | null,
 ): Promise<SyncResult> {
-  const token = await getValidAccessToken(workspaceId)
+  const [token, tz] = await Promise.all([getValidAccessToken(workspaceId), getWorkspaceTz(workspaceId)])
   const run = async (st: string | null): Promise<SyncResult> => {
     const changes: SyncChange[] = []
     const presentes = new Set<string>()
@@ -558,7 +565,7 @@ export async function syncCalendarEvents(
       for (const item of parsed.data.items) {
         const basic = rawEventSchema.safeParse(item)
         if (!basic.success) continue
-        const ev = normalizeGoogleEvent(item, calendarId)
+        const ev = normalizeGoogleEvent(item, calendarId, tz)
         if (basic.data.status === 'cancelled') {
           changes.push({ id: basic.data.id, removido: true })
         } else if (ev) {
@@ -594,11 +601,12 @@ export interface GoogleEventInput {
   fim: Date
 }
 
-const eventBody = (e: GoogleEventInput) => ({
+// O instante vai em UTC; `timeZone` (fuso do espaço) só diz ao Google em que relógio exibir/repetir o evento.
+const eventBody = (e: GoogleEventInput, tz: string) => ({
   summary: e.titulo,
   description: e.descricao ?? '',
-  start: { dateTime: e.inicio.toISOString(), timeZone: TZ_NAME },
-  end: { dateTime: e.fim.toISOString(), timeZone: TZ_NAME },
+  start: { dateTime: e.inicio.toISOString(), timeZone: tz },
+  end: { dateTime: e.fim.toISOString(), timeZone: tz },
 })
 
 const insertedSchema = z.object({ id: z.string() })
@@ -609,10 +617,10 @@ export async function insertEvent(
   calendarId: string,
   e: GoogleEventInput,
 ): Promise<string> {
-  const token = await getValidAccessToken(workspaceId)
+  const [token, tz] = await Promise.all([getValidAccessToken(workspaceId), getWorkspaceTz(workspaceId)])
   const res = await gfetch(token, `/calendars/${encodeURIComponent(calendarId)}/events`, {
     method: 'POST',
-    body: JSON.stringify({ ...eventBody(e), extendedProperties: { private: { pearchat: '1' } } }),
+    body: JSON.stringify({ ...eventBody(e, tz), extendedProperties: { private: { pearchat: '1' } } }),
   })
   if (!res.ok) throw new GoogleError(`Falha ao criar evento (${res.status})`, res.status)
   const parsed = insertedSchema.safeParse(await res.json())
@@ -626,11 +634,11 @@ export async function updateEvent(
   googleEventId: string,
   e: GoogleEventInput,
 ): Promise<void> {
-  const token = await getValidAccessToken(workspaceId)
+  const [token, tz] = await Promise.all([getValidAccessToken(workspaceId), getWorkspaceTz(workspaceId)])
   const res = await gfetch(
     token,
     `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(googleEventId)}`,
-    { method: 'PATCH', body: JSON.stringify(eventBody(e)) },
+    { method: 'PATCH', body: JSON.stringify(eventBody(e, tz)) },
   )
   if (!res.ok) throw new GoogleError(`Falha ao atualizar evento (${res.status})`, res.status)
 }

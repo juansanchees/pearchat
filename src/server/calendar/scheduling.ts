@@ -1,18 +1,20 @@
 import type { Event, ServiceType } from '@prisma/client'
 import { db } from '@/lib/db'
 import { findOverlappingTx, withBookingLock } from '@/app/api/events/_booking'
-import { addDaysStr, isDateInWindow, loadBusy, slotsForDay, spToday } from '@/server/booking/availability'
+import { addDaysStr, isDateInWindow, loadBusy, slotsForDay, todayIn } from '@/server/booking/availability'
 import { deleteEvent, insertEvent, updateEvent } from '@/server/calendar/google'
 import { invalidateGoogleCache } from '@/server/calendar/live'
 import { destinoOf, eventDescription, getConnection, isRealConnection, logGoogleFailure } from '@/server/calendar/service'
-import { addMin, isValidDateStr, parseInstant, spToDate, toSpHM } from '@/server/calendar/time'
-import { displayName, logError, norm, spParts, spStartOfDay } from '@/server/engine/util'
+import { addMin, isValidDateStr, parseInstant, toHM, toInstant } from '@/server/calendar/time'
+import { displayName, logError, norm } from '@/server/engine/util'
+import { normTz, startOfDayTz, tzParts } from '@/lib/timezone'
 import { emitToWorkspace } from '@/server/realtime/emit'
 
 // Núcleo do agendamento feito pela IA (e reutilizável por qualquer outro fluxo): consulta de horários, criação, remarcação e
 // cancelamento. Sempre no escopo do workspace e do contato da conversa. As regras de disponibilidade são as do link público
 // (booking/availability): expediente 08-18 h, passo de 30 min, antecedência mínima, eventos locais ativos + Google.
 // Escritas sempre dentro do lock da agenda (withBookingLock), com a checagem de conflito repetida lá dentro.
+// Datas e horas de parede ("AAAA-MM-DDTHH:MM", dia de hoje, expediente) são do fuso do ESPAÇO (Workspace.timezone).
 
 export const DIAS_SEMANA = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
@@ -30,27 +32,24 @@ const fail = (codigo: string, erro: string, alternativas?: Alternativas): Fail =
 
 export const diaSemanaOf = (date: string): string => DIAS_SEMANA[new Date(`${date}T00:00:00Z`).getUTCDay()] ?? ''
 
-const hm2 = (d: Date): string => toSpHM(d)
-
-/** "segunda-feira, 5 de outubro, às 15:00" (fuso de São Paulo). */
-export function quandoExtenso(inicio: Date): string {
-  const p = spParts(inicio)
-  const [, mm, dd] = p.ymd.split('-')
-  return `${DIAS_SEMANA[p.dow]}, ${Number(dd)} de ${MESES[Number(mm) - 1]}, às ${hm2(inicio)}`
+/** "segunda-feira, 5 de outubro, às 15:00" (relógio do fuso `tz` do espaço). */
+export function quandoExtenso(inicio: Date, tz: string): string {
+  const p = tzParts(inicio, tz)
+  return `${DIAS_SEMANA[p.dow]}, ${p.day} de ${MESES[p.month - 1]}, às ${toHM(inicio, tz)}`
 }
 
-/** "2026-10-05T15:00" (horário local de São Paulo, sem fuso). */
-export const localIso = (d: Date): string => `${spParts(d).ymd}T${hm2(d)}`
+/** "2026-10-05T15:00" (horário local do fuso `tz`, sem deslocamento). */
+export const localIso = (d: Date, tz: string): string => `${tzParts(d, tz).ymd}T${toHM(d, tz)}`
 
-/** ISO local de São Paulo ("2026-10-05T15:00", com ou sem segundos) ou ISO com fuso. null se inválido. */
-export function parseLocalInstant(s: string): Date | null {
+/** ISO local do fuso `tz` ("2026-10-05T15:00", com ou sem segundos) ou ISO com fuso. null se inválido. */
+export function parseLocalInstant(s: string, tz: string): Date | null {
   const t = s.trim()
   const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(t)
   if (m) {
     if (!isValidDateStr(m[1]) || Number(m[2]) > 23 || Number(m[3]) > 59) return null
-    return spToDate(m[1], `${m[2]}:${m[3]}`)
+    return toInstant(m[1], `${m[2]}:${m[3]}`, tz)
   }
-  return /^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:\d{2})$/.test(t) ? parseInstant(t) : null
+  return /^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:\d{2})$/.test(t) ? parseInstant(t, tz) : null
 }
 
 // ---- serviços e janela ----
@@ -76,11 +75,14 @@ export async function resolveService(
   return { ok: false, codigo: 'SERVICO_INEXISTENTE', erro: `Não existe o serviço "${nome}" neste negócio. Ofereça só os da lista.`, servicos: nomes }
 }
 
-type Cfg = { antecedenciaMin: number; diasAFrente: number }
+export type Cfg = { antecedenciaMin: number; diasAFrente: number; timezone: string }
 
-async function loadCfg(workspaceId: string): Promise<Cfg> {
-  const ws = await db.workspace.findUnique({ where: { id: workspaceId }, select: { bookingAntecedenciaMin: true, bookingDiasAFrente: true } })
-  return { antecedenciaMin: ws?.bookingAntecedenciaMin ?? 120, diasAFrente: ws?.bookingDiasAFrente ?? 30 }
+export async function loadCfg(workspaceId: string): Promise<Cfg> {
+  const ws = await db.workspace.findUnique({
+    where: { id: workspaceId },
+    select: { bookingAntecedenciaMin: true, bookingDiasAFrente: true, timezone: true },
+  })
+  return { antecedenciaMin: ws?.bookingAntecedenciaMin ?? 120, diasAFrente: ws?.bookingDiasAFrente ?? 30, timezone: normTz(ws?.timezone) }
 }
 
 /** Horários livres de um dia para o serviço, ou o motivo de não haver (data inválida, passada, longe demais). */
@@ -93,11 +95,11 @@ export async function slotsOfDay(
 ): Promise<{ ok: true; horarios: string[] } | Fail> {
   const cfg = opts.cfg ?? (await loadCfg(workspaceId))
   if (!isValidDateStr(date)) return fail('DATA_INVALIDA', 'Data inválida. Use o formato AAAA-MM-DD.')
-  if (date < spToday(now)) return fail('DATA_PASSADA', 'Essa data já passou. Escolha uma data a partir de hoje.')
-  if (!isDateInWindow(date, cfg.diasAFrente, now)) return fail('FORA_DA_JANELA', `Só é possível agendar até ${cfg.diasAFrente} dias à frente.`)
-  const from = spToDate(date, '00:00')
-  const { busy } = await loadBusy(workspaceId, from, addMin(from, 24 * 60), opts.ignoreEventId)
-  return { ok: true, horarios: slotsForDay(date, st.duracaoMin, busy, cfg.antecedenciaMin, now) }
+  const tz = cfg.timezone
+  if (date < todayIn(tz, now)) return fail('DATA_PASSADA', 'Essa data já passou. Escolha uma data a partir de hoje.')
+  if (!isDateInWindow(date, cfg.diasAFrente, tz, now)) return fail('FORA_DA_JANELA', `Só é possível agendar até ${cfg.diasAFrente} dias à frente.`)
+  const { busy } = await loadBusy(workspaceId, toInstant(date, '00:00', tz), toInstant(addDaysStr(date, 1), '00:00', tz), opts.ignoreEventId)
+  return { ok: true, horarios: slotsForDay(date, st.duracaoMin, busy, cfg.antecedenciaMin, tz, now) }
 }
 
 /** Próximos dias (depois de `after`) que têm vaga, no máximo `n`, com até 6 horários cada. */
@@ -110,15 +112,16 @@ export async function nextDaysWithSlots(
   opts: { ignoreEventId?: string; cfg?: Cfg; filtro?: (hm: string) => boolean } = {},
 ): Promise<{ data: string; diaSemana: string; horarios: string[] }[]> {
   const cfg = opts.cfg ?? (await loadCfg(workspaceId))
-  const hoje = spToday(now)
+  const tz = cfg.timezone
+  const hoje = todayIn(tz, now)
   const last = addDaysStr(hoje, cfg.diasAFrente - 1)
   const start = after < hoje ? hoje : addDaysStr(after, 1)
   if (start > last) return []
   const end = addDaysStr(start, BUSCA_PROXIMOS_DIAS - 1) < last ? addDaysStr(start, BUSCA_PROXIMOS_DIAS - 1) : last
-  const { busy } = await loadBusy(workspaceId, spToDate(start, '00:00'), spToDate(addDaysStr(end, 1), '00:00'), opts.ignoreEventId)
+  const { busy } = await loadBusy(workspaceId, toInstant(start, '00:00', tz), toInstant(addDaysStr(end, 1), '00:00', tz), opts.ignoreEventId)
   const out: { data: string; diaSemana: string; horarios: string[] }[] = []
   for (let d = start; d <= end && out.length < n; d = addDaysStr(d, 1)) {
-    const hs = slotsForDay(d, st.duracaoMin, busy, cfg.antecedenciaMin, now).filter((h) => !opts.filtro || opts.filtro(h))
+    const hs = slotsForDay(d, st.duracaoMin, busy, cfg.antecedenciaMin, tz, now).filter((h) => !opts.filtro || opts.filtro(h))
     if (hs.length > 0) out.push({ data: d, diaSemana: diaSemanaOf(d), horarios: hs.slice(0, 6) })
   }
   return out
@@ -239,8 +242,9 @@ export async function createIaBooking(i: {
 }): Promise<CreateOk | Fail> {
   const { workspaceId, contactId, st, inicio, now } = i
   const cfg = await loadCfg(workspaceId)
-  const date = spParts(inicio).ymd
-  const hm = hm2(inicio)
+  const tz = cfg.timezone
+  const date = tzParts(inicio, tz).ymd
+  const hm = toHM(inicio, tz)
   if (inicio.getTime() <= now.getTime()) return fail('DATA_PASSADA', 'Esse horário já passou. Escolha um horário futuro.')
 
   // Repetição da mesma chamada (o modelo tentou de novo): devolve o que já existe, sem duplicar nem acusar conflito consigo mesmo.
@@ -253,9 +257,9 @@ export async function createIaBooking(i: {
   if (!slots.ok) return slots
   if (!slots.horarios.includes(hm)) {
     const alt = await alternativesFor(workspaceId, st, date, now, cfg)
-    const naGrade = slotsForDay(date, st.duracaoMin, [], cfg.antecedenciaMin, now)
+    const naGrade = slotsForDay(date, st.duracaoMin, [], cfg.antecedenciaMin, tz, now)
     if (naGrade.includes(hm)) return fail('CONFLITO', 'Esse horário acabou de ficar ocupado. Ofereça uma das alternativas.', alt)
-    const semAntecedencia = slotsForDay(date, st.duracaoMin, [], 0, now)
+    const semAntecedencia = slotsForDay(date, st.duracaoMin, [], 0, tz, now)
     if (semAntecedencia.includes(hm)) return fail('ANTECEDENCIA_MINIMA', `Precisa de pelo menos ${cfg.antecedenciaMin} minutos de antecedência. Ofereça uma das alternativas.`, alt)
     return fail('FORA_DO_EXPEDIENTE', 'Horário fora do expediente (08:00 às 18:00, de 30 em 30 minutos). Ofereça uma das alternativas.', alt)
   }
@@ -281,7 +285,7 @@ export async function createIaBooking(i: {
     const [first] = await findOverlappingTx(tx, workspaceId, inicio, addMin(inicio, st.duracaoMin))
     if (first) return { kind: 'fail', f: fail('CONFLITO', 'Esse horário acabou de ser ocupado por outro cliente. Ofereça uma das alternativas.', await alternativesFor(workspaceId, st, date, now, cfg)) }
 
-    const hojeIa = await tx.event.count({ where: { workspaceId, contactId, origem: 'IA', createdAt: { gte: spStartOfDay(now) } } })
+    const hojeIa = await tx.event.count({ where: { workspaceId, contactId, origem: 'IA', createdAt: { gte: startOfDayTz(now, tz) } } })
     if (hojeIa >= MAX_IA_POR_DIA) return { kind: 'fail', f: fail('LIMITE_DIARIO', 'Limite de agendamentos pela IA para este cliente hoje. Diga que a equipe confirma o horário.') }
     const futuros = await tx.event.count({ where: { workspaceId, contactId, status: 'ativo', inicio: { gt: now } } })
     if (futuros >= MAX_FUTUROS_POR_CONTATO) return { kind: 'fail', f: fail('LIMITE_FUTUROS', 'O cliente já tem vários agendamentos futuros. Diga que a equipe cuida de um novo horário.') }
@@ -337,14 +341,15 @@ export async function rescheduleIaBooking(i: {
   if (novoInicio.getTime() === cur.inicio.getTime()) return fail('MESMO_HORARIO', 'O agendamento já está nesse horário.')
 
   const cfg = await loadCfg(workspaceId)
+  const tz = cfg.timezone
   const st = { duracaoMin: cur.duracaoMin }
-  const date = spParts(novoInicio).ymd
-  const hm = hm2(novoInicio)
+  const date = tzParts(novoInicio, tz).ymd
+  const hm = toHM(novoInicio, tz)
   const slots = await slotsOfDay(workspaceId, st, date, now, { cfg, ignoreEventId: cur.id })
   if (!slots.ok) return slots
   if (!slots.horarios.includes(hm)) {
     const alt = await alternativesFor(workspaceId, st, date, now, cfg, cur.id)
-    const naGrade = slotsForDay(date, st.duracaoMin, [], cfg.antecedenciaMin, now)
+    const naGrade = slotsForDay(date, st.duracaoMin, [], cfg.antecedenciaMin, tz, now)
     return naGrade.includes(hm)
       ? fail('CONFLITO', 'Esse horário está ocupado. Ofereça uma das alternativas.', alt)
       : fail('FORA_DO_EXPEDIENTE', 'Horário fora do expediente ou com antecedência insuficiente. Ofereça uma das alternativas.', alt)

@@ -1,6 +1,8 @@
 // Textos do sininho (português). Sem imports de servidor: o servidor monta o texto gravado e o cliente refaz o que
-// depende do relógio (dia do agendamento: "amanhã" envelhece). Datas no fuso de São Paulo, pelo mesmo módulo da Agenda.
-import { diffDays, toSp } from '@/components/agenda/time'
+// depende do relógio (dia do agendamento: "amanhã" envelhece). Datas no fuso do ESPAÇO (`tz`; padrão Brasília), pelo mesmo
+// módulo da Agenda.
+import { diffDays, toZoned } from '@/components/agenda/time'
+import { DEFAULT_TZ } from '@/lib/timezone'
 import type { NotifTipo } from './types'
 
 const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
@@ -15,10 +17,10 @@ export function nomesResumo(nomes: string[], total: number): string {
   return `${mostrados.join(', ')} e mais ${total - mostrados.length}`
 }
 
-/** Dia relativo em São Paulo: "hoje", "amanhã", "ontem" ou "sexta, 10/10". */
-export function diaRelativo(inicioIso: string, agoraMs: number): string {
-  const alvo = toSp(inicioIso).date
-  const hoje = toSp(new Date(agoraMs).toISOString()).date
+/** Dia relativo no fuso `tz`: "hoje", "amanhã", "ontem" ou "sexta, 10/10". */
+export function diaRelativo(inicioIso: string, agoraMs: number, tz: string = DEFAULT_TZ): string {
+  const alvo = toZoned(inicioIso, tz).date
+  const hoje = toZoned(new Date(agoraMs).toISOString(), tz).date
   const d = diffDays(hoje, alvo)
   if (d === 0) return 'hoje'
   if (d === 1) return 'amanhã'
@@ -29,14 +31,14 @@ export function diaRelativo(inicioIso: string, agoraMs: number): string {
 }
 
 /** "amanhã, 16:00", "hoje, 09:30" ou "sexta, 10/10 às 16:00". */
-export function quandoAgenda(inicioIso: string, agoraMs: number): string {
-  const dia = diaRelativo(inicioIso, agoraMs)
-  const hm = toSp(inicioIso).hm
+export function quandoAgenda(inicioIso: string, agoraMs: number, tz: string = DEFAULT_TZ): string {
+  const dia = diaRelativo(inicioIso, agoraMs, tz)
+  const hm = toZoned(inicioIso, tz).hm
   return /^(hoje|amanhã|ontem)$/.test(dia) ? `${dia}, ${hm}` : `${dia} às ${hm}`
 }
 
-/** "AAAA-MM-DD" do agendamento em São Paulo (a Agenda abre nesse dia). */
-export const diaDoAgendamento = (inicioIso: string): string => toSp(inicioIso).date
+/** "AAAA-MM-DD" do agendamento no fuso `tz` (a Agenda abre nesse dia). */
+export const diaDoAgendamento = (inicioIso: string, tz: string = DEFAULT_TZ): string => toZoned(inicioIso, tz).date
 
 export const AGENDA_TITULO: Record<Extract<NotifTipo, `agenda_${string}`>, string> = {
   agenda_novo: 'Novo agendamento',

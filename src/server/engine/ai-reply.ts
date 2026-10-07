@@ -1,5 +1,6 @@
 import type { AiAgent, AiJob, Contact, Conversation, Message } from '@prisma/client'
 import { db } from '@/lib/db'
+import { normTz } from '@/lib/timezone'
 import { generateReply, LlmError } from '@/server/agent/llm'
 import type { ChatMessage } from '@/server/agent/llm'
 import { detectReplyLanguage, FIXED, LIMITE_TODOS, parseIdiomaConfig, resolveReplyLanguage } from '@/server/agent/i18n'
@@ -57,17 +58,18 @@ const RETRY_CANCEL_NOTES = ['cancelado: WhatsApp desconectado', 'cancelado: IA d
 
 export const AI_JOB = { pendente: 'pendente', executando: 'executando', feito: 'feito', erro: 'erro' } as const
 
-type Eligibility = { ok: true; agent: AiAgent; horarioAtendimento: string | null } | { ok: false; reason: string }
+type Eligibility = { ok: true; agent: AiAgent; horarioAtendimento: string | null; timezone: string } | { ok: false; reason: string }
 
 async function loadAgentFor(workspaceId: string, at: Date, opts: { ignoreSchedule?: boolean } = {}): Promise<Eligibility> {
   const [agent, ws] = await Promise.all([
     db.aiAgent.findUnique({ where: { workspaceId } }),
-    db.workspace.findUnique({ where: { id: workspaceId }, select: { horarioAtendimento: true } }),
+    db.workspace.findUnique({ where: { id: workspaceId }, select: { horarioAtendimento: true, timezone: true } }),
   ])
   if (!agent?.enabled) return { ok: false, reason: 'IA desligada' }
   // Pedido de uma pessoa ("Responder com a IA"): ela decidiu agora, o horário do agente não a segura.
-  if (!opts.ignoreSchedule && !agentMayReplyAt(agent.horario, ws?.horarioAtendimento ?? null, at)) return { ok: false, reason: 'fora do horário do agente' }
-  return { ok: true, agent, horarioAtendimento: ws?.horarioAtendimento ?? null }
+  const timezone = normTz(ws?.timezone)
+  if (!opts.ignoreSchedule && !agentMayReplyAt(agent.horario, ws?.horarioAtendimento ?? null, at, timezone)) return { ok: false, reason: 'fora do horário do agente' }
+  return { ok: true, agent, horarioAtendimento: ws?.horarioAtendimento ?? null, timezone }
 }
 
 /**
@@ -128,7 +130,7 @@ export async function enqueuePendingForWorkspace(workspaceId: string): Promise<n
       (!!last.mediaType || !isNonReplyableBody(last.body)) &&
       now.getTime() - last.createdAt.getTime() >= 6_000 &&
       now.getTime() - last.createdAt.getTime() < SWEEP_LOOKBACK_MS &&
-      agentMayReplyAt(el.agent.horario, el.horarioAtendimento, last.createdAt)
+      agentMayReplyAt(el.agent.horario, el.horarioAtendimento, last.createdAt, el.timezone)
     )
   })
   // Já tentamos responder depois dessa mensagem (feito/erro)? Uma consulta só, em vez de uma por conversa.
@@ -419,13 +421,13 @@ async function execute(job: AiJob): Promise<JobResult> {
   // Agendamento pela IA: só com a opção ligada no agente (fonte única: AiAgent.canSchedule) e ao menos um serviço cadastrado.
   const schedulingOn = agent.canSchedule && servicos.length > 0
   const nowDate = new Date()
-  const runner = schedulingOn ? createToolRunner({ workspaceId, conversationId, contactId: conv.contactId }) : null
+  const runner = schedulingOn ? createToolRunner({ workspaceId, conversationId, contactId: conv.contactId, timezone: el.timezone }) : null
   const agendaCtx = schedulingOn
     ? {
-        calendario: miniCalendar(nowDate),
+        calendario: miniCalendar(nowDate, el.timezone),
         clienteNome: displayName(conv.contact.nome, conv.contact) || null,
         confirmar: agent.confirmarAgendamento,
-        contexto: [...(await remarcarContext(workspaceId, conv.contactId, nowDate)), ...(await discardedWriteNotice(conversationId, new Date(nowDate.getTime() - 15 * 60_000)))],
+        contexto: [...(await remarcarContext(workspaceId, conv.contactId, nowDate, el.timezone)), ...(await discardedWriteNotice(conversationId, new Date(nowDate.getTime() - 15 * 60_000)))],
       }
     : undefined
   const system = buildSystemPrompt({
@@ -435,7 +437,8 @@ async function execute(job: AiJob): Promise<JobResult> {
     handoffRules: agent.handoffRules,
     servicos,
     horarioAtendimento: el.horarioAtendimento,
-    agora: formatAgora(new Date()),
+    agora: formatAgora(new Date(), el.timezone),
+    fuso: el.timezone,
     midia: { audio: transcriptionAvailable(), imagem: visionOn },
     agenda: agendaCtx,
     idioma,

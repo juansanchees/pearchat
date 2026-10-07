@@ -4,7 +4,8 @@ import { automationAllowed } from '@/server/billing/entitlements'
 import { canSendFreeformTo } from './freeform'
 import { contactRef, ensureConversation, OutboundAlreadySentError, OutboundError, sendAndRecord } from './outbound'
 import type { OutboundContent } from './outbound'
-import { getConnected, log, logError, shortError, spParts, templateFirstName } from './util'
+import { addDaysYmd, hmOf, normTz, tzParts } from '@/lib/timezone'
+import { getConnected, log, logError, shortError, templateFirstName } from './util'
 
 // Lembretes da agenda: um por evento e tipo (EventReminder @@unique[eventId, kind]).
 // Para cada evento só sai o lembrete MAIS PRÓXIMO do horário entre os que já venceram; os anteriores
@@ -21,20 +22,18 @@ export function confirmationKind(kinds: string[]): string | null {
   return kinds.includes('24h') ? '24h' : kinds.includes('2h') ? '2h' : null
 }
 
-export function diaLabel(inicio: Date, now: Date): string {
-  const a = spParts(inicio)
-  const b = spParts(now)
-  if (a.ymd === b.ymd) return 'hoje'
-  const amanha = spParts(new Date(now.getTime() + 24 * 3_600_000)).ymd
-  if (a.ymd === amanha) return 'amanhã'
-  const [, mm, dd] = a.ymd.split('-')
+/** "hoje" / "amanhã" / "dd/mm" do horário `inicio`, no relógio do espaço (`tz`); "amanhã" = dia seguinte do calendário. */
+export function diaLabel(inicio: Date, now: Date, tz: string): string {
+  const a = tzParts(inicio, tz).ymd
+  const hoje = tzParts(now, tz).ymd
+  if (a === hoje) return 'hoje'
+  if (a === addDaysYmd(hoje, 1)) return 'amanhã'
+  const [, mm, dd] = a.split('-')
   return `${dd}/${mm}`
 }
 
-export const horaLabel = (d: Date): string => {
-  const p = spParts(d)
-  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
-}
+/** "HH:MM" no relógio do espaço. */
+export const horaLabel = (d: Date, tz: string): string => hmOf(d, tz)
 
 /** Cria o registro (o "claim"). Devolve false se já existia. */
 async function claim(eventId: string, kind: string, result: string | null): Promise<boolean> {
@@ -52,12 +51,12 @@ export async function runDueReminders(): Promise<number> {
   const now = new Date()
   const conns = await db.calendarConnection.findMany({
     where: { lembretes: { isEmpty: false }, workspace: { arquivadoEm: null, whatsappSession: { is: { status: 'CONECTADO' } } } },
-    select: { workspaceId: true, lembretes: true, pedirConfirmacao: true },
+    select: { workspaceId: true, lembretes: true, pedirConfirmacao: true, workspace: { select: { timezone: true } } },
   })
   let sent = 0
   for (const conn of conns) {
     try {
-      sent += await remindWorkspace(conn, now)
+      sent += await remindWorkspace({ ...conn, timezone: normTz(conn.workspace.timezone) }, now)
     } catch (e) {
       logError('reminders', `workspace ${conn.workspaceId} falhou`, e)
     }
@@ -66,7 +65,7 @@ export async function runDueReminders(): Promise<number> {
   return sent
 }
 
-async function remindWorkspace(conn: { workspaceId: string; lembretes: string[]; pedirConfirmacao: boolean }, now: Date): Promise<number> {
+async function remindWorkspace(conn: { workspaceId: string; lembretes: string[]; pedirConfirmacao: boolean; timezone: string }, now: Date): Promise<number> {
   let sent = 0
   if (!(await automationAllowed(conn.workspaceId))) return 0 // modo restrito: sem lembretes automáticos
   {
@@ -105,7 +104,7 @@ async function remindWorkspace(conn: { workspaceId: string; lembretes: string[];
 
         // Nome do tipo de atendimento atual (o texto "tipo" do evento guarda o nome da época do agendamento).
         const ask = conn.pedirConfirmacao && ev.confirmacao === 'pendente' && target === confirmationKind(kinds)
-        const { result, asked } = await sendReminder(conn.workspaceId, { id: ev.id, inicio: ev.inicio, tipo: ev.serviceType?.nome ?? ev.tipo }, contact, now, ask, target)
+        const { result, asked } = await sendReminder(conn.workspaceId, { id: ev.id, inicio: ev.inicio, tipo: ev.serviceType?.nome ?? ev.tipo }, contact, now, ask, target, conn.timezone)
         await db.eventReminder.updateMany({ where: { eventId: ev.id, kind: target }, data: { result, pediuConfirmacao: asked && result === 'enviado' } })
         if (result === 'enviado') sent++
       } catch (e) {
@@ -123,11 +122,12 @@ async function sendReminder(
   now: Date,
   ask: boolean,
   kind: string,
+  tz: string,
 ): Promise<{ result: string; asked: boolean }> {
   const session = await getConnected(workspaceId)
   if (!session) return { result: 'pulado: WhatsApp desconectado', asked: false }
-  const dia = diaLabel(ev.inicio, now)
-  const hora = horaLabel(ev.inicio)
+  const dia = diaLabel(ev.inicio, now, tz)
+  const hora = horaLabel(ev.inicio, tz)
   const to = contactRef(contact)
   let content: OutboundContent
   let freeform = false

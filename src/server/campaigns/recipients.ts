@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
-import { spParts } from '@/server/engine/util'
+import { DEFAULT_TZ, tzParts } from '@/lib/timezone'
+import { getWorkspaceTz } from '@/server/workspace-locale'
 import type { CampaignListDTO, CampaignListId } from '@/lib/types'
 
 export const LIST_IDS: CampaignListId[] = ['todos', 'clientes', 'aniv', 'frios']
@@ -8,18 +9,18 @@ export const LIST_IDS: CampaignListId[] = ['todos', 'clientes', 'aniv', 'frios']
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 export const FRIOS_DIAS = 30
 
-/** Mês (0-11) de São Paulo: o servidor pode rodar em UTC e virar o mês 3 h antes do cliente. */
-const spMonth = (d: Date): number => Number(spParts(d).ymd.slice(5, 7)) - 1
+/** Mês (0-11) no relógio do espaço (`tz`): o servidor roda em UTC e viraria o mês horas antes (ou depois) do negócio. */
+export const monthOfTz = (d: Date, tz: string): number => tzParts(d, tz).month - 1
 
-/** Nome exibido de cada lista (aniversariantes seguem o mês corrente). */
-export function listName(id: string, now: Date = new Date()): string {
+/** Nome exibido de cada lista (aniversariantes seguem o mês corrente no fuso do espaço). */
+export function listName(id: string, now: Date = new Date(), tz: string = DEFAULT_TZ): string {
   switch (id) {
     case 'todos':
       return 'Todos os contatos'
     case 'clientes':
       return 'Clientes que já compraram'
     case 'aniv':
-      return `Aniversariantes de ${MESES[spMonth(now)]}`
+      return `Aniversariantes de ${MESES[monthOfTz(now, tz)]}`
     case 'frios':
       return 'Sem conversa há 30 dias'
     default:
@@ -79,8 +80,9 @@ export async function resolveRecipientIds(workspaceId: string, lista: CampaignLi
   const where = recipientWhere(workspaceId, lista, now)
   if (lista === 'aniv') {
     // O ano do aniversário é placeholder (2000, UTC): só o mês importa.
-    const rows = await db.contact.findMany({ where, select: { id: true, aniversario: true } })
-    return rows.filter((r) => r.aniversario && r.aniversario.getUTCMonth() === spMonth(now)).map((r) => r.id)
+    const [rows, tz] = await Promise.all([db.contact.findMany({ where, select: { id: true, aniversario: true } }), getWorkspaceTz(workspaceId)])
+    const mes = monthOfTz(now, tz)
+    return rows.filter((r) => r.aniversario && r.aniversario.getUTCMonth() === mes).map((r) => r.id)
   }
   const rows = await db.contact.findMany({ where, select: { id: true } })
   return rows.map((r) => r.id)
@@ -88,6 +90,9 @@ export async function resolveRecipientIds(workspaceId: string, lista: CampaignLi
 
 /** As 4 listas com a contagem real de destinatários. */
 export async function getListsWithCounts(workspaceId: string, now: Date = new Date()): Promise<CampaignListDTO[]> {
-  const counts = await Promise.all(LIST_IDS.map(async (id) => (await resolveRecipientIds(workspaceId, id, now)).length))
-  return LIST_IDS.map((id, i) => ({ id, nome: listName(id, now), desc: LIST_DESC[id], qtd: counts[i] }))
+  const [counts, tz] = await Promise.all([
+    Promise.all(LIST_IDS.map(async (id) => (await resolveRecipientIds(workspaceId, id, now)).length)),
+    getWorkspaceTz(workspaceId),
+  ])
+  return LIST_IDS.map((id, i) => ({ id, nome: listName(id, now, tz), desc: LIST_DESC[id], qtd: counts[i] }))
 }

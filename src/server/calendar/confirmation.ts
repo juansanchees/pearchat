@@ -3,7 +3,10 @@ import { diaSemanaOf, quandoExtenso } from '@/server/calendar/scheduling'
 import { canSendFreeformTo } from '@/server/engine/freeform'
 import { contactRef, OutboundError, sendAndRecord } from '@/server/engine/outbound'
 import { agentMayReplyAt } from '@/server/engine/rules'
-import { getConnected, log, logError, norm, shortError, spParts } from '@/server/engine/util'
+import { diaLabel, horaLabel } from '@/server/engine/reminders'
+import { getConnected, log, logError, norm, shortError } from '@/server/engine/util'
+import { addDaysYmd, ymdOf } from '@/lib/timezone'
+import { getWorkspaceTz } from '@/server/workspace-locale'
 import { loadConversationItem } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { notifySpaceAttention } from '@/server/spaces/attention'
@@ -45,17 +48,13 @@ export function classifyReminderReply(text: string): ReplyKind {
   return null
 }
 
-const dia = (inicio: Date, now: Date): string => {
-  const a = spParts(inicio)
-  const b = spParts(now)
-  if (a.ymd === b.ymd) return 'hoje'
-  if (a.ymd === spParts(new Date(now.getTime() + 24 * 3_600_000)).ymd) return 'amanhã'
-  const [, mm, dd] = a.ymd.split('-')
-  return `${diaSemanaOf(a.ymd)} (${dd}/${mm})`
-}
-const hora = (d: Date): string => {
-  const p = spParts(d)
-  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
+/** "hoje" / "amanhã" / "quinta-feira (08/10)" no relógio do espaço (`tz`). */
+export const diaConfirmacao = (inicio: Date, now: Date, tz: string): string => {
+  const a = ymdOf(inicio, tz)
+  const hoje = ymdOf(now, tz)
+  if (a === hoje || a === addDaysYmd(hoje, 1)) return diaLabel(inicio, now, tz)
+  const [, mm, dd] = a.split('-')
+  return `${diaSemanaOf(a)} (${dd}/${mm})`
 }
 
 /** Agendamento futuro e ativo do contato, com confirmação no estado `estado`, cujo lembrete com pedido saiu nas últimas 36 h. */
@@ -76,11 +75,11 @@ async function reminded(workspaceId: string, contactId: string, estado: 'pendent
 }
 
 /** Linha extra do prompt da IA quando o cliente pediu para remarcar respondendo ao lembrete. */
-export async function remarcarContext(workspaceId: string, contactId: string, now: Date): Promise<string[]> {
+export async function remarcarContext(workspaceId: string, contactId: string, now: Date, tz: string): Promise<string[]> {
   const list = await reminded(workspaceId, contactId, 'recusado', now)
   return list.map(
     (e) =>
-      `O cliente respondeu ao lembrete do agendamento ${e.id} (${e.serviceType?.nome ?? e.tipo}, ${quandoExtenso(e.inicio)}) pedindo para remarcar. Conduza a remarcação: pergunte qual dia e período ele prefere, consulte os horários livres, confirme o novo horário e use remarcar_agendamento com esse id. Se ele preferir cancelar, confirme e use cancelar_agendamento.`,
+      `O cliente respondeu ao lembrete do agendamento ${e.id} (${e.serviceType?.nome ?? e.tipo}, ${quandoExtenso(e.inicio, tz)}) pedindo para remarcar. Conduza a remarcação: pergunte qual dia e período ele prefere, consulte os horários livres, confirme o novo horário e use remarcar_agendamento com esse id. Se ele preferir cancelar, confirme e use cancelar_agendamento.`,
   )
 }
 
@@ -111,12 +110,13 @@ export async function handleReminderReply(input: { workspaceId: string; conversa
     if (!ev) return { handled: false }
     const conv = await db.conversation.findFirst({ where: { id: conversationId, workspaceId }, include: { contact: true } })
     if (!conv) return { handled: false }
+    const tz = await getWorkspaceTz(workspaceId)
 
     if (kind === 'confirmar') {
       const upd = await db.event.updateMany({ where: { id: ev.id, workspaceId, status: 'ativo', confirmacao: 'pendente' }, data: { confirmacao: 'confirmado', confirmadoEm: now } })
       if (upd.count === 0) return { handled: false }
       emitToWorkspace(workspaceId, 'agenda.updated', { workspaceId, confirmacao: { estado: 'confirmado', cliente: conv.contact.nome, inicio: ev.inicio.toISOString() } })
-      await sendShort(workspaceId, conv, conv.contact, `Confirmado! Te esperamos ${dia(ev.inicio, now)} às ${hora(ev.inicio)}.`)
+      await sendShort(workspaceId, conv, conv.contact, `Confirmado! Te esperamos ${diaConfirmacao(ev.inicio, now, tz)} às ${horaLabel(ev.inicio, tz)}.`)
       log('confirmation', `evento ${ev.id} confirmado pelo cliente`)
       return { handled: true }
     }
@@ -133,7 +133,7 @@ export async function handleReminderReply(input: { workspaceId: string; conversa
       db.serviceType.count({ where: { workspaceId, ativo: true } }),
     ])
     const iaConduz =
-      !!agent?.enabled && agent.canSchedule && servicos > 0 && conv.mode !== 'HUMANO' && !input.optOut && agentMayReplyAt(agent.horario, ws?.horarioAtendimento ?? null, now)
+      !!agent?.enabled && agent.canSchedule && servicos > 0 && conv.mode !== 'HUMANO' && !input.optOut && agentMayReplyAt(agent.horario, ws?.horarioAtendimento ?? null, now, tz)
     if (iaConduz) return { handled: false }
 
     if (conv.mode === 'HUMANO') return { handled: true }
