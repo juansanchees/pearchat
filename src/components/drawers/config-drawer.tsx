@@ -8,6 +8,8 @@ import { useDisconnect } from '@/components/app/use-disconnect'
 import { usePermissions } from '@/components/app/use-permissions'
 import { usePhotoPicker } from '@/components/app/use-photo-picker'
 import { Avatar, Pill } from '@/components/pear'
+import { DDI_OPTIONS } from '@/lib/phone'
+import { TIMEZONE_OPTIONS, tzOffsetLabel } from '@/lib/timezone'
 import type { SettingsDTO } from '@/lib/types'
 import type { CalendarStateDto } from '@/server/calendar/types'
 import { api } from './api'
@@ -22,8 +24,15 @@ import { DrawerShell, Field, SaveFooter, Section } from './parts'
 const connRow = 'flex items-center gap-3 rounded-md border border-light-divider px-[14px] py-3'
 
 export function ConfigDrawer() {
-  const { user, setUser, wa, connected, closeDrawer } = useAppState()
+  const { user, setUser, wa, connected, closeDrawer, locale, setLocale } = useAppState()
   const { horarioAtendimento, setHorarioAtendimento, notifs, setNotifs } = useDrawerData()
+  // DDI padrão e fuso: editados aqui e só valem para o resto do app ao salvar.
+  const [ddi, setDdi] = useState(locale.ddiPadrao)
+  const [tz, setTz] = useState(locale.timezone)
+  useEffect(() => {
+    setDdi(locale.ddiPadrao)
+    setTz(locale.timezone)
+  }, [locale.ddiPadrao, locale.timezone])
   const loading = useDrawerLoad('config')
   const photo = usePhotoPicker()
   const logo = usePhotoPicker('logo')
@@ -49,9 +58,10 @@ export function ConfigDrawer() {
   const salvar = async () => {
     const saved = await api<SettingsDTO>('/api/settings', {
       method: 'PUT',
-      body: { nome: user.nome, email: user.email, empresa: user.empresa, horarioAtendimento: horarioAtendimento, notifs },
+      body: { nome: user.nome, email: user.email, empresa: user.empresa, horarioAtendimento: horarioAtendimento, notifs, ddiPadrao: ddi, timezone: tz },
     })
     setUser({ nome: saved.nome, email: saved.email, empresa: saved.empresa })
+    setLocale({ ddiPadrao: saved.ddiPadrao, timezone: saved.timezone })
   }
 
   const waSub = !connected
@@ -114,6 +124,33 @@ export function ConfigDrawer() {
           </Field>
         </div>
         <div className="-mt-1 text-[11.5px] text-light-neutral-500">A IA usa esse horário quando a opção &quot;Fora do expediente&quot; estiver marcada.</div>
+        <div className="flex flex-wrap gap-3">
+          <Field label="Fuso horário do negócio" className="min-w-0 flex-[1_1_220px]">
+            <select className="pc-input" value={tz} onChange={(e) => setTz(e.target.value)} aria-label="Fuso horário do negócio">
+              {!TIMEZONE_OPTIONS.some((o) => o.id === tz) && <option value={tz}>{tz}</option>}
+              {TIMEZONE_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label} · {tzOffsetLabel(o.id)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="País dos números sem código (DDI)" className="min-w-0 flex-[1_1_180px]">
+            <select className="pc-input" value={ddi} onChange={(e) => setDdi(e.target.value)} aria-label="DDI padrão dos números sem código de país">
+              {!DDI_OPTIONS.some((o) => o.ddi === ddi) && <option value={ddi}>+{ddi}</option>}
+              {DDI_OPTIONS.map((o) => (
+                <option key={o.ddi} value={o.ddi}>
+                  {o.nome} (+{o.ddi})
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="-mt-1 text-[11.5px] text-light-neutral-500">
+          O fuso vale para a Agenda, os lembretes, o horário de silêncio dos disparos, o horário de atendimento da IA e o link público. Mudar o fuso NÃO muda
+          horários já marcados (eles continuam no mesmo instante); só como aparecem e os cálculos daqui para frente. O DDI é acrescentado só a números digitados
+          ou importados sem código de país; número com + ou já com código nunca é alterado.
+        </div>
       </Section>
       )}
 

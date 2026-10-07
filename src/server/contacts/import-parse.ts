@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { detectDelimiter, parseCsv } from './csv'
 import type { CsvRecord } from './csv'
+import { DEFAULT_DDI } from '@/lib/phone'
 import { normalizePhone } from './phone'
 import { normalizeTags } from './tags'
 import type { ImportError } from './types'
@@ -53,13 +54,13 @@ const cellAt = (rec: CsvRecord, idx: number | undefined) =>
 
 type RowResult = { row: ImportRow } | { erro: ImportError }
 
-function buildRow(rec: CsvRecord, cols: Partial<Record<Field, number>>): RowResult {
+function buildRow(rec: CsvRecord, cols: Partial<Record<Field, number>>, ddi: string): RowResult {
   const fail = (motivo: string) => ({ erro: { linha: rec.line, motivo } })
   const name = cellAt(rec, cols.name).slice(0, 120)
   if (!name) return fail('Nome ausente')
   const rawPhone = cellAt(rec, cols.phone)
   if (!rawPhone) return fail('Telefone ausente')
-  const phone = normalizePhone(rawPhone)
+  const phone = normalizePhone(rawPhone, ddi)
   if (!phone) return fail('Telefone inválido')
   const rawEmail = cellAt(rec, cols.email)
   if (rawEmail && !emailSchema.safeParse(rawEmail).success) return fail('E-mail inválido')
@@ -88,7 +89,7 @@ function mergeDuplicates(rows: ImportRow[]): { rows: ImportRow[]; duplicadas: nu
   return { rows: Array.from(byPhone.values()), duplicadas }
 }
 
-export function parseImport(text: string): ParsedImport {
+export function parseImport(text: string, ddi: string = DEFAULT_DDI): ParsedImport {
   const records = parseCsv(text, detectDelimiter(text)).filter((r) => r.cells.some((c) => c.trim() !== ''))
   if (records.length === 0) return { ok: false, status: 400, message: 'O arquivo está vazio' }
 
@@ -104,7 +105,7 @@ export function parseImport(text: string): ParsedImport {
   const rows: ImportRow[] = []
   const erros: ImportError[] = []
   for (const rec of data) {
-    const result = buildRow(rec, cols)
+    const result = buildRow(rec, cols, ddi)
     if ('erro' in result) erros.push(result.erro)
     else rows.push(result.row)
   }

@@ -187,6 +187,10 @@ export interface SettingsDTO {
   empresa: string
   horarioAtendimento: string
   notifs: string[]
+  /** DDI acrescentado a número digitado SEM DDI neste WhatsApp (só dígitos, ex.: "55", "52"). */
+  ddiPadrao: string
+  /** Fuso horário IANA do negócio (agenda, lembretes, silêncio dos disparos, horário da IA, link público). */
+  timezone: string
 }
 
 export interface BillingDTO {

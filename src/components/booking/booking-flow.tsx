@@ -4,13 +4,24 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { ArrowClockwise, CalendarCheck, CalendarPlus, Check, CheckCircle, Clock, WarningCircle, WhatsappLogo } from '@phosphor-icons/react'
 import { Logo } from '@/components/brand/logo'
+import { maskPhoneInput, phoneInputError } from '@/lib/phone'
 import { cn } from '@/lib/utils'
 
 // Página pública de agendamento (cliente final, sem login). Um fluxo em uma página:
 // serviço -> dia -> horário -> dados -> confirmação. Rotas: /api/public/booking/[slug]/**.
 
 type Servico = { id: string; nome: string; duracaoMin: number }
-type Info = { negocio: string; mensagem: string | null; servicos: Servico[]; diasAFrente: number; hoje: string; token: string }
+type Info = {
+  negocio: string
+  mensagem: string | null
+  servicos: Servico[]
+  diasAFrente: number
+  hoje: string
+  token: string
+  /** Fuso do negócio (os horários da página seguem o relógio dele) e DDI padrão do campo de WhatsApp. */
+  fuso?: { id: string; nome: string; offset: string }
+  ddiPadrao?: string
+}
 type Dia = { date: string; livres: number }
 type Confirmado = {
   negocio: string
@@ -44,25 +55,8 @@ export function durLabel(min: number): string {
   return r ? `${h} h ${r} min` : `${h} h`
 }
 
-/** Máscara brasileira: (11) 98765-4321. Aceita colar com +55. */
-export function maskPhone(raw: string): string {
-  let d = raw.replace(/\D/g, '')
-  if (d.length > 11 && d.startsWith('55')) d = d.slice(2)
-  d = d.slice(0, 11)
-  if (d.length === 0) return ''
-  if (d.length <= 2) return `(${d}`
-  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
-}
-
-export function phoneError(masked: string): string | null {
-  const d = masked.replace(/\D/g, '')
-  if (d.length < 10) return 'Informe o WhatsApp com DDD.'
-  if (d.length === 11 && d[2] !== '9') return 'Celular com 11 dígitos começa com 9 depois do DDD.'
-  if (/^(\d)\1+$/.test(d)) return 'Esse número não parece válido.'
-  return null
-}
+/** Texto que vai para o servidor: só dígitos, com o "+" na frente quando a pessoa digitou o código do país. */
+const phonePayload = (masked: string): string => (masked.trimStart().startsWith('+') ? '+' : '') + masked.replace(/\D/g, '')
 
 async function call<T>(url: string, init?: RequestInit): Promise<{ status: number; body: T | null }> {
   const res = await fetch(url, { cache: 'no-store', ...init })
@@ -206,7 +200,9 @@ export function BookingFlow({ slug, negocio, logoSrc = null }: { slug: string; n
   }
 
   const nomeErr = nome.trim().length < 2 ? 'Informe seu nome.' : null
-  const telErr = phoneError(tel)
+  const ddi = info?.ddiPadrao ?? '55'
+  // País do negócio: máscara e regras do campo (com "+" a pessoa digita o código do país e a máscara respeita).
+  const telErr = phoneInputError(tel, ddi)
   const aceiteErr = aceite ? null : 'Para agendar, aceite a Política de Privacidade.'
   const podeEnviar = !!(servico && dia && hora && !nomeErr && !telErr && aceite)
 
@@ -227,7 +223,7 @@ export function BookingFlow({ slug, negocio, logoSrc = null }: { slug: string; n
           date: dia,
           hora,
           nome: nome.trim(),
-          telefone: tel.replace(/\D/g, ''),
+          telefone: phonePayload(tel),
           observacao: obs.trim() || null,
           aceite: true,
         }),
@@ -296,6 +292,14 @@ export function BookingFlow({ slug, negocio, logoSrc = null }: { slug: string; n
           <p className="m-0 text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-dark-accent-300">Agendamento online</p>
           <h1 className="mb-0 mt-3 text-balance text-[28px] font-medium leading-[1.15] tracking-[-0.02em] min-[560px]:text-[34px]">{nomeNegocio}</h1>
           {info?.mensagem && <p className="mb-0 mt-3 max-w-[48ch] text-[14px] leading-[1.55] text-dark-neutral-300 [text-wrap:pretty]">{info.mensagem}</p>}
+          {info?.fuso && (
+            <p data-testid="booking-fuso" className="mb-0 mt-3 flex items-center gap-1.5 text-[12.5px] leading-[1.4] text-dark-neutral-300">
+              <Clock size={13} aria-hidden="true" />
+              <span>
+                Horários no fuso de {info.fuso.nome} ({info.fuso.offset})
+              </span>
+            </p>
+          )}
         </div>
       </header>
 
@@ -485,13 +489,13 @@ export function BookingFlow({ slug, negocio, logoSrc = null }: { slug: string; n
                     id={ids.tel}
                     className="pc-input"
                     value={tel}
-                    onChange={(e) => setTel(maskPhone(e.target.value))}
+                    onChange={(e) => setTel(maskPhoneInput(e.target.value, ddi))}
                     inputMode="tel"
-                    autoComplete="tel-national"
-                    maxLength={16}
+                    autoComplete="tel"
+                    maxLength={24}
                     aria-invalid={tocou && !!telErr}
                     aria-describedby={tocou && telErr ? `${ids.tel}-erro` : undefined}
-                    placeholder="(11) 98765-4321"
+                    placeholder={ddi === '55' ? '(11) 98765-4321' : ddi === '52' ? '55 1234 5678' : `Número local ou +${ddi} …`}
                   />
                   {tocou && telErr && <Erro id={`${ids.tel}-erro`}>{telErr}</Erro>}
                 </div>

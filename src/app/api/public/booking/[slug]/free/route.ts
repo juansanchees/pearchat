@@ -34,7 +34,7 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
   })
   if (!st) return json({ error: 'INVALIDO', message: 'Serviço indisponível.' }, 404)
 
-  const cfg = { antecedenciaMin: ws.antecedenciaMin, diasAFrente: ws.diasAFrente }
+  const cfg = { antecedenciaMin: ws.antecedenciaMin, diasAFrente: ws.diasAFrente, timezone: ws.timezone }
   if (parsed.data.date) {
     const horarios = await slotsForOneDay(ws.id, parsed.data.date, st.duracaoMin, cfg)
     return json({ date: parsed.data.date, horarios })

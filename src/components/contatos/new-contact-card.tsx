@@ -3,6 +3,7 @@
 import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CloudArrowUp, X } from '@phosphor-icons/react'
+import { useAppState } from '@/components/app/app-state'
 import { cn } from '@/lib/utils'
 import { TAG_OPTIONS } from './types'
 import type { NewContactInput } from './types'
@@ -16,6 +17,8 @@ export function NewContactCard({
   onSubmit: (input: NewContactInput) => Promise<boolean>
 }) {
   const uid = useId()
+  const { locale } = useAppState()
+  const ddiPadrao = locale.ddiPadrao
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -83,7 +86,7 @@ export function NewContactCard({
           type="tel"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          placeholder="+55 11 90000-0000"
+          placeholder={ddiPadrao === '55' ? '(11) 90000-0000 ou +DDI número' : `Número local ou +${ddiPadrao} …`}
           autoComplete="off"
           required
           aria-required="true"

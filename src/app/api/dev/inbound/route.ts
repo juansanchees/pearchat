@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { badRequest, sessionWorkspaceId, unauthorized } from '@/server/messages/api'
 import { normalizePhone } from '@/server/contacts/phone'
+import { getWorkspaceDdi } from '@/server/workspace-locale'
 import { MEDIA_LABEL } from '@/server/media/mime'
 import { ingestInboundMessage } from '@/server/messages/ingest'
 import { registerMockMedia } from '@/server/whatsapp/mock'
@@ -26,7 +27,9 @@ const mediaSchema = z.object({
 })
 
 const schema = z.object({
-  telefone: z.string().trim().min(8).max(24),
+  telefone: z.string().trim().min(8).max(24).optional(),
+  /** LID do WhatsApp (só dígitos): simula o evento em que a Evolution entrega o LID e o telefone juntos. */
+  waUserId: z.string().trim().regex(/^\d{5,24}$/).optional(),
   nome: z.string().trim().min(1).max(120).optional(),
   body: z.string().trim().max(4096).optional(),
   media: mediaSchema.optional(),
@@ -43,9 +46,12 @@ export async function POST(req: Request) {
   if (!parsed.success) return badRequest('Corpo inválido')
   if (!parsed.data.body && !parsed.data.media) return badRequest('Corpo inválido')
 
-  // Mesmo formato E.164 que a produção usa (DDI 55 assumido quando ausente).
-  const telefone = normalizePhone(parsed.data.telefone)
-  if (!telefone) return badRequest('Telefone inválido')
+  // Mesmo formato E.164 que a produção usa (DDI padrão do espaço quando o número vem sem DDI).
+  const telefone = parsed.data.telefone ? normalizePhone(parsed.data.telefone, await getWorkspaceDdi(workspaceId)) : undefined
+  if (parsed.data.telefone && !telefone) return badRequest('Telefone inválido')
+  const waUserId = parsed.data.waUserId
+  if (!telefone && !waUserId) return badRequest('Corpo inválido')
+  const from = { ...(telefone ? { telefone } : {}), ...(waUserId ? { waUserId } : {}) }
 
   const providerMessageId = `mock-${randomUUID()}`
   const media = parsed.data.media
@@ -55,7 +61,7 @@ export async function POST(req: Request) {
     if (media.fixtureOnly) return NextResponse.json({ ok: true, providerMessageId }, { status: 201 })
     await ingestInboundMessage({
       workspaceId,
-      from: { telefone },
+      from,
       nome: parsed.data.nome,
       body: parsed.data.body || MEDIA_LABEL[media.type],
       media: {
@@ -74,7 +80,7 @@ export async function POST(req: Request) {
 
   await ingestInboundMessage({
     workspaceId,
-    from: { telefone },
+    from,
     nome: parsed.data.nome,
     body: parsed.data.body ?? '',
     providerMessageId,

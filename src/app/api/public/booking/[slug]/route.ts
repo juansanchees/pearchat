@@ -13,7 +13,8 @@ import {
   listPublicServices,
 } from '@/server/booking/public'
 import { isValidDateStr } from '@/server/calendar/time'
-import { spToday } from '@/server/booking/availability'
+import { tzLabel, tzOffsetLabel } from '@/lib/timezone'
+import { todayIn } from '@/server/booking/availability'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,7 +32,10 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
     mensagem: ws.mensagem,
     servicos,
     diasAFrente: ws.diasAFrente,
-    hoje: spToday(),
+    hoje: todayIn(ws.timezone),
+    // Fuso do negócio: os horários da página são o relógio de lá (o nome do fuso aparece na página).
+    fuso: { id: ws.timezone, nome: tzLabel(ws.timezone), offset: tzOffsetLabel(ws.timezone) },
+    ddiPadrao: ws.ddiPadrao,
     token: signFormToken(ws.id),
   })
 }

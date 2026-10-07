@@ -9,7 +9,7 @@ import type { ConnectConfig } from '@/server/whatsapp/config'
 import type { SpaceAttentionPayload } from '@/server/realtime/events'
 import { redirectIfUnauthorized } from '@/lib/auth-redirect'
 import { closeSocket, useRawSocketEvent, useSocketEvent } from '@/lib/socket-client'
-import { toSp } from '@/components/agenda/time'
+import { toZoned } from '@/components/agenda/time'
 import { AUTOMATION_TITLES } from './automations'
 import { emitAgendaChanged } from './events'
 import { HANDOFF_WINDOW_EVENT } from './handoff'
@@ -26,6 +26,8 @@ export type ToastInput = {
 // papel (Equipe) = owner | admin | agent; alimenta o usePermissions() (a interface só acompanha, o servidor decide).
 export type AppUser = { nome: string; email: string; empresa: string; organizacao: string; fotoUrl: string | null; papel?: string; id?: string; /** pessoas ativas na organização (>1 mostra quem enviou em cada mensagem) */ equipe?: number }
 export type ToastItem = ToastInput & { id: number }
+/** DDI padrão (número digitado sem DDI) e fuso horário do espaço ativo. */
+export type SpaceLocale = { ddiPadrao: string; timezone: string }
 
 export type AppState = {
   wa: WhatsAppStatusDTO
@@ -52,6 +54,9 @@ export type AppState = {
   workspaceId: string
   /** Demo ligado? Meta configurada? (calculado no servidor a cada requisição). */
   connectCfg: ConnectConfig
+  /** DDI padrão e fuso do espaço ativo (a Agenda, o sininho e os campos de telefone usam). */
+  locale: SpaceLocale
+  setLocale: (patch: Partial<SpaceLocale>) => void
   /** Recarrega a lista de espaços do servidor. Se o espaço ativo mudou em outra aba, recarrega a página. */
   refreshSpaces: () => Promise<void>
 }
@@ -73,9 +78,14 @@ export function AppStateProvider({
     spaces: SpacesResponse
     workspaceId: string
     connectCfg: ConnectConfig
+    locale: SpaceLocale
   }
   children: ReactNode
 }) {
+  const [locale, setLocaleState] = useState(initial.locale)
+  const tzRef = useRef(locale.timezone)
+  tzRef.current = locale.timezone
+  const setLocale = useCallback((patch: Partial<SpaceLocale>) => setLocaleState((l) => ({ ...l, ...patch })), [])
   const [wa, setWaState] = useState(initial.wa)
   const [automations, setAutomations] = useState(initial.automations)
   const [drawer, setDrawer] = useState<DrawerKey | null>(null)
@@ -173,7 +183,7 @@ export function AppStateProvider({
   useSocketEvent('agenda.updated', (p) => {
     emitAgendaChanged()
     if (p.ia) {
-      const at = toSp(p.ia.inicio)
+      const at = toZoned(p.ia.inicio, tzRef.current)
       const [, mm, dd] = at.date.split('-')
       const quando = `${p.ia.cliente}, ${dd}/${mm} ${at.hm}`
       toast({
@@ -184,7 +194,7 @@ export function AppStateProvider({
       return
     }
     if (p.confirmacao) {
-      const at = toSp(p.confirmacao.inicio)
+      const at = toZoned(p.confirmacao.inicio, tzRef.current)
       const [, mm, dd] = at.date.split('-')
       toast({
         icon: <CalendarCheck size={18} weight="fill" />,
@@ -194,7 +204,7 @@ export function AppStateProvider({
       return
     }
     if (!p.link) return
-    const at = toSp(p.link.inicio)
+    const at = toZoned(p.link.inicio, tzRef.current)
     const [, mm, dd] = at.date.split('-')
     toast({
       icon: <CalendarCheck size={18} weight="fill" />,
@@ -370,9 +380,11 @@ export function AppStateProvider({
       spaces,
       workspaceId,
       connectCfg,
+      locale,
+      setLocale,
       refreshSpaces,
     }),
-    [wa, setWa, connected, automations, setAutomation, drawer, closeDrawer, toast, user, agentName, currentToast, setUser, fuQueueCount, spaces, workspaceId, connectCfg, refreshSpaces],
+    [wa, setWa, connected, automations, setAutomation, drawer, closeDrawer, toast, user, agentName, currentToast, setUser, fuQueueCount, spaces, workspaceId, connectCfg, locale, setLocale, refreshSpaces],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

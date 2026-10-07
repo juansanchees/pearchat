@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { providerToKind } from '@/lib/mappers'
+import { nextHourTz, normTz, tzParts } from '@/lib/timezone'
 import { spMonthKey } from '@/server/calendar/time'
 import type { ProviderKind } from '@/lib/types'
 
@@ -23,49 +24,28 @@ export function shortError(err: unknown): string {
   return (err instanceof Error ? err.message : 'Erro desconhecido').slice(0, 200)
 }
 
-// ---- Fuso America/Sao_Paulo (UTC-3 fixo, sem horário de verão) ----
-
-const SP_OFFSET_MS = 3 * 60 * 60 * 1000
-const DAY_MS = 24 * 60 * 60 * 1000
-
-export type SpParts = { hour: number; minute: number; dow: number; ymd: string }
-
-/** Hora, minuto, dia da semana (0 = domingo) e data de um instante, no fuso de São Paulo. */
-export function spParts(d: Date): SpParts {
-  const s = new Date(d.getTime() - SP_OFFSET_MS)
-  return { hour: s.getUTCHours(), minute: s.getUTCMinutes(), dow: s.getUTCDay(), ymd: s.toISOString().slice(0, 10) }
-}
-
-/** Instante UTC da meia-noite (de São Paulo) do dia de `d`. */
-export function spStartOfDay(d: Date): Date {
-  const { ymd } = spParts(d)
-  return new Date(`${ymd}T00:00:00-03:00`)
-}
-
-export const spStartOfNextDay = (d: Date): Date => new Date(spStartOfDay(d).getTime() + DAY_MS)
-
-/** Próximo instante em que o relógio de São Paulo marca `hour`:00 (hoje, se ainda não passou). */
-export function spNextHour(d: Date, hour: number): Date {
-  const today = new Date(spStartOfDay(d).getTime() + hour * 3_600_000)
-  return today.getTime() >= d.getTime() ? today : new Date(today.getTime() + DAY_MS)
-}
+// ---- Fuso horário ----
+// As contas de data e hora com fuso moram em `@/lib/timezone` (Intl, fuso POR ESPAÇO; Workspace.timezone). Aqui só ficam o
+// mês de USO e o horário de silêncio. O mês de uso (UsageCounter.mes, plano e cobrança) é da CONTA, que soma vários
+// espaços: segue o relógio de Brasília para todos (`spMonthKey`), de propósito.
 
 export const monthKeyOf = spMonthKey
 
-export type SilenceConfig = { disparosSilencioAtivo: boolean; disparosSilencioInicio: number; disparosSilencioFim: number }
+export type SilenceConfig = { disparosSilencioAtivo: boolean; disparosSilencioInicio: number; disparosSilencioFim: number; timezone?: string | null }
 
 /**
- * Horário de silêncio dos disparos (São Paulo, de hora em hora). Se `d` está dentro da janela, devolve o instante
- * em que ela termina; senão null. A janela pode cruzar a meia-noite (21→8) ou ficar no mesmo dia (13→15).
- * Início = fim não é janela.
+ * Horário de silêncio dos disparos (relógio do fuso do espaço, `cfg.timezone`; de hora em hora). Se `d` está dentro da
+ * janela, devolve o instante em que ela termina; senão null. A janela pode cruzar a meia-noite (21→8) ou ficar no mesmo
+ * dia (13→15). Início = fim não é janela.
  */
 export function silenceEnd(d: Date, cfg: SilenceConfig): Date | null {
   if (!cfg.disparosSilencioAtivo) return null
   const { disparosSilencioInicio: a, disparosSilencioFim: b } = cfg
   if (a === b) return null
-  const h = spParts(d).hour
+  const tz = normTz(cfg.timezone)
+  const h = tzParts(d, tz).hour
   const inside = a > b ? h >= a || h < b : h >= a && h < b
-  return inside ? spNextHour(d, b) : null
+  return inside ? nextHourTz(d, b, tz) : null
 }
 
 export const firstName = (nome: string): string => nome.trim().split(/\s+/)[0] ?? ''

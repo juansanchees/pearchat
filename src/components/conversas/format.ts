@@ -1,4 +1,5 @@
 import { initialsOf } from '@/lib/initials'
+import { formatPhoneDisplay } from '@/lib/phone'
 
 // 1ª letra do 1º nome + 1ª letra do último (por grafema; emoji/símbolo não viram sigla).
 export function initials(name: string): string {
@@ -23,11 +24,9 @@ export function formatListTime(iso: string | null): string {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`
 }
 
-// +5511998124471 -> +55 11 99812-4471 (celular BR); outros formatos voltam como vieram.
+// +5511998124471 -> +55 11 99812-4471; +525512345678 -> +52 55 1234 5678 (formato do país quando conhecido).
 export function formatPhone(tel: string | null): string {
-  if (!tel) return ''
-  const m = /^\+55(\d{2})(\d{5})(\d{4})$/.exec(tel)
-  return m ? `+55 ${m[1]} ${m[2]}-${m[3]}` : tel
+  return tel ? formatPhoneDisplay(tel) : ''
 }
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()

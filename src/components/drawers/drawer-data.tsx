@@ -104,7 +104,7 @@ export function DrawerDataProvider({
   initial: { plano: PlanoNome; horarioAtendimento: string | null; contatosCount: number; campanhas: CampaignDTO[] }
   children: ReactNode
 }) {
-  const { toast, setAgentName, setUser, setFuQueueCount } = useAppState()
+  const { toast, setAgentName, setUser, setFuQueueCount, setLocale } = useAppState()
   const [agente, setAgente] = useState<Agente>(AGENTE_INICIAL)
   const [kb, setKb] = useState<KbItem[]>([])
   const [handoff, setHandoff] = useState(HANDOFF_INICIAL)
@@ -166,6 +166,7 @@ export function DrawerDataProvider({
           setUser({ nome: s.nome, email: s.email, empresa: s.empresa })
           setHorarioAtendimento(s.horarioAtendimento)
           setNotifs(s.notifs)
+          setLocale({ ddiPadrao: s.ddiPadrao, timezone: s.timezone })
         } else {
           const b = await api<BillingDTO>('/api/billing')
           setBilling(b)
@@ -175,7 +176,7 @@ export function DrawerDataProvider({
         failToast('Não foi possível carregar', e)
       }
     },
-    [setAgentName, setUser, setFuQueueCount, failToast],
+    [setAgentName, setUser, setFuQueueCount, setLocale, failToast],
   )
 
   const value = useMemo<DrawerData>(

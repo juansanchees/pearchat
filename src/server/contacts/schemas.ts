@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { cleanText } from '@/server/messages/api'
-import { normalizePhone } from './phone'
 import { normalizeTags, parseFilterTag } from './tags'
 
 export const DEFAULT_TAKE = 30
@@ -32,14 +31,9 @@ export const listQuerySchema = z.object({
 })
 
 const name = z.string().trim().min(1, 'Falta o nome').max(120)
-const phone = z
-  .string()
-  .trim()
-  .transform((v, ctx) => {
-    const n = normalizePhone(v)
-    if (!n) ctx.addIssue({ code: 'custom', message: 'Telefone inválido. Use DDD + número' })
-    return n ?? ''
-  })
+// O telefone chega como texto; quem grava normaliza com o DDI padrão do espaço (normalizePhone(v, ddiPadrao)), porque o
+// schema não conhece o espaço. Número com "+" ou já com DDI nunca ganha DDI.
+const phone = z.string().trim().max(40, 'Telefone inválido')
 const email = z
   .union([z.literal(''), z.string().trim().email('E-mail inválido').max(160)])
   .nullable()

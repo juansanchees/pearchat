@@ -3,13 +3,15 @@ import { withBookingLock, findOverlappingTx } from '@/app/api/events/_booking'
 import { insertEvent } from '@/server/calendar/google'
 import { invalidateGoogleCache } from '@/server/calendar/live'
 import { destinoOf, eventDescription, getConnection, isRealConnection, logGoogleFailure } from '@/server/calendar/service'
-import { addMin, spToDate } from '@/server/calendar/time'
+import { DEFAULT_TZ, hmOf, tzParts } from '@/lib/timezone'
+import { addMin, toInstant } from '@/server/calendar/time'
+import { toLocale } from '@/server/workspace-locale'
 import { phoneCandidates, normalizePhone } from '@/server/contacts/phone'
 import { canSendFreeformTo } from '@/server/engine/freeform'
 import { contactRef, ensureConversation, sendAndRecord } from '@/server/engine/outbound'
-import { displayName, getConnected, logError, spParts, templateFirstName } from '@/server/engine/util'
+import { displayName, getConnected, logError, templateFirstName } from '@/server/engine/util'
 import { emitToWorkspace } from '@/server/realtime/emit'
-import { isDateInWindow, loadBusy, slotsForDay } from './availability'
+import { addDaysStr, isDateInWindow, loadBusy, slotsForDay } from './availability'
 import { CONFIRMACAO, avisarTeto, cabeConfirmacao, linkEstourado } from './caps'
 import { signEventToken } from './security'
 
@@ -28,6 +30,10 @@ export type PublicWorkspace = {
   mensagem: string | null
   antecedenciaMin: number
   diasAFrente: number
+  /** Fuso do negócio: os horários livres e o "hoje" da página pública seguem o relógio dele. */
+  timezone: string
+  /** DDI acrescentado a um WhatsApp digitado sem código de país. */
+  ddiPadrao: string
 }
 
 /** Negócio com link ativo. Slug inexistente, link desativado e negócio arquivado dão o MESMO resultado (null). */
@@ -44,10 +50,22 @@ export async function getPublicWorkspace(slug: string): Promise<PublicWorkspace 
       bookingMensagem: true,
       logoUrl: true,
       arquivadoEm: true,
+      timezone: true,
+      ddiPadrao: true,
     },
   })
   if (!ws || !ws.bookingAtivo || ws.arquivadoEm) return null
-  return { id: ws.id, nome: ws.nome, temLogo: !!ws.logoUrl, mensagem: ws.bookingMensagem, antecedenciaMin: ws.bookingAntecedenciaMin, diasAFrente: ws.bookingDiasAFrente }
+  const loc = toLocale(ws)
+  return {
+    id: ws.id,
+    nome: ws.nome,
+    temLogo: !!ws.logoUrl,
+    mensagem: ws.bookingMensagem,
+    antecedenciaMin: ws.bookingAntecedenciaMin,
+    diasAFrente: ws.bookingDiasAFrente,
+    timezone: loc.timezone,
+    ddiPadrao: loc.ddiPadrao,
+  }
 }
 
 export type PublicService = { id: string; nome: string; duracaoMin: number }
@@ -116,20 +134,17 @@ export type BookingSummary = {
 
 const DIAS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado']
 
-export function diaLabel(inicio: Date): string {
-  const p = spParts(inicio)
+export function diaLabel(inicio: Date, tz: string = DEFAULT_TZ): string {
+  const p = tzParts(inicio, tz)
   const [, mm, dd] = p.ymd.split('-')
   return `${DIAS[p.dow]}, ${dd}/${mm}`
 }
 
-export const horaLabel = (d: Date): string => {
-  const p = spParts(d)
-  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
-}
+export const horaLabel = (d: Date, tz: string = DEFAULT_TZ): string => hmOf(d, tz)
 
-export function confirmationText(args: { nome: string; telefone?: string | null; servico: string; inicio: Date; negocio: string }): string {
+export function confirmationText(args: { nome: string; telefone?: string | null; servico: string; inicio: Date; negocio: string; timezone?: string }): string {
   const primeiro = templateFirstName(args.nome, { telefone: args.telefone })
-  return `Olá, ${primeiro}! Seu horário de ${args.servico} está marcado para ${diaLabel(args.inicio)}, às ${horaLabel(args.inicio)}. — ${args.negocio}`
+  return `Olá, ${primeiro}! Seu horário de ${args.servico} está marcado para ${diaLabel(args.inicio, args.timezone)}, às ${horaLabel(args.inicio, args.timezone)}. — ${args.negocio}`
 }
 
 export async function createPublicBooking(input: BookingInput): Promise<BookingResult> {
@@ -142,23 +157,25 @@ export async function createPublicBooking(input: BookingInput): Promise<BookingR
   })
   if (!st) return { kind: 'invalid', message: 'Esse serviço não está mais disponível. Escolha outro.' }
 
-  const telefone = normalizePhone(input.telefoneRaw)
-  if (!telefone) return { kind: 'invalid', message: 'Informe um WhatsApp válido, com DDD.' }
+  // Sem "+" nem DDI: ganha o DDI padrão do negócio; com "+" ou já com DDI, nunca ganha nada.
+  const telefone = normalizePhone(input.telefoneRaw, ws.ddiPadrao)
+  if (!telefone) return { kind: 'invalid', message: ws.ddiPadrao === '55' ? 'Informe um WhatsApp válido, com DDD.' : 'Informe um WhatsApp válido (com o código da cidade, ou comece por + e o código do país).' }
 
-  if (!isDateInWindow(input.date, ws.diasAFrente, now)) return { kind: 'invalid', message: 'Esse dia não está disponível para agendamento.' }
-  const inicio = spToDate(input.date, input.hora)
+  const tz = ws.timezone
+  if (!isDateInWindow(input.date, ws.diasAFrente, tz, now)) return { kind: 'invalid', message: 'Esse dia não está disponível para agendamento.' }
+  const inicio = toInstant(input.date, input.hora, tz)
   const fim = addMin(inicio, st.duracaoMin)
 
-  // Antecedência mínima, grade de horários e ocupação (locais + Google), as mesmas regras de GET /free.
-  const dayStart = spToDate(input.date, '00:00')
-  const { busy } = await loadBusy(ws.id, dayStart, addMin(dayStart, 24 * 60))
-  const livres = slotsForDay(input.date, st.duracaoMin, busy, ws.antecedenciaMin, now)
+  // Antecedência mínima, grade de horários e ocupação (locais + Google), as mesmas regras de GET /free (relógio do negócio).
+  const dayStart = toInstant(input.date, '00:00', tz)
+  const { busy } = await loadBusy(ws.id, dayStart, toInstant(addDaysStr(input.date, 1), '00:00', tz))
+  const livres = slotsForDay(input.date, st.duracaoMin, busy, ws.antecedenciaMin, tz, now)
   if (!livres.includes(input.hora)) {
-    const naGrade = slotsForDay(input.date, st.duracaoMin, [], ws.antecedenciaMin, now)
+    const naGrade = slotsForDay(input.date, st.duracaoMin, [], ws.antecedenciaMin, tz, now)
     return naGrade.includes(input.hora) ? { kind: 'conflict' } : { kind: 'invalid', message: 'Esse horário não está disponível. Escolha outro.' }
   }
 
-  const candidatos = phoneCandidates(input.telefoneRaw)
+  const candidatos = phoneCandidates(input.telefoneRaw, ws.ddiPadrao)
   const telHash = input.telefoneHash(telefone)
   const since = new Date(now.getTime() - 3_600_000)
 
@@ -188,7 +205,7 @@ export async function createPublicBooking(input: BookingInput): Promise<BookingR
     }
 
     const nota = input.observacao
-      ? `[Agendamento pelo link, ${diaLabel(inicio)} ${horaLabel(inicio)}] ${input.observacao}`
+      ? `[Agendamento pelo link, ${diaLabel(inicio, tz)} ${horaLabel(inicio, tz)}] ${input.observacao}`
       : null
     let contact = existentes[0]
     const numeroNovo = !contact
@@ -275,7 +292,7 @@ export async function createPublicBooking(input: BookingInput): Promise<BookingR
             conversationId: conv.id,
             to,
             author: 'IA',
-            content: { kind: 'text', text: confirmationText({ nome: contactNome, telefone: full.telefone, servico: st.nome, inicio, negocio: ws.nome }) },
+            content: { kind: 'text', text: confirmationText({ nome: contactNome, telefone: full.telefone, servico: st.nome, inicio, negocio: ws.nome, timezone: tz }) },
             countAtendimento: true,
           })
         }

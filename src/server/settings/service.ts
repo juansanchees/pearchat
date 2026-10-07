@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { db } from '@/lib/db'
+import { isAllowedDefaultDdi } from '@/lib/phone'
 import { PLANS } from '@/lib/plans'
+import { isAllowedTimezone } from '@/lib/timezone'
+import { invalidateWorkspaceLocale, toLocale } from '@/server/workspace-locale'
 import { spMonthKey } from '@/server/calendar/time'
 import { getOrgScope, PLAN_SPACE_LIMIT } from '@/server/spaces/org'
 import { PLAN_MEMBER_LIMIT } from '@/server/team/limits'
@@ -34,6 +37,17 @@ export const settingsSchema = z.object({
   email: z.string().trim().toLowerCase().email('E-mail inválido').max(200),
   empresa: z.string().trim().min(1, 'Informe o nome da empresa').max(120),
   horarioAtendimento: z.string().trim().max(200),
+  // Opcionais: um cliente antigo (aba aberta antes do deploy) não os envia, e o que está gravado fica como está.
+  ddiPadrao: z
+    .string()
+    .trim()
+    .refine(isAllowedDefaultDdi, 'DDI padrão inválido')
+    .optional(),
+  timezone: z
+    .string()
+    .trim()
+    .refine(isAllowedTimezone, 'Fuso horário inválido')
+    .optional(),
   notifs: z
     .array(z.enum(NOTIF_OPCOES))
     .max(NOTIF_OPCOES.length)
@@ -47,13 +61,14 @@ export type SettingsInput = z.infer<typeof settingsSchema>
 export async function getSettings(userId: string, workspaceId: string): Promise<SettingsDTO> {
   const [user, ws] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: userId }, select: { nome: true, email: true, notifs: true, createdAt: true, updatedAt: true } }),
-    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true, horarioAtendimento: true } }),
+    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true, horarioAtendimento: true, ddiPadrao: true, timezone: true } }),
   ])
   return {
     nome: user.nome,
     email: user.email,
     empresa: ws.nome,
     horarioAtendimento: ws.horarioAtendimento ?? HORARIO_PADRAO,
+    ...toLocale(ws),
     // Usuário nunca editado (updatedAt ~ createdAt) e sem preferências: mostra os padrões da spec.
     notifs: user.notifs.length === 0 && user.updatedAt.getTime() - user.createdAt.getTime() < 2000 ? NOTIF_PADRAO : user.notifs,
   }
@@ -66,11 +81,22 @@ export async function updateSettings(userId: string, workspaceId: string, input:
   if (input.email !== cur.email.toLowerCase()) {
     throw new SettingsError('Para trocar o e-mail, use "Trocar e-mail" em Perfil: pedimos sua senha e confirmamos o endereço novo.', 400)
   }
-  await db.$transaction([
+  const [, ws] = await db.$transaction([
     db.user.update({ where: { id: userId }, data: { nome: input.nome, notifs: input.notifs } }),
-    db.workspace.update({ where: { id: workspaceId }, data: { nome: input.empresa, horarioAtendimento: input.horarioAtendimento || null } }),
+    db.workspace.update({
+      where: { id: workspaceId },
+      data: {
+        nome: input.empresa,
+        horarioAtendimento: input.horarioAtendimento || null,
+        // Mudar o fuso NÃO altera horário já gravado (são instantes UTC): só a exibição e os cálculos daqui para frente.
+        ...(input.ddiPadrao ? { ddiPadrao: input.ddiPadrao } : {}),
+        ...(input.timezone ? { timezone: input.timezone } : {}),
+      },
+      select: { ddiPadrao: true, timezone: true },
+    }),
   ])
-  return { nome: input.nome, email: cur.email, empresa: input.empresa, horarioAtendimento: input.horarioAtendimento, notifs: input.notifs }
+  invalidateWorkspaceLocale(workspaceId)
+  return { nome: input.nome, email: cur.email, empresa: input.empresa, horarioAtendimento: input.horarioAtendimento, notifs: input.notifs, ...toLocale(ws) }
 }
 
 // ---- Plano e pagamento ----

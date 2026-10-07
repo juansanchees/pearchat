@@ -1,7 +1,8 @@
-// Datas da Agenda no fuso America/Sao_Paulo (UTC-3 fixo, sem horário de verão desde 2019).
-// Datas "de calendário" circulam como strings "YYYY-MM-DD"; a aritmética usa Date.UTC.
+// Datas da Agenda no fuso do ESPAÇO (Workspace.timezone; padrão America/Sao_Paulo), via `@/lib/timezone` (Intl).
+// Datas "de calendário" circulam como strings "YYYY-MM-DD"; a aritmética usa Date.UTC. Toda função com fuso recebe o
+// `tz` do espaço (o app o expõe em useAppState().timezone); sem ele vale Brasília.
+import { DEFAULT_TZ, tzParts, zonedToInstant } from '@/lib/timezone'
 
-const SP_OFFSET_MS = 3 * 60 * 60 * 1000
 const DAY_MS = 24 * 60 * 60 * 1000
 
 export const GRID_START_HOUR = 8
@@ -23,9 +24,9 @@ function parts(date: string) {
   return { y, m, d, dow: new Date(utc).getUTCDay(), utc }
 }
 
-/** Data de hoje em São Paulo. Só chamar no cliente (depois de montar). */
-export function spToday(): string {
-  return new Date(Date.now() - SP_OFFSET_MS).toISOString().slice(0, 10)
+/** Data de hoje no fuso do espaço. Só chamar no cliente (depois de montar). */
+export function todayIn(tz: string = DEFAULT_TZ): string {
+  return tzParts(new Date(), tz).ymd
 }
 
 export function addDays(date: string, n: number): string {
@@ -37,17 +38,15 @@ export function diffDays(a: string, b: string): number {
   return Math.round((parts(b).utc - parts(a).utc) / DAY_MS)
 }
 
-/** "2026-10-02" + "09:30" -> "2026-10-02T09:30:00-03:00" (aceito pelo back-end). */
-export function spInstant(date: string, hm: string): string {
-  return `${date}T${hm}:00-03:00`
+/** "2026-10-02" + "09:30" (relógio do fuso `tz`) -> instante ISO em UTC ("2026-10-02T15:30:00.000Z"), aceito pelo back-end. */
+export function zonedInstant(date: string, hm: string, tz: string = DEFAULT_TZ): string {
+  return zonedToInstant(date, hm, tz).toISOString()
 }
 
-/** Instante ISO (UTC) -> data, hora "HH:MM" e hora decimal em São Paulo. */
-export function toSp(iso: string): { date: string; hm: string; hours: number } {
-  const d = new Date(new Date(iso).getTime() - SP_OFFSET_MS)
-  const h = d.getUTCHours()
-  const min = d.getUTCMinutes()
-  return { date: d.toISOString().slice(0, 10), hm: `${pad(h)}:${pad(min)}`, hours: h + min / 60 }
+/** Instante ISO (UTC) -> data, hora "HH:MM" e hora decimal no relógio do fuso `tz`. */
+export function toZoned(iso: string, tz: string = DEFAULT_TZ): { date: string; hm: string; hours: number } {
+  const p = tzParts(new Date(iso), tz)
+  return { date: p.ymd, hm: `${pad(p.hour)}:${pad(p.minute)}`, hours: p.hour + p.minute / 60 }
 }
 
 /** Rótulo do cabeçalho da coluna ("Sex"; a caixa alta vem do CSS). */

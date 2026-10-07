@@ -1,6 +1,7 @@
 import type { Contact, Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import type { ImportRow } from './import-parse'
+import { DEFAULT_DDI } from '@/lib/phone'
 import { phoneCandidates } from './phone'
 import { normalizeTags } from './tags'
 import type { ImportResult } from './types'
@@ -31,6 +32,7 @@ export async function importRows(
   workspaceId: string,
   rows: ImportRow[],
   base: Pick<ImportResult, 'erros' | 'ignorados'>,
+  ddi: string = DEFAULT_DDI,
 ): Promise<ImportResult> {
   let criados = 0
   let atualizados = 0
@@ -40,7 +42,7 @@ export async function importRows(
 
   for (let start = 0; start < rows.length; start += BATCH) {
     const batch = rows.slice(start, start + BATCH)
-    const candidates = batch.map((r) => phoneCandidates(r.phone))
+    const candidates = batch.map((r) => phoneCandidates(r.phone, ddi))
     const existing = await db.contact.findMany({
       where: { workspaceId, telefone: { in: Array.from(new Set(candidates.flat())) } },
     })

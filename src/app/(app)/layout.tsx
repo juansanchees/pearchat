@@ -15,6 +15,7 @@ import { normalizePapel } from '@/server/auth/permissions'
 import { allowedWorkspaceIds } from '@/server/team/access'
 import { ensureOrganization } from '@/server/spaces/org'
 import { listSpaces } from '@/server/spaces/service'
+import { toLocale } from '@/server/workspace-locale'
 import { connectConfig } from '@/server/whatsapp/config'
 import { needsEmailVerification } from '@/server/mail/email-verification'
 import { redirect } from 'next/navigation'
@@ -65,7 +66,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       () => db.followUpRule.findUnique({ where: { workspaceId } }),
     ),
     db.user.findUniqueOrThrow({ where: { id: userId }, select: { nome: true, email: true, fotoUrl: true, image: true } }),
-    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true, plano: true, horarioAtendimento: true, disparosAtivos: true } }),
+    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { nome: true, plano: true, horarioAtendimento: true, disparosAtivos: true, ddiPadrao: true, timezone: true } }),
     db.contact.count({ where: { workspaceId } }),
     manager ? listCampaigns(workspaceId) : Promise.resolve([]),
     manager ? countFollowUpQueue(workspaceId) : Promise.resolve(0),
@@ -87,6 +88,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         spaces,
         workspaceId,
         connectCfg: connectConfig(user.email),
+        locale: toLocale(workspace),
       }}
     >
       <DrawerDataProvider

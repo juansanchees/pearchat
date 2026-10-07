@@ -11,7 +11,8 @@ import {
   unauthorized,
   zodMessage,
 } from '@/server/contacts/api'
-import { phoneCandidates } from '@/server/contacts/phone'
+import { normalizePhone, phoneCandidates } from '@/server/contacts/phone'
+import { getWorkspaceDdi } from '@/server/workspace-locale'
 import { listContacts } from '@/server/contacts/queries'
 import { createSchema, listQuerySchema } from '@/server/contacts/schemas'
 import { contactInclude, toContactDTO } from '@/server/contacts/serialize'
@@ -46,11 +47,15 @@ export async function POST(req: Request) {
   const body = await readJson(req)
   const parsed = createSchema.safeParse(body)
   if (!parsed.success) return badRequest(zodMessage(parsed.error))
-  const { name, phone, email, tags, address, birthday, notes } = parsed.data
+  const { name, email, tags, address, birthday, notes } = parsed.data
+  // Número digitado sem DDI ganha o DDI padrão DESTE espaço; com "+" ou já com DDI, nunca ganha nada.
+  const ddi = await getWorkspaceDdi(workspaceId)
+  const phone = normalizePhone(parsed.data.phone, ddi)
+  if (!phone) return badRequest(ddi === '55' ? 'Telefone inválido. Use DDD + número' : 'Telefone inválido. Use o número com código da cidade, ou comece por + e o código do país')
 
-  // Mesmo número em outro formato (com/sem +55, com/sem o 9º dígito) também é duplicado.
+  // Mesmo número em outro formato (com/sem DDI padrão, com/sem o 9º dígito do Brasil, o 1 do México) também é duplicado.
   const same = await db.contact.findFirst({
-    where: { workspaceId, telefone: { in: phoneCandidates(phone) } },
+    where: { workspaceId, telefone: { in: phoneCandidates(phone, ddi) } },
     select: { id: true },
   })
   if (same) return conflict(DUPLICATE_PHONE_MESSAGE)

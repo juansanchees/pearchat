@@ -21,7 +21,7 @@ export async function PUT(req: Request) {
     if (!can(s, 'settings.workspace')) {
       // Equipe: atendente salva só o PRÓPRIO perfil (nome, e-mail, avisos); nome do negócio e horário ficam como estão.
       const cur = await getSettings(s.userId, s.workspaceId)
-      input = { ...input, empresa: cur.empresa, horarioAtendimento: cur.horarioAtendimento }
+      input = { ...input, empresa: cur.empresa, horarioAtendimento: cur.horarioAtendimento, ddiPadrao: cur.ddiPadrao, timezone: cur.timezone }
     }
     return NextResponse.json(await updateSettings(s.userId, s.workspaceId, input))
   } catch (e) {

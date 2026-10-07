@@ -1,9 +1,9 @@
-// Fuso America/Sao_Paulo: UTC-3 fixo (o Brasil não tem horário de verão desde 2019).
-// Usamos offset fixo "-03:00" em vez de Intl para ficar determinístico e barato.
+// Datas da agenda. O fuso é o do ESPAÇO (Workspace.timezone, padrão America/Sao_Paulo): toda conta com fuso vem de
+// `@/lib/timezone` (Intl). Cada função recebe o fuso como último argumento; sem ele vale o padrão (Brasília).
+import { DEFAULT_TZ, hmOf, tzParts, zonedToInstant } from '@/lib/timezone'
 
-export const TZ_NAME = 'America/Sao_Paulo'
-const OFFSET = '-03:00'
-const OFFSET_MS = 3 * 60 * 60 * 1000
+/** Fuso padrão (Brasília). Só para quem não tem espaço à mão (o espaço guarda o seu em Workspace.timezone). */
+export const TZ_NAME = DEFAULT_TZ
 
 export const DAY_START_HOUR = 8
 export const DAY_END_HOUR = 18
@@ -11,11 +11,12 @@ export const SLOT_STEP_MIN = 30
 export const MIN_MS = 60_000
 
 /**
- * Chave do mês "YYYY-MM" no fuso de São Paulo. ÚNICA fonte para ler e gravar UsageCounter.mes:
- * o servidor roda em UTC e o mês virava 3 h antes da meia-noite de Brasília.
+ * Chave do mês "YYYY-MM" no relógio de BRASÍLIA. ÚNICA fonte para ler e gravar UsageCounter.mes: o uso e o plano são da
+ * CONTA (que soma vários espaços), não de um espaço, então o mês não segue o fuso de cada espaço. O servidor roda em UTC
+ * e o mês virava 3 h antes da meia-noite de Brasília.
  */
 export function spMonthKey(d: Date = new Date()): string {
-  return new Date(d.getTime() - OFFSET_MS).toISOString().slice(0, 7)
+  return tzParts(d, DEFAULT_TZ).ymd.slice(0, 7)
 }
 
 /** "YYYY-MM-DD" válido (calendário real) ou false. */
@@ -25,23 +26,22 @@ export function isValidDateStr(s: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(s)
 }
 
-/** Data "YYYY-MM-DD" + "HH:MM" em horário de São Paulo -> instante UTC. */
-export function spToDate(date: string, hm: string): Date {
-  return new Date(`${date}T${hm}:00${OFFSET}`)
+/** Data "YYYY-MM-DD" + "HH:MM" de parede no fuso `tz` -> instante UTC. */
+export function toInstant(date: string, hm: string, tz: string = DEFAULT_TZ): Date {
+  return zonedToInstant(date, hm, tz)
 }
 
-/** "HH:MM" de um instante, em horário de São Paulo. */
-export function toSpHM(d: Date): string {
-  const s = new Date(d.getTime() - OFFSET_MS)
-  return `${String(s.getUTCHours()).padStart(2, '0')}:${String(s.getUTCMinutes()).padStart(2, '0')}`
+/** "HH:MM" de um instante, no relógio do fuso `tz`. */
+export function toHM(d: Date, tz: string = DEFAULT_TZ): string {
+  return hmOf(d, tz)
 }
 
 /**
- * Aceita ISO com offset/Z ou data pura "YYYY-MM-DD" (meia-noite de São Paulo).
+ * Aceita ISO com offset/Z ou data pura "YYYY-MM-DD" (meia-noite do fuso `tz`).
  * Retorna null se inválido.
  */
-export function parseInstant(s: string): Date | null {
-  if (isValidDateStr(s)) return spToDate(s, '00:00')
+export function parseInstant(s: string, tz: string = DEFAULT_TZ): Date | null {
+  if (isValidDateStr(s)) return toInstant(s, '00:00', tz)
   if (!/^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:\d{2})$/.test(s)) return null
   const d = new Date(s)
   return Number.isNaN(d.getTime()) ? null : d
