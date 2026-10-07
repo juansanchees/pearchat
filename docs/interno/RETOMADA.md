@@ -21,7 +21,7 @@ PearChat: SaaS para pequenos negócios atenderem pelo WhatsApp (conversas, agent
 - Chaves externas (OpenAI, Google, Meta, Resend, Asaas) VAZIAS nos lançadores de teste (o Next relê o `.env`); IA/Evolution/Graph/Asaas sempre falsos locais; só usar a OpenAI real com teto explícito de chamadas.
 - Migrations à mão, só aditivas, numeradas (última: 0023), sem `prisma format`; o deploy aplica antes de trocar o app.
 - VPS: só por chave SSH `~/.ssh/pearchat_vps`; o servidor aceita ≈1 conexão SSH por hora → `bash deploy/deploy.sh` (1 conexão; acompanha por https), `bash deploy/status.sh` (1 conexão), `bash deploy/rollback.sh`. Fluxo novo (onda 1C) lê `deploy/.deploy.env` (host/usuário/chave; fora do git). Antes de todo deploy: `npm run check:build-sem-env` (simula o build do Docker sem variáveis — um deploy já falhou por isso). Depois: `/api/health` (versão = commit), `node deploy/validate.mjs` (lê `deploy/.validate.env`), WhatsApp reconectado.
-- Antes de commitar: varrer o diff por segredos (`sk-proj-|GOCSPX-|postgresql://|82.25.79|pearchat123`), CRLF em `.sh` (devem ser LF).
+- Antes de commitar: varrer o diff por segredos (prefixos de chaves da OpenAI e do Google, URLs de banco, IP do servidor, senhas conhecidas), CRLF em `.sh` (devem ser LF).
 - Commits: `git -c user.name="Juan Sanches" -c user.email="j.dslsanches@gmail.com" commit`, mensagem em português, última linha `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 
 ## 4. Arquivos secretos (NÃO estão no GitHub; o dono guarda num gerenciador de senhas)
