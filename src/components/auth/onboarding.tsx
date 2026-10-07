@@ -18,7 +18,6 @@ import {
   ForkKnife,
   HairDryer,
   Info,
-  LockSimple,
   PaperPlaneTilt,
   PawPrint,
   Scissors,
@@ -34,10 +33,11 @@ import {
 } from '@phosphor-icons/react'
 import { sairAction } from '@/app/(auth)/bem-vindo/actions'
 import { Logo } from '@/components/brand/logo'
+import { TAMANHOS_EQUIPE } from '@/app/api/onboarding/constants'
 
 // Interface do onboarding (4 passos) e da tela "Tudo pronto".
-// Salva em POST /api/onboarding: nome da empresa, nome e tom do agente e (se o prompt estiver vazio) segmento e objetivos.
-// Tamanho da equipe não tem coluna e não é salvo. A conexão do WhatsApp é feita de verdade em /whatsapp.
+// Salva em POST /api/onboarding: nome da empresa, tamanho da equipe, nome e tom do agente e (se o prompt estiver vazio) segmento e objetivos.
+// O tamanho da equipe também é salvo (Workspace.tamanhoEquipe). A conexão do WhatsApp é feita de verdade em /whatsapp.
 
 type SegId = 'beleza' | 'barbearia' | 'petshop' | 'saude' | 'restaurante' | 'confeitaria' | 'loja' | 'servicos' | 'outro'
 type Tom = 'Amigável' | 'Profissional' | 'Direto'
@@ -63,7 +63,7 @@ const OBJETIVOS: { id: ObjId; titulo: string; desc: string; Icon: Icon; recurso:
 ]
 
 const PASSOS = ['Seu negócio', 'Objetivos', 'WhatsApp', 'Agente de IA']
-const EQUIPES = ['Só eu', '2 a 5', '6 ou mais']
+const EQUIPES = TAMANHOS_EQUIPE
 const TONS: Tom[] = ['Amigável', 'Profissional', 'Direto']
 
 function Tag({ accent, children }: { accent: boolean; children: ReactNode }) {
@@ -136,7 +136,7 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
       const res = await fetch('/api/onboarding', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ empresa: emp.nome.trim(), segmento: emp.seg, objetivos: obj, agenteNome: ag.nome.trim(), tom: ag.tom }),
+        body: JSON.stringify({ empresa: emp.nome.trim(), segmento: emp.seg, objetivos: obj, agenteNome: ag.nome.trim(), tom: ag.tom, tamanhoEquipe: emp.equipe }),
       })
       if (!res.ok) {
         const j = (await res.json().catch(() => null)) as { error?: string } | null
@@ -271,7 +271,7 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
           {step === 1 && (
             <div className="flex animate-pcIn flex-col gap-[26px]">
               <div>
-                <div className="text-[10.5px] font-medium uppercase leading-none tracking-[.16em] text-light-accent-300">Bem-vinda, {primeiro}</div>
+                <div className="text-[10.5px] font-medium uppercase leading-none tracking-[.16em] text-light-accent-300">Boas-vindas, {primeiro}</div>
                 <h1 className="mt-3 text-[30px] font-medium leading-[1.15] tracking-[-0.02em]">Conte um pouco sobre o seu negócio</h1>
                 <p className="mt-2 text-sm text-light-neutral-500">Usamos isso para preparar a IA e as mensagens do seu jeito.</p>
               </div>
@@ -302,7 +302,6 @@ export function Onboarding({ nome, email }: { nome: string; email: string }) {
                     <button key={o} type="button" className="pc-seg-opt" aria-pressed={emp.equipe === o} onClick={() => setEmp({ ...emp, equipe: o })}>{o}</button>
                   ))}
                 </div>
-                <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-light-neutral-500"><LockSimple size={12} aria-hidden="true" /> O tamanho da equipe ainda não é salvo.</p>
               </div>
             </div>
           )}

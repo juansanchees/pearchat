@@ -110,7 +110,7 @@ export function welcomeEmail({ nome }: { nome?: string }): MailContent {
   const step = (n: number, titulo: string, desc: string) =>
     `<tr><td valign="top" width="40" style="padding:0 0 16px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" width="28" height="28" bgcolor="#f0faea" style="width:28px;height:28px;background:#f0faea;border:1px solid #b9e3a6;border-radius:14px;font-family:${FONT};font-size:13px;font-weight:600;color:#185530;">${n}</td></tr></table></td>` +
     `<td valign="top" style="padding:3px 0 16px;font-family:${FONT};font-size:15px;line-height:1.5;color:#3a4030;"><strong style="color:#1d2117;">${escapeHtml(titulo)}</strong><br><span style="font-size:14px;color:#5d6650;">${escapeHtml(desc)}</span></td></tr>`
-  const titulo = primeiro ? `Bem-vindo, ${primeiro}!` : 'Bem-vindo ao PearChat!'
+  const titulo = primeiro ? `Boas-vindas, ${primeiro}!` : 'Boas-vindas ao PearChat!'
   const html = layout(
     'Sua conta está pronta. Veja os 3 primeiros passos.',
     h1(titulo) +
@@ -130,7 +130,7 @@ export function welcomeEmail({ nome }: { nome?: string }): MailContent {
     `3. Conecte a agenda: ligue o Google Agenda para marcar horários pelo WhatsApp.\n\n` +
     `Abrir o PearChat: ${base}\n` +
     textFooter()
-  return { subject: 'Bem-vindo ao PearChat', html, text }
+  return { subject: 'Boas-vindas ao PearChat', html, text }
 }
 
 /** Convite para entrar na equipe de uma conta (Equipe). O link vale 7 dias e só pode ser usado uma vez. */

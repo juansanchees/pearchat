@@ -18,5 +18,8 @@ export const OBJETIVOS = {
   agenda: 'organizar agendamentos',
 } as const
 
+// Respostas de "Quantas pessoas atendem o WhatsApp?" (guardadas como estão em Workspace.tamanhoEquipe).
+export const TAMANHOS_EQUIPE = ['Só eu', '2 a 5', '6 ou mais'] as const
+
 export type SegmentoId = keyof typeof SEGMENTOS
 export type ObjetivoId = keyof typeof OBJETIVOS

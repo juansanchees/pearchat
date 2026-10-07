@@ -1,27 +1,19 @@
 import { NextResponse } from 'next/server'
 import { denyUnless } from '@/server/auth/guard'
-import { z } from 'zod'
 import { db } from '@/lib/db'
 import { apiSession, fail, parseBody, unauthorized } from '@/server/settings/http'
 import { defaultPrompt } from '@/server/agent/service'
 import { ensureServiceTypes } from '@/server/calendar/service-types'
 import { OBJETIVOS, SEGMENTOS } from './constants'
+import { onboardingSchema as schema } from './schema'
 
 export const dynamic = 'force-dynamic'
 
 const TOM_DB = { Amigável: 'amigavel', Profissional: 'profissional', Direto: 'direto' } as const
 
-const schema = z.object({
-  empresa: z.string().trim().min(1, 'Falta o nome da empresa').max(120),
-  segmento: z.enum(Object.keys(SEGMENTOS) as [keyof typeof SEGMENTOS, ...(keyof typeof SEGMENTOS)[]]),
-  objetivos: z.array(z.enum(Object.keys(OBJETIVOS) as [keyof typeof OBJETIVOS, ...(keyof typeof OBJETIVOS)[]])).max(4),
-  agenteNome: z.string().trim().min(1, 'Dê um nome ao agente').max(60),
-  tom: z.enum(['Amigável', 'Profissional', 'Direto']),
-})
-
 /**
- * Salva o onboarding no workspace da sessão: nome da empresa, nome e tom do agente e, só se o prompt do
- * agente ainda estiver vazio, um parágrafo inicial com segmento e objetivos. Tamanho da equipe não tem coluna.
+ * Salva o onboarding no workspace da sessão: nome da empresa, tamanho da equipe, nome e tom do agente e, só se o prompt do
+ * agente ainda estiver vazio, um parágrafo inicial com segmento e objetivos.
  */
 export async function POST(req: Request) {
   const deny = await denyUnless('settings.workspace'); if (deny) return deny
@@ -32,7 +24,7 @@ export async function POST(req: Request) {
   const d = body.data
 
   try {
-    await db.workspace.update({ where: { id: s.workspaceId }, data: { nome: d.empresa } })
+    await db.workspace.update({ where: { id: s.workspaceId }, data: { nome: d.empresa, tamanhoEquipe: d.tamanhoEquipe } })
     const agent = await db.aiAgent.upsert({
       where: { workspaceId: s.workspaceId },
       create: { workspaceId: s.workspaceId, nome: d.agenteNome, tom: TOM_DB[d.tom] },
