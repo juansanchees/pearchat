@@ -312,6 +312,14 @@ export function useConversations(preferredId: string | null = null) {
     })
   })
 
+  // Contato unificado (o mesmo cliente por LID e por telefone): a conversa duplicada sai da lista; se estava aberta,
+  // abre a mantida (que recebeu as mensagens). A mantida aberta recarrega para mostrar as mensagens que vieram.
+  useSocketEvent('conversation.merged', ({ removedConversationId, conversationId }) => {
+    setItems((l) => l.filter((c) => c.id !== removedConversationId))
+    const open = activeIdRef.current
+    if (open === removedConversationId || open === conversationId) select(conversationId)
+  })
+
   // Equipe: o seletor de responsável (chat-header) avisa a lista pelo window, sem depender só do socket.
   useEffect(() => {
     const onAssigned = (e: Event) => {

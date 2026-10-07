@@ -21,6 +21,7 @@ export type AuditAction =
   | 'email.changed'
   | 'booking.link_capped'
   | 'account.google_linked'
+  | 'contato.unificado'
 
 export const AUDIT_LABEL: Record<AuditAction, string> = {
   'invite.created': 'convidou',
@@ -44,4 +45,5 @@ export const AUDIT_LABEL: Record<AuditAction, string> = {
   'email.changed': 'trocou o e-mail de login',
   'booking.link_capped': 'pausou o link de agendamento por excesso de uso',
   'account.google_linked': 'vinculou o Google à conta',
+  'contato.unificado': 'unificou dois contatos do mesmo cliente (LID e telefone)',
 }
