@@ -12,6 +12,7 @@ import {
   Warning,
 } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
+import { formatPhoneDisplay, maskPhoneInput, normalizePhoneE164 } from '@/lib/phone'
 import { cn } from '@/lib/utils'
 import { errMessage, waApi } from './api'
 import { BackLink, btnPrimary, btnSecondary, inputCls, kicker, NumberedSteps, pageShell, QrBox, QrStatusLine, Tag } from './ui'
@@ -54,22 +55,21 @@ function StepIndicator({ step }: { step: Step }) {
   )
 }
 
-// Mostra o número digitado no formato +55 11 98765-4321 quando dá para reconhecer.
-function prettyPhone(raw: string): string {
-  let d = raw.replace(/\D/g, '')
-  if (d.length > 11 && d.startsWith('55')) d = d.slice(2)
-  const m = /^(\d{2})(\d{4,5})(\d{4})$/.exec(d)
-  return m ? `+55 ${m[1]} ${m[2]}-${m[3]}` : raw
+// Mostra o número digitado no formato do país ("+55 11 98765-4321", "+52 55 1234 5678"...) quando dá para reconhecer.
+// `ddi` = DDI padrão do espaço: número sem "+" ganha esse DDI; número com "+" ou já com DDI nunca ganha nenhum.
+function prettyPhone(raw: string, ddi: string): string {
+  const e164 = normalizePhoneE164(raw, ddi)
+  return e164 ? formatPhoneDisplay(e164) : raw
 }
 
 const h2 = 'text-[26px] font-medium leading-[1.15] tracking-[-.02em]'
 
 export function OficialFlow({ onBack }: { onBack: () => void }) {
-  const { setWa, toast } = useAppState()
+  const { setWa, toast, locale } = useAppState()
   // Este componente é SÓ o fluxo simulado do modo demo (WA_MOCK=true). A conexão real está em oficial-real-flow.tsx.
   const later = useLater()
   const [step, setStep] = useState<Step>('numero')
-  const [numero, setNumero] = useState('+55 11 98765-4321')
+  const [numero, setNumero] = useState(() => formatPhoneDisplay('+5511987654321'))
   const [hist, setHist] = useState(true)
   const [reading, setReading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -111,7 +111,7 @@ export function OficialFlow({ onBack }: { onBack: () => void }) {
       toast({
         icon: <SealCheck size={18} weight="fill" />,
         title: 'WhatsApp oficial conectado',
-        text: hist ? 'Importando conversas dos últimos 6 meses' : prettyPhone(numero),
+        text: hist ? 'Importando conversas dos últimos 6 meses' : prettyPhone(numero, locale.ddiPadrao),
       })
     } catch (e) {
       setBusy(false)
@@ -148,7 +148,7 @@ export function OficialFlow({ onBack }: { onBack: () => void }) {
                   className={inputCls}
                   placeholder="+55 11 90000-0000"
                   value={numero}
-                  onChange={(e) => setNumero(e.target.value)}
+                  onChange={(e) => setNumero(maskPhoneInput(e.target.value, locale.ddiPadrao))}
                   inputMode="tel"
                   autoComplete="tel"
                 />
@@ -178,7 +178,7 @@ export function OficialFlow({ onBack }: { onBack: () => void }) {
           <div className="flex flex-wrap items-center gap-10">
             <div className="min-w-0 flex-[1_1_320px]">
               <h1 className={h2}>Escaneie com o WhatsApp Business</h1>
-              <p className="mt-2.5 leading-normal text-light-neutral-400">Enviamos uma mensagem para {prettyPhone(numero)}.</p>
+              <p className="mt-2.5 leading-normal text-light-neutral-400">Enviamos uma mensagem para {prettyPhone(numero, locale.ddiPadrao)}.</p>
               <NumberedSteps
                 items={[
                   'Abra a mensagem da Meta no WhatsApp Business e toque em Conectar à plataforma.',
@@ -203,7 +203,7 @@ export function OficialFlow({ onBack }: { onBack: () => void }) {
             <div className="min-w-0 flex-[1_1_320px]">
               <div className="flex items-center gap-2 text-[12px] text-light-accent-300">
                 <CheckCircle size={14} weight="fill" />
-                {prettyPhone(numero)} verificado
+                {prettyPhone(numero, locale.ddiPadrao)} verificado
               </div>
               <h1 className={cn(h2, 'mt-3')}>Trazer suas conversas?</h1>
               <p className="mt-2.5 max-w-[46ch] leading-normal text-light-neutral-400">

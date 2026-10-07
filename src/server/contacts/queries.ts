@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { onlyDigits } from '@/server/whatsapp/phone'
+import { getWorkspaceDdi } from '@/server/workspace-locale'
+import { phoneCandidates } from './phone'
 import { contactInclude, toContactDTO } from './serialize'
 import { FILTER_TAGS, tagVariants } from './tags'
 import type { FilterTag } from './tags'
@@ -42,7 +44,15 @@ async function searchFilter(workspaceId: string, q: string): Promise<Prisma.Cont
   const wild = /[\\%_]/.test(q)
   const or: Prisma.ContactWhereInput[] = wild ? [] : [{ nome: { contains: q, mode: 'insensitive' } }]
   const digits = onlyDigits(q)
-  if (digits && PHONE_LIKE.test(q)) or.push({ telefone: { contains: digits } })
+  if (digits && PHONE_LIKE.test(q)) {
+    or.push({ telefone: { contains: digits } })
+    // Número digitado no formato local do espaço (ex.: mexicano de 10 dígitos num espaço com DDI 52, ou brasileiro sem o 9)
+    // também acha o contato gravado com o DDI e com/sem o dígito extra do país (variantes do mesmo número).
+    if (digits.length >= 8) {
+      const exact = phoneCandidates(q, await getWorkspaceDdi(workspaceId))
+      if (exact.length) or.push({ telefone: { in: exact } })
+    }
+  }
   const ids = await idsByNameOrTagText(workspaceId, q, wild)
   if (ids.length) or.push({ id: { in: ids } })
   return or.length ? { OR: or } : { id: { in: [] } }

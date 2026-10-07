@@ -4,6 +4,7 @@ import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CloudArrowUp, X } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
+import { maskPhoneInput, phoneInputError } from '@/lib/phone'
 import { cn } from '@/lib/utils'
 import { TAG_OPTIONS } from './types'
 import type { NewContactInput } from './types'
@@ -21,6 +22,7 @@ export function NewContactCard({
   const ddiPadrao = locale.ddiPadrao
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [phoneTouched, setPhoneTouched] = useState(false)
   const [email, setEmail] = useState('')
   const [tag, setTag] = useState<string>('Lead')
   const [customTag, setCustomTag] = useState('')
@@ -29,6 +31,11 @@ export function NewContactCard({
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (saving) return
+    // Telefone preenchido porém inválido para o DDI padrão do espaço: avisa no campo (vazio é tratado por quem recebe).
+    if (phone.trim() && phoneInputError(phone, ddiPadrao)) {
+      setPhoneTouched(true)
+      return
+    }
     setSaving(true)
     try {
       const ok = await onSubmit({
@@ -85,12 +92,19 @@ export function NewContactCard({
           className="pc-input"
           type="tel"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={(e) => setPhone(maskPhoneInput(e.target.value, ddiPadrao))}
+          onBlur={() => setPhoneTouched(true)}
+          aria-invalid={phoneTouched && phone.trim() !== '' && phoneInputError(phone, ddiPadrao) !== null}
           placeholder={ddiPadrao === '55' ? '(11) 90000-0000 ou +DDI número' : `Número local ou +${ddiPadrao} …`}
           autoComplete="off"
           required
           aria-required="true"
         />
+        {phoneTouched && phone.trim() !== '' && phoneInputError(phone, ddiPadrao) ? (
+          <p role="alert" className="mt-1 text-[11.5px] text-red-600">
+            {phoneInputError(phone, ddiPadrao)}
+          </p>
+        ) : null}
       </div>
       <div>
         <label htmlFor={`${uid}-email`} className="pc-label">
