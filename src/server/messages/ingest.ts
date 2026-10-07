@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client'
-import type { Contact } from '@prisma/client'
+import type { Contact, Conversation, Message } from '@prisma/client'
 import { db } from '@/lib/db'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import type { ContactRef } from '@/server/whatsapp/provider'
@@ -22,6 +22,7 @@ import { handleReminderReply } from '@/server/calendar/confirmation'
 import { isNonReplyableBody } from '@/server/whatsapp/labels'
 import { maybeQueuePhoto } from '@/server/contacts/photo'
 import { attachProviderId } from '@/server/engine/delivery'
+import { unifyByProof } from '@/server/contacts/merge'
 
 /** Campos de mídia de uma Message nova (metadados do webhook; o arquivo vem depois). */
 function mediaColumns(media: NormalizedMedia, opts: { imported: boolean; direction: 'IN' | 'OUT' }) {
@@ -42,6 +43,10 @@ function mediaColumns(media: NormalizedMedia, opts: { imported: boolean; directi
 
 const STATUS_RANK = { PENDENTE: 0, ENVIADA: 1, ENTREGUE: 2, LIDA: 3 } as const
 
+/** Contato/conversa apagado entre a leitura e a escrita (unificação concorrente): chave estrangeira ou registro sumido. */
+const isGoneError = (e: unknown): boolean =>
+  e instanceof Prisma.PrismaClientKnownRequestError && (e.code === 'P2003' || e.code === 'P2025')
+
 /** Contato do workspace pelo BSUID ou telefone (aceita o mesmo número em outro formato), sem criar nada. */
 export async function findContact(workspaceId: string, from: ContactRef): Promise<Contact | null> {
   const { waUserId, telefone } = from
@@ -61,6 +66,9 @@ export async function findOrCreateContact(
   nome: string | undefined,
 ): Promise<Contact> {
   const { waUserId, telefone } = from
+  // O evento traz LID E telefone (prova de que são o mesmo cliente): se cada um está num contato diferente do espaço,
+  // unifica antes (contacts/merge.ts). Falha na unificação nunca impede a mensagem: segue como antes, sem unir.
+  if (waUserId && telefone) await unifyByProof(workspaceId, { waUserId, telefone })
   const contact = await findContact(workspaceId, from)
 
   if (contact) {
@@ -72,8 +80,8 @@ export async function findOrCreateContact(
     try {
       return await db.contact.update({ where: { id: contact.id }, data: patch })
     } catch (e) {
-      // O telefone/LID informado já pertence a OUTRO contato do espaço (o mesmo cliente apareceu por LID e por telefone):
-      // não junta nada às cegas; segue com o contato encontrado, sem a parte em conflito (a mensagem não pode se perder).
+      // O telefone/LID informado já pertence a OUTRO contato do espaço e a unificação não valeu (identificadores em
+      // conflito, ou falhou): não junta nada às cegas; segue com o contato encontrado, sem a parte em conflito.
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         const rest: Prisma.ContactUpdateInput = { ...patch }
         delete rest.telefone
@@ -151,52 +159,64 @@ export async function ingestInboundMessage(input: {
   })
   if (dup) return
 
-  const contact = await findOrCreateContact(workspaceId, from, nome)
-  // Foto do WhatsApp (sem foto verificada nos últimos 7 dias): busca em segundo plano, fora do caminho da mensagem.
-  maybeQueuePhoto(workspaceId, contact)
+  // Duas voltas no máximo: se o contato/conversa encontrado sumiu no meio (outro webhook do mesmo cliente acabou de
+  // unificar os contatos), resolve de novo e grava na conversa mantida. A mensagem nunca se perde por isso.
+  let contact!: Contact
+  let optOut = false
+  let conversation!: Conversation
+  let message!: Message
+  for (let attempt = 0; ; attempt++) {
+    contact = await findOrCreateContact(workspaceId, from, nome)
+    // Foto do WhatsApp (sem foto verificada nos últimos 7 dias): busca em segundo plano, fora do caminho da mensagem.
+    if (attempt === 0) maybeQueuePhoto(workspaceId, contact)
+    try {
+      // Pedido de saída ("parar", "pare", "não quero mais receber", "me tira da lista"...): vale com a IA ligada ou
+      // desligada. A detecção normaliza acento/pontuação e evita falso positivo ("vou parar aí na loja").
+      optOut = contact.optOut
+      if (!contact.optOut && isStopRequest(body)) {
+        await db.contact.update({ where: { id: contact.id }, data: { optOut: true } })
+        optOut = true
+      }
+      conversation = await db.conversation.upsert({
+        where: { contactId: contact.id },
+        create: { workspaceId, contactId: contact.id },
+        update: {},
+      })
+    } catch (e) {
+      if (attempt === 0 && isGoneError(e)) continue
+      throw e
+    }
 
-  // Pedido de saída ("parar", "pare", "não quero mais receber", "me tira da lista"...): vale com a IA ligada ou
-  // desligada. A detecção normaliza acento/pontuação e evita falso positivo ("vou parar aí na loja").
-  let optOut = contact.optOut
-  if (!contact.optOut && isStopRequest(body)) {
-    await db.contact.update({ where: { id: contact.id }, data: { optOut: true } })
-    optOut = true
-  }
-
-  const conversation = await db.conversation.upsert({
-    where: { contactId: contact.id },
-    create: { workspaceId, contactId: contact.id },
-    update: {},
-  })
-
-  // Mensagem + contadores da conversa juntos (queda no meio não deixa a conversa sem lastMessageAt, fora da varredura).
-  let message
-  try {
-    ;[message] = await db.$transaction([
-      db.message.create({
-        data: {
-          conversationId: conversation.id,
-          direction: 'IN',
-          author: 'CLIENTE',
-          body,
-          mediaUrl: mediaUrl ?? null,
-          ...(media ? mediaColumns(media, { imported: false, direction: 'IN' }) : {}),
-          status: 'ENTREGUE',
-          providerMessageId,
-          createdAt,
-        },
-      }),
-      db.conversation.update({ where: { id: conversation.id }, data: { unread: { increment: 1 } } }),
-      // lastMessageAt nunca regride (entrega atrasada não faz a conversa "voltar no tempo").
-      db.conversation.updateMany({
-        where: { id: conversation.id, OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: createdAt } }] },
-        data: { lastMessageAt: createdAt },
-      }),
-    ])
-  } catch (e) {
-    // Reentrega concorrente da MESMA mensagem (dois webhooks ao mesmo tempo): a outra já gravou.
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return
-    throw e
+    // Mensagem + contadores da conversa juntos (queda no meio não deixa a conversa sem lastMessageAt, fora da varredura).
+    try {
+      ;[message] = await db.$transaction([
+        db.message.create({
+          data: {
+            conversationId: conversation.id,
+            direction: 'IN',
+            author: 'CLIENTE',
+            body,
+            mediaUrl: mediaUrl ?? null,
+            ...(media ? mediaColumns(media, { imported: false, direction: 'IN' }) : {}),
+            status: 'ENTREGUE',
+            providerMessageId,
+            createdAt,
+          },
+        }),
+        db.conversation.update({ where: { id: conversation.id }, data: { unread: { increment: 1 } } }),
+        // lastMessageAt nunca regride (entrega atrasada não faz a conversa "voltar no tempo").
+        db.conversation.updateMany({
+          where: { id: conversation.id, OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: createdAt } }] },
+          data: { lastMessageAt: createdAt },
+        }),
+      ])
+      break
+    } catch (e) {
+      // Reentrega concorrente da MESMA mensagem (dois webhooks ao mesmo tempo): a outra já gravou.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return
+      if (attempt === 0 && isGoneError(e)) continue
+      throw e
+    }
   }
 
   emitToWorkspace(workspaceId, 'message.received', {
@@ -285,7 +305,8 @@ export async function ingestOutboundFromPhone(input: {
     }
   }
 
-  const contact = existing ?? (await findOrCreateContact(workspaceId, to, undefined))
+  // Com LID e telefone no mesmo evento passa por findOrCreateContact também quando já existe (unificação com prova).
+  const contact = existing && !(to.waUserId && to.telefone) ? existing : await findOrCreateContact(workspaceId, to, undefined)
   const conversation = await db.conversation.upsert({
     where: { contactId: contact.id },
     create: { workspaceId, contactId: contact.id },

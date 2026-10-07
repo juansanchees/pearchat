@@ -40,6 +40,16 @@ export interface ConversationUpdatedPayload {
   conversation: ConversationListItem
 }
 
+/**
+ * Duas conversas do MESMO cliente viraram uma (contato unificado: LID × telefone). A tela tira `removedConversationId`
+ * da lista e, se ela estava aberta, abre `conversationId` (a mantida chega também por conversation.updated).
+ */
+export interface ConversationMergedPayload {
+  workspaceId: string
+  removedConversationId: string
+  conversationId: string
+}
+
 /** A IA passou a conversa para uma pessoa (regra de passagem ou limite do plano). */
 export interface HandoffRequestedPayload {
   workspaceId: string
@@ -78,6 +88,7 @@ export interface ServerToClientEvents {
   'message.updated': (payload: MessageUpdatedPayload) => void
   'connection.update': (payload: ConnectionUpdatePayload) => void
   'conversation.updated': (payload: ConversationUpdatedPayload) => void
+  'conversation.merged': (payload: ConversationMergedPayload) => void
   'handoff.requested': (payload: HandoffRequestedPayload) => void
   'agenda.updated': (payload: AgendaUpdatedPayload) => void
 }

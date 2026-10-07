@@ -199,11 +199,20 @@ describe('banco: contato LID, envio e failReason', () => {
     assert.equal(all[0].waUserId, LID2)
   })
 
-  it('conflito: o telefone já é de OUTRO contato; a mensagem não se perde e nada é unido às cegas', async () => {
+  it('o telefone já é de OUTRO contato e o evento traz LID + telefone (prova): unifica sem perder mensagem (onda 2, contacts/merge.ts)', async () => {
     const ws = await newWorkspace()
     await ingestInboundMessage({ workspaceId: ws, from: { telefone: PHONE_US }, body: 'a', providerMessageId: 'B1', timestamp: new Date() })
     await ingestInboundMessage({ workspaceId: ws, from: { waUserId: LID }, body: 'b', providerMessageId: 'B2', timestamp: new Date() })
     await ingestInboundMessage({ workspaceId: ws, from: { waUserId: LID, telefone: PHONE_US }, body: 'c', providerMessageId: 'B3', timestamp: new Date() })
+    assert.equal(await db.contact.count({ where: { workspaceId: ws } }), 1)
+    assert.equal(await db.message.count({ where: { conversation: { workspaceId: ws } } }), 3)
+  })
+
+  it('conflito: o telefone já está ligado a OUTRO LID; a mensagem não se perde e nada é unido às cegas', async () => {
+    const ws = await newWorkspace()
+    await ingestInboundMessage({ workspaceId: ws, from: { waUserId: LID2, telefone: PHONE_US }, body: 'a', providerMessageId: 'E1', timestamp: new Date() })
+    await ingestInboundMessage({ workspaceId: ws, from: { waUserId: LID }, body: 'b', providerMessageId: 'E2', timestamp: new Date() })
+    await ingestInboundMessage({ workspaceId: ws, from: { waUserId: LID, telefone: PHONE_US }, body: 'c', providerMessageId: 'E3', timestamp: new Date() })
     assert.equal(await db.contact.count({ where: { workspaceId: ws } }), 2)
     assert.equal(await db.message.count({ where: { conversation: { workspaceId: ws } } }), 3)
   })
