@@ -2,8 +2,12 @@
 //
 // Regra de ouro: um número que JÁ vem com DDI (com "+", com "00" ou com 12+ dígitos que começam por um DDI válido)
 // NUNCA ganha DDI nenhum. Só um número digitado SEM DDI ganha o DDI padrão do espaço (Workspace.ddiPadrao, padrão 55).
-// O "1" do México e o "9" do Brasil/Argentina NÃO são acrescentados nem removidos aqui: a Evolution API (createJid, 2.3.7)
-// já trata os dois na hora de enviar; aqui eles só entram nas VARIANTES usadas para achar o mesmo contato já gravado.
+// O "1" do México e o "9" do Brasil/Argentina NÃO são acrescentados nem removidos aqui. Conferido na fonte da Evolution 2.3.7
+// (src/utils/createJid.ts): ao enviar, ela só REMOVE dígitos, nunca acrescenta. Com 13 dígitos começando por 52 ou 54, tira o
+// 3º dígito (o "1" mexicano / o "9" argentino); com 13 dígitos "55 DD 9 XXXXXXXX", tira o 9 quando o DDD é >= 31 e o primeiro
+// dígito do número é >= 7 (senão mantém). Números de 12 dígitos (52…, 54…, 55…) passam como estão. Em seguida o envio confere
+// o número no WhatsApp (onWhatsApp) e usa o JID que ele devolver. Aqui, 1/9 só entram nas VARIANTES usadas para achar o mesmo
+// contato já gravado (phoneVariants/phoneCandidates).
 
 export const DEFAULT_DDI = '55'
 export const MAX_PHONE_DIGITS = 15

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowSquareOut, Check, CheckCircle, CreditCard, DeviceMobile, MetaLogo, SealCheck, UsersThree, Warning } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
+import { maskPhoneInput } from '@/lib/phone'
 import type { WhatsAppStatusDTO } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { errMessage, waApi } from './api'
@@ -55,7 +56,7 @@ function Spinner() {
 }
 
 export function OficialRealFlow({ onBack }: { onBack: () => void }) {
-  const { setWa, toast, connectCfg } = useAppState()
+  const { setWa, toast, connectCfg, locale } = useAppState()
   const [step, setStep] = useState<Step>('intro')
   // Modo efetivo: começa pelo configurado; se o SDK não carregar, cai sozinho para o link hospedado pela Meta.
   const [mode, setMode] = useState<'sdk' | 'hosted'>(connectCfg.signupMode)
@@ -242,7 +243,7 @@ export function OficialRealFlow({ onBack }: { onBack: () => void }) {
                     className={inputCls}
                     placeholder="+55 11 90000-0000"
                     value={numero}
-                    onChange={(e) => setNumero(e.target.value)}
+                    onChange={(e) => setNumero(maskPhoneInput(e.target.value, locale.ddiPadrao))}
                     inputMode="tel"
                     autoComplete="tel"
                   />
