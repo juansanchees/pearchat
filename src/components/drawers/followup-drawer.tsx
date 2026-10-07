@@ -13,7 +13,7 @@ const ESPERAS = ['2 h', '6 h', '24 h'] as const
 const TENTATIVAS = ['1', '2', '3'] as const
 
 export function FollowupDrawer() {
-  const { wa, connected, automations } = useAppState()
+  const { wa, connected, automations, locale } = useAppState()
   const { fu, setFu, fuParar, setFuParar, fuFila } = useDrawerData()
   const loading = useDrawerLoad('followup')
   const n = Number(fu.tentativas)
@@ -113,7 +113,7 @@ export function FollowupDrawer() {
               <div className="truncate text-[12.5px] font-medium leading-[1.25]">{f.nome}</div>
               <div className="truncate text-[11px] text-light-neutral-500">{f.tentativa}ª tentativa</div>
             </div>
-            <span className="flex-none text-[11.5px] text-light-neutral-400">{ativo ? fmtQuando(f.runAt) : 'Pausado'}</span>
+            <span className="flex-none text-[11.5px] text-light-neutral-400">{ativo ? fmtQuando(f.runAt, new Date(), locale.timezone) : 'Pausado'}</span>
           </div>
         ))}
       </Section>

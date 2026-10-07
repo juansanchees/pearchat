@@ -19,7 +19,8 @@ const linkSeguro = (l: string | null): string | null => (l && /^\/(?!\/)[A-Za-z0
  * de 7 dias, bloco "Enquanto você esteve fora" e aviso ao voltar para a aba. Montado UMA vez, no AppShell.
  */
 export function NotificationBell() {
-  const { toast } = useAppState()
+  const { toast, locale } = useAppState()
+  const tz = locale.timezone
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
@@ -109,7 +110,7 @@ export function NotificationBell() {
     const d = i.dados?.ausenteDesde
     return d && (!m || d < m) ? d : m
   }, null)
-  const grupos = useMemo(() => agruparPorDia(resto, agoraMs), [resto, agoraMs])
+  const grupos = useMemo(() => agruparPorDia(resto, agoraMs, tz), [resto, agoraMs, tz])
 
   // Anúncio para leitor de tela quando chegam notificações novas.
   const [anuncio, setAnuncio] = useState('')
@@ -196,11 +197,11 @@ export function NotificationBell() {
                     <div className="flex items-center gap-1.5 px-4 pb-1.5 pt-3 text-[10.5px] font-medium uppercase tracking-[.12em] text-light-neutral-500">
                       <Clock size={12} aria-hidden="true" />
                       <span>Enquanto você esteve fora</span>
-                      {desde ? <span className="font-normal normal-case tracking-normal">· desde {desdeLabel(desde, agoraMs)}</span> : null}
+                      {desde ? <span className="font-normal normal-case tracking-normal">· desde {desdeLabel(desde, agoraMs, tz)}</span> : null}
                     </div>
                     <ul className="m-0 p-0">
                       {fora.map((i) => (
-                        <NotificationItem key={i.id} n={i} agoraMs={agoraMs} destacada={aoVivo(i)} onAbrir={abrirItem} onApagar={(x) => void apagar(x.id)} />
+                        <NotificationItem key={i.id} n={i} agoraMs={agoraMs} tz={tz} destacada={aoVivo(i)} onAbrir={abrirItem} onApagar={(x) => void apagar(x.id)} />
                       ))}
                     </ul>
                   </section>
@@ -210,7 +211,7 @@ export function NotificationBell() {
                     <div className="px-4 pb-1 pt-3 text-[10.5px] font-medium uppercase tracking-[.12em] text-light-neutral-500">{g.rotulo}</div>
                     <ul className="m-0 p-0">
                       {g.itens.map((i) => (
-                        <NotificationItem key={i.id} n={i} agoraMs={agoraMs} destacada={aoVivo(i)} onAbrir={abrirItem} onApagar={(x) => void apagar(x.id)} />
+                        <NotificationItem key={i.id} n={i} agoraMs={agoraMs} tz={tz} destacada={aoVivo(i)} onAbrir={abrirItem} onApagar={(x) => void apagar(x.id)} />
                       ))}
                     </ul>
                   </section>

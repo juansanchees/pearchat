@@ -1,18 +1,19 @@
 'use client'
 
 import { ArrowClockwise, CaretLeft, CaretRight, Sparkle } from '@phosphor-icons/react'
+import { useAppState } from '@/components/app/app-state'
 import { Spinner, Tag } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import type { EventDto } from '@/server/calendar/types'
 import { ConfirmacaoTag } from './confirmation-tag'
 import { ORIGEM_BAR } from './data'
-import { GRID_END_HOUR, GRID_HOURS, GRID_START_HOUR, HOUR_PX, dayNumber, semLabel, toSp } from './time'
+import { GRID_END_HOUR, GRID_HOURS, GRID_START_HOUR, HOUR_PX, dayNumber, semLabel, toZoned } from './time'
 
 export type GridDay = { date: string; isToday: boolean }
 
 /** Posição do evento na coluna: top = (h − 8) × 52 + 2; altura = duração × 52 − 4 (recortado à faixa 08–19 h). */
-function place(ev: EventDto) {
-  const start = toSp(ev.inicio).hours
+function place(ev: EventDto, tz: string) {
+  const start = toZoned(ev.inicio, tz).hours
   const end = start + ev.duracaoMin / 60
   const a = Math.max(start, GRID_START_HOUR)
   const b = Math.min(end, GRID_END_HOUR)
@@ -88,6 +89,8 @@ export function WeekGrid({
   onPickDay: (i: number) => void
   onPickSlot: (i: number, hora: string) => void
 }) {
+  // Horas no relógio do espaço (não no do navegador).
+  const tz = useAppState().locale.timezone
   return (
     <div className="flex min-h-0 flex-col overflow-hidden rounded-md bg-light-surface max-[899px]:h-[560px]">
       <div className="flex items-center gap-2.5 border-0 border-b border-solid border-light-divider px-4 py-3">
@@ -203,7 +206,7 @@ export function WeekGrid({
                 {(() => {
                   const placed = (eventsByDate.get(d.date) ?? [])
                     .filter((e) => !e.diaInteiro)
-                    .map((ev) => ({ ev, pos: place(ev) }))
+                    .map((ev) => ({ ev, pos: place(ev, tz) }))
                     .filter((x): x is { ev: EventDto; pos: NonNullable<ReturnType<typeof place>> } => x.pos !== null)
                   const cols = layoutColumns(placed.map((x) => ({ ev: x.ev, start: x.pos.top, end: x.pos.top + x.pos.height })))
                   return placed.map(({ ev, pos }) => {
@@ -214,7 +217,7 @@ export function WeekGrid({
                     return (
                       <div
                         key={ev.id}
-                        title={`${toSp(ev.inicio).hm} · ${ev.titulo}${ev.agenda ? ` · ${ev.agenda}` : ''}${editavel ? ' (duplo clique para editar)' : ''}`}
+                        title={`${toZoned(ev.inicio, tz).hm} · ${ev.titulo}${ev.agenda ? ` · ${ev.agenda}` : ''}${editavel ? ' (duplo clique para editar)' : ''}`}
                         onClick={editavel ? () => onPickEvent?.(i, ev) : undefined}
                         onDoubleClick={editavel ? () => onEditEvent?.(ev, i) : undefined}
                         className={cn(
@@ -234,7 +237,7 @@ export function WeekGrid({
                         <div className="flex items-center gap-1 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-medium leading-[1.2] text-light-accent-200">
                           {ia && <Sparkle size={9} weight="fill" className="flex-none" />}
                           <span className="truncate">
-                            {toSp(ev.inicio).hm} · {ev.titulo}
+                            {toZoned(ev.inicio, tz).hm} · {ev.titulo}
                           </span>
                           {ev.canal === 'link' && <Tag className="!flex-none !rounded-[4px] !px-[5px] !py-px !text-[9px]">Link</Tag>}
                           <ConfirmacaoTag ev={ev} compact />

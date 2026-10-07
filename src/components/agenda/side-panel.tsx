@@ -2,12 +2,13 @@
 
 import { useState } from 'react'
 import { CalendarPlus, Check, CheckCircle, GoogleLogo, PencilSimple, Sparkle, TrashSimple, User } from '@phosphor-icons/react'
+import { useAppState } from '@/components/app/app-state'
 import { Spinner, Tag } from '@/components/pear'
 import { cn } from '@/lib/utils'
 import type { EventDto, EventOrigem, ServiceTypeDto } from '@/server/calendar/types'
 import { ConfirmacaoTag } from './confirmation-tag'
 import { TIPO_DUR_OPTS } from './data'
-import { GRID_END_HOUR, GRID_START_HOUR, durLabel, toSp } from './time'
+import { GRID_END_HOUR, GRID_START_HOUR, durLabel, toZoned } from './time'
 
 const cardCls = 'flex flex-col rounded-md bg-light-surface p-4'
 
@@ -18,9 +19,9 @@ function origemInfo(origem: EventOrigem, agentName: string) {
 }
 
 /** Aviso para compromissos fora da faixa visível da grade (08h às 19h). */
-function foraDaGrade(ev: EventDto): string | null {
+function foraDaGrade(ev: EventDto, tz: string): string | null {
   if (ev.diaInteiro) return null
-  const start = toSp(ev.inicio).hours
+  const start = toZoned(ev.inicio, tz).hours
   const end = start + ev.duracaoMin / 60
   if (end <= GRID_START_HOUR) return `antes das ${GRID_START_HOUR}h`
   if (start >= GRID_END_HOUR) return `depois das ${GRID_END_HOUR}h`
@@ -49,6 +50,7 @@ export function DayCard({
   /** Marca o agendamento como confirmado à mão. */
   onConfirm?: (ev: EventDto) => void
 }) {
+  const tz = useAppState().locale.timezone
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -69,7 +71,7 @@ export function DayCard({
       </div>
       {events.map((ev) => {
         const o = origemInfo(ev.origem, agentName)
-        const fora = foraDaGrade(ev)
+        const fora = foraDaGrade(ev, tz)
         return (
           <div
             key={ev.id}
@@ -81,7 +83,7 @@ export function DayCard({
           >
             <div className="w-[42px] flex-none">
               <div className="text-[12.5px] font-medium leading-none text-light-accent-200">
-                {ev.diaInteiro ? 'Dia todo' : toSp(ev.inicio).hm}
+                {ev.diaInteiro ? 'Dia todo' : toZoned(ev.inicio, tz).hm}
               </div>
               <div className="mt-1 text-[10.5px] text-light-neutral-500">{ev.diaInteiro ? '' : durLabel(ev.duracaoMin)}</div>
             </div>

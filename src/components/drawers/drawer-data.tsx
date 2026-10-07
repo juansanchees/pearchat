@@ -104,13 +104,14 @@ export function DrawerDataProvider({
   initial: { plano: PlanoNome; horarioAtendimento: string | null; contatosCount: number; campanhas: CampaignDTO[] }
   children: ReactNode
 }) {
-  const { toast, setAgentName, setUser, setFuQueueCount, setLocale } = useAppState()
+  const { toast, setAgentName, setUser, setFuQueueCount, setLocale, locale } = useAppState()
+  const tz = locale.timezone
   const [agente, setAgente] = useState<Agente>(AGENTE_INICIAL)
   const [kb, setKb] = useState<KbItem[]>([])
   const [handoff, setHandoff] = useState(HANDOFF_INICIAL)
-  const [disp, setDisp] = useState<DispState>(() => ({ ...DISP_INICIAL, data: defaultDispData() }))
+  const [disp, setDisp] = useState<DispState>(() => ({ ...DISP_INICIAL, data: defaultDispData(new Date(), tz) }))
   const [listas, setListas] = useState<CampaignListDTO[]>([])
-  const [campanhas, setCampanhas] = useState<Campanha[]>(() => initial.campanhas.map(toCampanha))
+  const [campanhas, setCampanhas] = useState<Campanha[]>(() => initial.campanhas.map((c) => toCampanha(c, tz)))
   const [templates, setTemplates] = useState<Template[]>([])
   const [tplSel, setTplSel] = useState('')
   const [fu, setFu] = useState<Fu>(FU_INICIAL)
@@ -154,7 +155,7 @@ export function DrawerDataProvider({
           setSilencio(sil)
           const tpls = t.map(toTemplate)
           setListas(l)
-          setCampanhas(c.map(toCampanha))
+          setCampanhas(c.map((x) => toCampanha(x, tz)))
           setTemplates(tpls)
           // Mantém a seleção se ainda for um modelo aprovado; senão o padrão da spec ou o primeiro aprovado.
           setTplSel((cur) => {
@@ -176,7 +177,7 @@ export function DrawerDataProvider({
         failToast('Não foi possível carregar', e)
       }
     },
-    [setAgentName, setUser, setFuQueueCount, setLocale, failToast],
+    [setAgentName, setUser, setFuQueueCount, setLocale, failToast, tz],
   )
 
   const value = useMemo<DrawerData>(

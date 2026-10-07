@@ -6,6 +6,7 @@ import { AGENDA_CHANGED, CONTACTS_CHANGED } from '@/components/app/events'
 import { useDrawerData } from '@/components/drawers/drawer-data'
 import { toCampanha } from '@/components/drawers/view'
 import { redirectIfUnauthorized } from '@/lib/auth-redirect'
+import { addDaysYmd, hmOf, ymdOf, zonedToInstant } from '@/lib/timezone'
 import type { SidebarSummary } from '@/app/api/sidebar/route'
 import type { CalendarStateDto, EventListResponse } from '@/server/calendar/types'
 
@@ -15,9 +16,6 @@ export type AgendaSummary =
   | { state: 'conectado'; hoje: number; proximo: string | null }
 
 const REFRESH_MS = 60_000
-const SP_OFFSET_MS = 3 * 60 * 60 * 1000
-const DAY_MS = 24 * 60 * 60 * 1000
-const hmFmt = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
 
 async function getJson<T>(url: string): Promise<T | null> {
   try {
@@ -36,7 +34,9 @@ async function getJson<T>(url: string): Promise<T | null> {
  * (pearchat:agenda-changed / pearchat:contacts-changed). Falhas mantêm o último valor conhecido.
  */
 export function useSidebarData() {
-  const { setFuQueueCount } = useAppState()
+  const { setFuQueueCount, locale } = useAppState()
+  // "Hoje" e a hora do próximo compromisso no relógio do espaço.
+  const tz = locale.timezone
   const { setCampanhas, contatosCount } = useDrawerData()
   const [contatos, setContatos] = useState<number>(contatosCount)
   const [agenda, setAgenda] = useState<AgendaSummary>({ state: 'loading' })
@@ -48,8 +48,8 @@ export function useSidebarData() {
     if (!s || id !== seq.current.summary) return
     setContatos(s.contatos)
     setFuQueueCount(s.fuQueue)
-    setCampanhas(s.campanhas.map(toCampanha))
-  }, [setFuQueueCount, setCampanhas])
+    setCampanhas(s.campanhas.map((c) => toCampanha(c, tz)))
+  }, [setFuQueueCount, setCampanhas, tz])
 
   const loadAgenda = useCallback(async () => {
     const id = ++seq.current.agenda
@@ -64,19 +64,19 @@ export function useSidebarData() {
       return
     }
     const now = Date.now()
-    const today = new Date(now - SP_OFFSET_MS).toISOString().slice(0, 10)
-    const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10)
+    const today = ymdOf(new Date(now), tz)
+    const tomorrow = addDaysYmd(today, 1)
     const ev = await getJson<EventListResponse>(`/api/events?from=${today}&to=${tomorrow}`)
     if (id !== seq.current.agenda) return
     if (!ev) {
       setAgenda((cur) => (cur.state === 'loading' ? { state: 'conectado', hoje: 0, proximo: null } : cur))
       return
     }
-    const startOfDay = Date.parse(`${today}T00:00:00-03:00`)
+    const startOfDay = zonedToInstant(today, '00:00', tz).getTime()
     const hoje = ev.eventos.filter((e) => Date.parse(e.inicio) >= startOfDay)
     const next = hoje.find((e) => Date.parse(e.inicio) >= now)
-    setAgenda({ state: 'conectado', hoje: hoje.length, proximo: next ? hmFmt.format(new Date(next.inicio)) : null })
-  }, [])
+    setAgenda({ state: 'conectado', hoje: hoje.length, proximo: next ? hmOf(new Date(next.inicio), tz) : null })
+  }, [tz])
 
   useEffect(() => {
     void loadSummary()

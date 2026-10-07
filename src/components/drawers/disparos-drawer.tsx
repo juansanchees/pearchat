@@ -11,15 +11,22 @@ import { templateUsable, useDrawerData, useDrawerLoad } from './drawer-data'
 import { OficialTemplates } from './disparos-templates'
 import { INTERVALOS, INTERVALO_API } from './mock-data'
 import { toCampanha, formatDt } from './view'
+import { zonedToInstant } from '@/lib/timezone'
 import { ChatBubble, DrawerShell, Field, ProgressBar, RadioCard, Section, Seg } from './parts'
 
 const QUANDO = ['Agora', 'Agendar'] as const
 const VARS = ['{primeiro_nome}', '{nome}']
 
+/** Valor do datetime-local ("2026-10-08T10:00") no fuso `tz` -> ISO UTC; texto inválido segue cru (o servidor recusa). */
+function dataAgendadaIso(v: string, tz: string): string {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(v)
+  return m ? zonedToInstant(m[1], m[2], tz).toISOString() : v
+}
+
 const linkBtn = 'inline-flex items-center gap-1 bg-transparent p-0 text-[12px] text-light-accent-300 hover:underline'
 
 export function DisparosDrawer() {
-  const { wa, connected, automations, setAutomation, toast } = useAppState()
+  const { wa, connected, automations, setAutomation, toast, locale } = useAppState()
   const { disp, setDisp, listas, campanhas, setCampanhas, templates, setTemplates, tplSel, setTplSel, silencio, setSilencio, failToast } = useDrawerData()
   const loading = useDrawerLoad('disparos')
   const [sending, setSending] = useState(false)
@@ -74,12 +81,13 @@ export function DisparosDrawer() {
         lista: disp.lista,
         ...(oficial ? { templateId: tplSel } : { mensagem: disp.msg.trim() }),
         quando: agendar ? 'agendar' : 'agora',
-        ...(agendar ? { data: new Date(disp.data).toISOString() } : {}),
+        // "Data e hora" é do relógio do espaço (o mesmo do horário de silêncio), não do navegador.
+        ...(agendar ? { data: dataAgendadaIso(disp.data, locale.timezone) } : {}),
         intervalo: INTERVALO_API[disp.intervalo] ?? '15-30',
       }
       const r = await api<{ campaign: CampaignDTO }>('/api/campaigns', { method: 'POST', body })
       if (!automations.disparos) void setAutomation('disparos', true)
-      const nova = toCampanha(r.campaign)
+      const nova = toCampanha(r.campaign, locale.timezone)
       setCampanhas((l) => [nova, ...l])
       toast(
         agendar

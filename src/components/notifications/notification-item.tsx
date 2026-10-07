@@ -74,8 +74,8 @@ const ESTILO: Record<Estilo, string> = {
 }
 
 /** Linha secundária. Agendamentos refazem o dia relativo na hora de mostrar ("amanhã" envelhece): "Rafael Costa · amanhã, 16:00". */
-export function corpoDe(n: NotificationDTO, agoraMs: number): string | null {
-  if (n.dados?.cliente && n.dados.inicio && !n.dados.agregado) return `${n.dados.cliente} · ${quandoAgenda(n.dados.inicio, agoraMs)}`
+export function corpoDe(n: NotificationDTO, agoraMs: number, tz: string): string | null {
+  if (n.dados?.cliente && n.dados.inicio && !n.dados.agregado) return `${n.dados.cliente} · ${quandoAgenda(n.dados.inicio, agoraMs, tz)}`
   return n.corpo
 }
 
@@ -84,18 +84,21 @@ const ORIGEM: Record<string, string> = { ia: 'Pela IA', link: 'Pelo link de agen
 export function NotificationItem({
   n,
   agoraMs,
+  tz,
   destacada,
   onAbrir,
   onApagar,
 }: {
   n: NotificationDTO
   agoraMs: number
+  /** Fuso do espaço (useAppState().locale.timezone): "hoje", "amanhã" e as horas seguem o relógio do negócio. */
+  tz: string
   /** Ainda destacada como nova (não lida, ou lida há instantes enquanto o painel está aberto). */
   destacada: boolean
   onAbrir: (n: NotificationDTO) => void
   onApagar: (n: NotificationDTO) => void
 }) {
-  const corpo = corpoDe(n, agoraMs)
+  const corpo = corpoDe(n, agoraMs, tz)
   const origem = n.dados?.origem ? ORIGEM[n.dados.origem] : null
   const { icone, estilo } = iconeDe(n.tipo, n.dados?.nivel === 100)
   const alta = n.prioridade === 'alta'
@@ -118,7 +121,7 @@ export function NotificationItem({
           <span className="flex items-baseline gap-2">
             <span className={cn('line-clamp-2 flex-1 text-[12.5px] leading-tight', destacada ? 'font-medium' : 'font-normal')}>{n.titulo}</span>
             <time dateTime={n.ocorridoEm} className="flex-none text-[10.5px] text-light-neutral-500">
-              {horaRelativa(n.ocorridoEm, agoraMs)}
+              {horaRelativa(n.ocorridoEm, agoraMs, tz)}
             </time>
           </span>
           {corpo ? <span className="mt-0.5 line-clamp-2 block text-[11.5px] leading-snug text-light-neutral-500">{corpo}</span> : null}

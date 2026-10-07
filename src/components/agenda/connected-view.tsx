@@ -13,7 +13,7 @@ import { api } from './data'
 import { Preferences } from './preferences'
 import { ServiceTypeEditor } from './service-type-editor'
 import { DayCard, NewBooking } from './side-panel'
-import { addDays, diffDays, longLabel, shortLabel, spInstant, spToday, toSp, weekRange, weekTitle } from './time'
+import { addDays, diffDays, longLabel, shortLabel, toZoned, todayIn, weekRange, weekTitle, zonedInstant } from './time'
 import { useFreeSlots, useServiceTypes, useWeekEvents } from './use-agenda'
 import { WeekGrid } from './week-grid'
 
@@ -42,13 +42,15 @@ export function ConnectedView({
   /** Sem Google conectado: abre o fluxo de conexão a partir do aviso no topo. */
   onConnectGoogle?: () => void
 }) {
-  const { toast, wa, agentName } = useAppState()
+  const { toast, wa, agentName, locale } = useAppState()
+  // Fuso do espaço: a grade, o "hoje" e os horários seguem o relógio do negócio, não o do navegador.
+  const tz = locale.timezone
   // Atendente usa a agenda, mas não a gestão (Google, preferências, link, tipos): o servidor também barra (calendar.manage).
   const gerir = usePermissions().can('calendar.manage')
 
   // "Hoje" só é calculado no cliente (evita divergência de hidratação).
   const [today, setToday] = useState<string | null>(null)
-  useEffect(() => setToday(spToday()), [])
+  useEffect(() => setToday(todayIn(tz)), [tz])
 
   const [offset, setOffset] = useState(0)
   const [selIdx, setSelIdx] = useState(0)
@@ -90,17 +92,17 @@ export function ConnectedView({
     const m = new Map<string, EventDto[]>()
     const put = (d: string, ev: EventDto) => m.set(d, [...(m.get(d) ?? []), ev])
     for (const ev of [...week.events].sort((a, b) => (a.inicio < b.inicio ? -1 : 1))) {
-      const first = toSp(ev.inicio).date
+      const first = toZoned(ev.inicio, tz).date
       if (ev.diaInteiro) {
         // Dia inteiro (fim exclusivo): aparece em cada dia coberto.
-        const last = toSp(new Date(new Date(ev.fim).getTime() - 1).toISOString()).date
+        const last = toZoned(new Date(new Date(ev.fim).getTime() - 1).toISOString(), tz).date
         for (let d = first, n = 0; d <= last && n < 62; d = addDays(d, 1), n++) put(d, ev)
       } else {
         put(first, ev)
       }
     }
     return m
-  }, [week.events])
+  }, [week.events, tz])
 
   // Agendamento novo por fora desta tela (ex.: cliente usou o link público): recarrega a grade e os horários.
   const { reload: reloadWeek } = week
@@ -146,7 +148,7 @@ export function ConnectedView({
   const startEdit = (ev: EventDto) => {
     if (ev.somenteLeitura || ev.origem === 'GOOGLE') return
     const t = tipos.find((x) => x.id === ev.serviceTypeId) ?? tipos.find((x) => x.nome.toLowerCase() === ev.tipo.toLowerCase())
-    const at = toSp(ev.inicio)
+    const at = toZoned(ev.inicio, tz)
     setEditorOpen(false)
     setEditing(ev)
     setFocusId(ev.id)
@@ -190,9 +192,9 @@ export function ConnectedView({
   const diaCurto = shortLabel(selDate, today)
 
   // Horários que já passaram hoje não são opção.
-  const nowHm = toSp(new Date().toISOString()).hm
+  const nowHm = toZoned(new Date().toISOString(), tz).hm
   const isToday = selDate === today
-  const origAt = editing ? toSp(editing.inicio) : null
+  const origAt = editing ? toZoned(editing.inicio, tz) : null
   const isOrigDay = origAt !== null && origAt.date === selDate
   let horariosLivres = isToday ? free.horarios.filter((h) => h > nowHm || (isOrigDay && h === origAt?.hm)) : free.horarios
   // Em edição, o horário atual do próprio agendamento sempre aparece (mesmo fora do passo de 30 min).
@@ -217,7 +219,7 @@ export function ConnectedView({
     try {
       if (editing) {
         const tipoSel = tipos.find((t) => t.id === tipoId)
-        const body: Record<string, unknown> = { inicio: spInstant(selDate, hora), duracaoMin: duracao }
+        const body: Record<string, unknown> = { inicio: zonedInstant(selDate, hora, tz), duracaoMin: duracao }
         if (nome !== (editing.cliente ?? '')) body.cliente = nome || null
         if (tipoSel) {
           body.serviceTypeId = tipoSel.id
@@ -253,7 +255,7 @@ export function ConnectedView({
       const r = await api<EventWriteResponse>('/api/events', {
         method: 'POST',
         body: {
-          inicio: spInstant(selDate, hora),
+          inicio: zonedInstant(selDate, hora, tz),
           duracaoMin: duracao,
           ...(tipoSel ? { serviceTypeId: tipoSel.id } : { tipo: 'Atendimento' }),
           cliente: nome || null,
@@ -323,7 +325,7 @@ export function ConnectedView({
   const confirmarManual = async (ev: EventDto) => {
     try {
       await api<EventWriteResponse>(`/api/events/${ev.id}`, { method: 'PATCH', body: { confirmacao: 'confirmado' } })
-      toast({ icon: <CalendarCheck size={18} weight="fill" />, title: 'Marcado como confirmado', text: `${ev.cliente ?? 'Cliente sem nome'} · ${shortLabel(toSp(ev.inicio).date, today)}, ${toSp(ev.inicio).hm}` })
+      toast({ icon: <CalendarCheck size={18} weight="fill" />, title: 'Marcado como confirmado', text: `${ev.cliente ?? 'Cliente sem nome'} · ${shortLabel(toZoned(ev.inicio, tz).date, today)}, ${toZoned(ev.inicio, tz).hm}` })
       emitAgendaChanged()
       void week.reload()
     } catch (e) {

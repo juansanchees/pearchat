@@ -349,7 +349,7 @@ export function ResultadosDrawer() {
               ))}
             </div>
           </div>
-          <Nota>Mensagens recebidas por dia da semana e faixa do dia (horário de São Paulo). Quanto mais escuro, mais mensagens.</Nota>
+          <Nota>Mensagens recebidas por dia da semana e faixa do dia (no fuso deste WhatsApp). Quanto mais escuro, mais mensagens.</Nota>
         </Section>
       </div>
     </DrawerShell>
