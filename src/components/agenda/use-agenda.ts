@@ -38,7 +38,7 @@ export function useCalendarState() {
   return { cal, setCal, loading, error, reload: load }
 }
 
-/** Eventos da semana [start, start+7) (datas em São Paulo). */
+/** Eventos da semana [start, start+7) (datas no fuso do espaço; o servidor lê "YYYY-MM-DD" nesse fuso). */
 export function useWeekEvents(start: string | null) {
   const [events, setEvents] = useState<EventDto[]>([])
   const [googleStatus, setGoogleStatus] = useState<GoogleListStatus>('desconectado')

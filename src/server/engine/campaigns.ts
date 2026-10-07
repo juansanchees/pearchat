@@ -11,7 +11,7 @@ import { bumpUsage, getConnected, log, logError, personalize, shortError, silenc
 const LOCK_MS = 60_000 // reserva do "slot" enquanto um envio está em andamento
 const STALE_RECIPIENT_MS = 3 * 60_000
 const REPLY_WINDOW_MS = 72 * 3_600_000
-const RESUME_HOUR = 8 // o limite diário retoma no dia seguinte às 8h (São Paulo), nunca de madrugada
+const RESUME_HOUR = 8 // o limite diário retoma no dia seguinte às 8h (fuso do espaço), nunca de madrugada
 
 export const dailyLimit = (): number => {
   const n = Number(process.env.CAMPAIGN_DAILY_LIMIT)

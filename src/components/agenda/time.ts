@@ -1,6 +1,6 @@
 // Datas da Agenda no fuso do ESPAÇO (Workspace.timezone; padrão America/Sao_Paulo), via `@/lib/timezone` (Intl).
 // Datas "de calendário" circulam como strings "YYYY-MM-DD"; a aritmética usa Date.UTC. Toda função com fuso recebe o
-// `tz` do espaço (o app o expõe em useAppState().timezone); sem ele vale Brasília.
+// `tz` do espaço (o app o expõe em useAppState().locale.timezone); sem ele vale Brasília.
 import { DEFAULT_TZ, tzParts, zonedToInstant } from '@/lib/timezone'
 
 const DAY_MS = 24 * 60 * 60 * 1000

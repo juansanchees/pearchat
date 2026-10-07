@@ -5,7 +5,7 @@ export type Periodo = (typeof PERIODOS)[number]
 
 export interface ResultsDto {
   periodo: Periodo
-  /** Primeiro e último dia do período (YYYY-MM-DD, fuso de São Paulo; o último é hoje). */
+  /** Primeiro e último dia do período (YYYY-MM-DD, fuso do espaço; o último é hoje). */
   de: string
   ate: string
   /** true = nada aconteceu no período em nenhum bloco. */

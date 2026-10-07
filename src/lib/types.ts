@@ -176,7 +176,7 @@ export interface CampaignDTO {
 
 export interface DisparosSettingsDTO {
   silencioAtivo: boolean
-  /** Hora cheia (0-23, São Paulo). A janela pode cruzar a meia-noite. */
+  /** Hora cheia (0-23, fuso do espaço). A janela pode cruzar a meia-noite. */
   silencioInicio: number
   silencioFim: number
 }

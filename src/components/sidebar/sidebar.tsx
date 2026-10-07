@@ -28,6 +28,7 @@ import type { Icon } from '@phosphor-icons/react'
 import { cn } from '@/lib/utils'
 import type { AutomationKey } from '@/lib/types'
 import { useAppState } from '@/components/app/app-state'
+import { tzParts } from '@/lib/timezone'
 import { AUTOMATION_KEYS, AUTOMATION_TITLES, DRAWER_DESCRIPTIONS, fmtNum } from '@/components/app/automations'
 import { useShell } from '@/components/app/shell-context'
 import { useDisconnect } from '@/components/app/use-disconnect'
@@ -46,7 +47,7 @@ const sectionLabel = 'text-[10.5px] font-medium uppercase leading-none tracking-
 
 export function Sidebar() {
   const pathname = usePathname()
-  const { wa, connected, automations, setAutomation, openDrawer, closeDrawer, drawer, user, agentName, fuQueueCount, spaces, workspaceId } = useAppState()
+  const { wa, connected, automations, setAutomation, openDrawer, closeDrawer, drawer, user, agentName, fuQueueCount, spaces, workspaceId, locale } = useAppState()
   const { switchTo, create, limitReached, busy: spaceBusy } = useSpaceActions()
   // Equipe: o atendente vê só o estado das automações; sem Resultados, Plano, "+ Adicionar WhatsApp" nem desconectar.
   const { can } = usePermissions()
@@ -84,12 +85,13 @@ export function Sidebar() {
   const onAgenda = pathname.startsWith('/agenda')
   const onContatos = pathname.startsWith('/contatos')
 
-  // Mini-calendário: dia atual (spec traz valores fixos; atualizamos após montar).
+  // Mini-calendário: dia atual no fuso do espaço (spec traz valores fixos; atualizamos após montar).
   const [today, setToday] = useState({ mes: 'OUT', dia: '2' })
+  const tz = locale.timezone
   useEffect(() => {
     const d = new Date()
-    setToday({ mes: d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase(), dia: String(d.getDate()) })
-  }, [])
+    setToday({ mes: d.toLocaleDateString('pt-BR', { month: 'short', timeZone: tz }).replace('.', '').toUpperCase(), dia: String(tzParts(d, tz).day) })
+  }, [tz])
 
   const agendaText =
     agenda.state === 'conectado'

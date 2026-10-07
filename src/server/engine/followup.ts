@@ -13,7 +13,7 @@ import { getConnected, log, logError, personalize, shortError, templateFirstName
 //  - o relógio de cada tentativa é a ÚLTIMA mensagem nossa da conversa (inclusive resposta manual de uma
 //    pessoa): se alguém responde à mão depois de o job ser planejado, o job é reagendado para
 //    "essa mensagem + esperaHoras" (a tentativa continua a mesma);
-//  - não envia entre 21h e 8h (São Paulo): reagenda para as 8h;
+//  - não envia entre 21h e 8h (relógio do espaço, Workspace.timezone): reagenda para as 8h;
 //  - no máximo UM envio por workspace a cada tick (5 s): depois de religar o follow-up ou reconectar o
 //    WhatsApp, os jobs atrasados saem em fila, nunca numa rajada.
 //
@@ -21,7 +21,7 @@ import { getConnected, log, logError, personalize, shortError, templateFirstName
 // ligado à conversa). Quando existir (ex.: Contact.pedidos incrementado), basta cancelar aqui.
 
 const STATUS = { pendente: 'pendente', executando: 'executando', enviado: 'enviado', erro: 'erro', cancelado: 'cancelado' } as const
-const QUIET_START = 21 // não envia entre 21h e 8h (São Paulo)
+const QUIET_START = 21 // não envia entre 21h e 8h (fuso do espaço)
 const QUIET_END = 8
 const LOOKBACK_MS = 7 * 24 * 3_600_000 // não retoma conversas paradas há mais de 7 dias
 const STALE_MS = 3 * 60_000

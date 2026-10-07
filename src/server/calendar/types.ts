@@ -10,7 +10,7 @@ export const DURACOES_PADRAO = [30, 60, 120] as const
 
 export interface EventDto {
   id: string
-  /** Início em ISO 8601 UTC (ex.: "2026-10-02T12:30:00.000Z" = 09:30 em São Paulo). */
+  /** Início em ISO 8601 UTC (ex.: "2026-10-02T12:30:00.000Z" = 09:30 em Brasília; a tela mostra no fuso do espaço). */
   inicio: string
   /** Fim em ISO 8601 UTC (inicio + duracaoMin). */
   fim: string
@@ -33,7 +33,7 @@ export interface EventDto {
   lembreteEnviado?: boolean
   /** true = evento lido ao vivo do Google (origem 'GOOGLE'): a tela não permite excluir. */
   somenteLeitura?: boolean
-  /** true = evento de dia inteiro (inicio/fim à meia-noite de São Paulo; fim exclusivo). */
+  /** true = evento de dia inteiro (inicio/fim à meia-noite do fuso do espaço; fim exclusivo). */
   diaInteiro?: boolean
   /** Cor da agenda do Google (backgroundColor) ou, em eventos manuais, a cor do tipo de atendimento. */
   cor?: string | null
@@ -74,7 +74,7 @@ export interface EventDeleteResponse {
 export interface FreeSlotsResponse {
   date: string
   duracaoMin: number
-  /** Inícios livres "HH:MM" (fuso America/Sao_Paulo), passo de 30 min, entre 08:00 e 18:00. */
+  /** Inícios livres "HH:MM" (fuso do espaço, Workspace.timezone), passo de 30 min, entre 08:00 e 18:00. */
   horarios: string[]
   /** true se o free/busy do Google foi considerado de fato. */
   googleConsultado: boolean

@@ -5,7 +5,7 @@ import { apiSession, parseBody, unauthorized } from '@/server/settings/http'
 
 export const dynamic = 'force-dynamic'
 
-// Horário de silêncio dos disparos (não enviar entre X h e Y h, fuso de São Paulo).
+// Horário de silêncio dos disparos (não enviar entre X h e Y h, fuso do espaço, Workspace.timezone).
 export async function GET() {
   const deny = await denyUnless('campaigns.manage'); if (deny) return deny
   const s = await apiSession()
