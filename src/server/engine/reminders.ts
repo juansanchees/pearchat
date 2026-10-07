@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { automationAllowed } from '@/server/billing/entitlements'
 import { canSendFreeformTo } from './freeform'
-import { contactRef, ensureConversation, OutboundError, sendAndRecord } from './outbound'
+import { contactRef, ensureConversation, OutboundAlreadySentError, OutboundError, sendAndRecord } from './outbound'
 import type { OutboundContent } from './outbound'
 import { getConnected, log, logError, shortError, spParts, templateFirstName } from './util'
 
@@ -105,7 +105,7 @@ async function remindWorkspace(conn: { workspaceId: string; lembretes: string[];
 
         // Nome do tipo de atendimento atual (o texto "tipo" do evento guarda o nome da época do agendamento).
         const ask = conn.pedirConfirmacao && ev.confirmacao === 'pendente' && target === confirmationKind(kinds)
-        const { result, asked } = await sendReminder(conn.workspaceId, { id: ev.id, inicio: ev.inicio, tipo: ev.serviceType?.nome ?? ev.tipo }, contact, now, ask)
+        const { result, asked } = await sendReminder(conn.workspaceId, { id: ev.id, inicio: ev.inicio, tipo: ev.serviceType?.nome ?? ev.tipo }, contact, now, ask, target)
         await db.eventReminder.updateMany({ where: { eventId: ev.id, kind: target }, data: { result, pediuConfirmacao: asked && result === 'enviado' } })
         if (result === 'enviado') sent++
       } catch (e) {
@@ -122,6 +122,7 @@ async function sendReminder(
   contact: { id: string; nome: string; waUserId: string | null; telefone: string | null },
   now: Date,
   ask: boolean,
+  kind: string,
 ): Promise<{ result: string; asked: boolean }> {
   const session = await getConnected(workspaceId)
   if (!session) return { result: 'pulado: WhatsApp desconectado', asked: false }
@@ -155,9 +156,11 @@ async function sendReminder(
 
   try {
     const conv = await ensureConversation(workspaceId, contact.id)
-    await sendAndRecord({ session, conversationId: conv.id, to, author: 'IA', content, countAtendimento: freeform })
+    // Um lembrete por evento e tipo (o claim do EventReminder já garante; a chave protege a retomada após queda).
+    await sendAndRecord({ session, conversationId: conv.id, to, author: 'IA', content, countAtendimento: freeform, sendKey: `lr:${ev.id}:${kind}` })
     return { result: 'enviado', asked }
   } catch (e) {
+    if (e instanceof OutboundAlreadySentError) return { result: 'enviado', asked }
     return { result: `erro: ${e instanceof OutboundError ? e.message : shortError(e)}`.slice(0, 200), asked: false }
   }
 }

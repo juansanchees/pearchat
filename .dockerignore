@@ -1,16 +1,27 @@
-node_modules
-.next
-.git
+# Segredos e metadados: nunca entram no contexto de build
 .env*
 deploy/.env*
-docs
-*.log
+.git
+.gitattributes
+.gitignore
+.github
+.claude
 .claude-dev.log
+
+# Dependências e saídas de build (o build roda dentro da imagem)
+node_modules
+.next
 *.tsbuildinfo
 next-env.d.ts
+*.log
+.media
+
+# Não vão para a imagem: testes, documentação e tudo que é só de publicação/operação
+tests
+docs
+README.md
+deploy
+docker
+docker-compose.yml
 Dockerfile
 .dockerignore
-deploy/Caddyfile
-deploy/zapfloo-*
-deploy/last-*
-.media

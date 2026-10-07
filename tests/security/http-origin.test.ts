@@ -39,12 +39,12 @@ suite('B4: conferência de Origin x clientes que não são navegador e variaçõ
   it('variações LEGÍTIMAS da origem passam: AUTH_URL, maiúsculas e barra final, Host de produção, porta padrão explícita, www., X-Forwarded-Host', async () => {
     const casos: Array<[string, Record<string, string>]> = [
       ['AUTH_URL', { origin: APP_ORIGIN }],
-      ['maiúsculas e barra final', { origin: 'HTTP://ONDA1A.LOCALHOST:3048/' }],
+      ['maiúsculas e barra final', { origin: `${APP_ORIGIN.toUpperCase()}/` }],
       ['Host de produção (Caddy repassa o Host)', { host: 'pearchat.online', origin: 'https://pearchat.online' }],
       ['porta padrão explícita (:443)', { host: 'pearchat.online', origin: 'https://pearchat.online:443' }],
       ['Origin em maiúsculas', { host: 'pearchat.online', origin: 'https://PEARCHAT.ONLINE' }],
       ['www. repassado pelo proxy', { host: 'www.pearchat.online', origin: 'https://www.pearchat.online' }],
-      ['X-Forwarded-Host do proxy', { host: '127.0.0.1:3048', 'x-forwarded-host': 'pearchat.online', origin: 'https://pearchat.online' }],
+      ['X-Forwarded-Host do proxy', { host: new URL(BASE!).host, 'x-forwarded-host': 'pearchat.online', origin: 'https://pearchat.online' }],
     ]
     for (const [nome, h] of casos) assert.equal((await put(h)).status, 200, nome)
   })

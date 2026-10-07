@@ -30,6 +30,8 @@ export type NormalizedInbound = {
   providerMessageId: string
   timestamp: Date
   media?: NormalizedMedia
+  /** Tipo sem suporte (gravado como "[Mensagem não suportada]"): os campos do protocolo, só para o log (sem conteúdo). */
+  unsupportedKeys?: string[]
 }
 /** Mensagem enviada pelo próprio dono, direto no app do WhatsApp (celular), vista pelo webhook como `fromMe`. */
 export type NormalizedOutbound = {
@@ -310,8 +312,11 @@ export function parseMetaHistory(value: unknown): { phoneNumberId: string | null
 
 export type EvolutionEvent =
   | { kind: 'qr'; instance: string; qr: string }
-  | { kind: 'connection'; instance: string; status: ConnectionStatusKind }
+  /** `reason` = statusReason da Evolution (código do Baileys: 401 = sessão encerrada no celular, 428/408/515 = queda passageira). */
+  | { kind: 'connection'; instance: string; status: ConnectionStatusKind; reason?: number }
   | { kind: 'messages'; instance: string; inbound: NormalizedInbound[]; outbound: NormalizedOutbound[] }
+  /** SEND_MESSAGE: eco de um envio feito PELA API (pelo PearChat). Nunca é "resposta pelo celular". */
+  | { kind: 'sent'; instance: string; sent: NormalizedOutbound[] }
   | { kind: 'status'; instance: string; updates: NormalizedStatus[] }
   | { kind: 'history'; instance: string; messages: HistoryMessage[] }
   | { kind: 'ignored' }
@@ -382,6 +387,15 @@ function jidToRef(jid: string, alt?: string): ContactRef | null {
 
 const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : v == null ? [] : [v])
 
+/** Mensagem nossa (fromMe do celular ou eco SEND_MESSAGE da API) -> NormalizedOutbound. null = sem conteúdo/destino. */
+function ownMessageOf(d: z.infer<typeof evoMessage>): NormalizedOutbound | null {
+  const media = extractEvolutionMedia(d.message, d.key.remoteJid)
+  const text = media ? media.caption || LABEL_BY_KIND[media.type] : extractEvolutionBody(d.message)
+  const to = jidToRef(d.key.remoteJid, d.key.remoteJidAlt ?? d.key.senderPn)
+  if (!text || !text.trim() || !to) return null
+  return { to, body: text, providerMessageId: d.key.id, timestamp: secondsToDate(d.messageTimestamp), ...(media ? { media } : {}) }
+}
+
 export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
   const env = evoEnvelope.safeParse(json)
   if (!env.success) return { kind: 'ignored' }
@@ -401,8 +415,10 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
   }
 
   if (name === 'connection.update') {
-    const d = z.object({ state: str }).passthrough().safeParse(data)
-    return d.success ? { kind: 'connection', instance, status: mapEvolutionConnection(d.data.state) } : { kind: 'ignored' }
+    const d = z.object({ state: str, statusReason: z.union([z.number(), str]).optional() }).passthrough().safeParse(data)
+    if (!d.success) return { kind: 'ignored' }
+    const reason = Number(d.data.statusReason)
+    return { kind: 'connection', instance, status: mapEvolutionConnection(d.data.state), ...(Number.isFinite(reason) && reason > 0 ? { reason } : {}) }
   }
 
   if (name === 'messages.upsert') {
@@ -413,19 +429,18 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
       if (!m.success) continue
       if (m.data.key.fromMe) {
         // Resposta dada pelo celular: o PearChat grava e trata como atendimento manual (a rota decide a regra).
-        const media = extractEvolutionMedia(m.data.message, m.data.key.remoteJid)
-        const text = media ? (media.caption || LABEL_BY_KIND[media.type]) : extractEvolutionBody(m.data.message)
-        const to = jidToRef(m.data.key.remoteJid, m.data.key.remoteJidAlt ?? m.data.key.senderPn)
-        if (text && text.trim() && to) {
-          outbound.push({ to, body: text, providerMessageId: m.data.key.id, timestamp: secondsToDate(m.data.messageTimestamp), ...(media ? { media } : {}) })
-        }
+        const o = ownMessageOf(m.data)
+        if (o) outbound.push(o)
         continue
       }
       const media = extractEvolutionMedia(m.data.message, m.data.key.remoteJid)
-      const body = media ? (media.caption || LABEL_BY_KIND[media.type]) : (m.data.message?.conversation ?? m.data.message?.extendedTextMessage?.text ?? plainTextOf(m.data.message))
-      if (!body) continue
+      // Mesmo extrator do histórico: localização, contato, resposta de botão/lista, enquete, chamada... viram texto/rótulo
+      // legível em vez de sumirem. null = não é conteúdo de conversa (reação, protocolo, voto de enquete).
+      const body = media ? (media.caption || LABEL_BY_KIND[media.type]) : extractEvolutionBody(m.data.message)
+      if (!body || !body.trim()) continue
       const from = jidToRef(m.data.key.remoteJid, m.data.key.remoteJidAlt ?? m.data.key.senderPn)
       if (!from) continue
+      const unsupportedKeys = body === UNSUPPORTED_LABEL ? Object.keys(unwrapMessage(m.data.message)?.inner ?? {}).slice(0, 8) : undefined
       inbound.push({
         from,
         ...(m.data.pushName ? { nome: m.data.pushName } : {}),
@@ -433,9 +448,22 @@ export function normalizeEvolutionEvent(json: unknown): EvolutionEvent {
         providerMessageId: m.data.key.id,
         timestamp: secondsToDate(m.data.messageTimestamp),
         ...(media ? { media } : {}),
+        ...(unsupportedKeys ? { unsupportedKeys } : {}),
       })
     }
     return inbound.length || outbound.length ? { kind: 'messages', instance, inbound, outbound } : { kind: 'ignored' }
+  }
+
+  if (name === 'send.message') {
+    // Eco do envio feito pela API (o próprio PearChat): carrega o id do provedor para reconciliar envio sem confirmação.
+    const sent: NormalizedOutbound[] = []
+    for (const raw of asArray(data)) {
+      const m = evoMessage.safeParse(raw)
+      if (!m.success) continue
+      const o = ownMessageOf(m.data)
+      if (o) sent.push(o)
+    }
+    return sent.length ? { kind: 'sent', instance, sent } : { kind: 'ignored' }
   }
 
   if (name === 'messages.set') {
@@ -535,6 +563,40 @@ const SKIP_KEYS = new Set([
   'albumMessage', // cabeçalho do álbum: as fotos chegam como mensagens de imagem à parte
 ])
 
+const trimStr = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
+
+/** locationMessage/liveLocationMessage -> "[Localização] Nome, endereço https://maps.google.com/?q=lat,lng". */
+function locationText(l: Record<string, unknown>): string {
+  const where = [trimStr(l.name), trimStr(l.address), trimStr(l.caption)].filter(Boolean).join(', ')
+  const lat = Number(l.degreesLatitude)
+  const lng = Number(l.degreesLongitude)
+  const link = Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0) ? `https://maps.google.com/?q=${lat},${lng}` : ''
+  return ['[Localização]', where, link].filter(Boolean).join(' ')
+}
+
+/** Telefone de um vCard: "waid=5511..." (WhatsApp) ou a linha TEL. */
+function vcardPhone(vcard: string): string {
+  const waid = /waid=(\d{8,15})/i.exec(vcard)?.[1]
+  if (waid) return `+${waid}`
+  const tel = /^TEL[^:\r\n]*:([+\d][\d\s().-]{6,})$/im.exec(vcard)?.[1]
+  return tel ? tel.trim() : ''
+}
+
+/** contactMessage(s) -> "[Contato] Ana (+5511...); Beto (+5521...)". */
+function contactsText(list: unknown[]): string {
+  const items = list
+    .slice(0, 10)
+    .map((c) => {
+      if (!isObj(c)) return ''
+      const vcard = typeof c.vcard === 'string' ? c.vcard : ''
+      const name = trimStr(c.displayName) || (/^FN:(.+)$/im.exec(vcard)?.[1]?.trim() ?? '')
+      const phone = vcard ? vcardPhone(vcard) : ''
+      return [name, phone ? `(${phone})` : ''].filter(Boolean).join(' ')
+    })
+    .filter(Boolean)
+  return items.length ? `[Contato] ${items.join('; ')}` : '[Contato]'
+}
+
 /** Texto da mensagem da Evolution/Baileys; mídia vira "[Imagem]" etc. null = não é conteúdo de conversa. */
 export function extractEvolutionBody(message: unknown): string | null {
   let m: unknown = message
@@ -549,6 +611,11 @@ export function extractEvolutionBody(message: unknown): string | null {
   if (typeof m.conversation === 'string' && m.conversation) return m.conversation
   const ext = m.extendedTextMessage
   if (isObj(ext) && typeof ext.text === 'string' && ext.text) return ext.text
+  // Localização e cartão de contato: o essencial em texto (endereço/link do mapa; nome e telefone), como na API oficial.
+  const loc = isObj(m.locationMessage) ? m.locationMessage : isObj(m.liveLocationMessage) ? m.liveLocationMessage : null
+  if (loc) return locationText(loc)
+  if (isObj(m.contactMessage)) return contactsText([m.contactMessage])
+  if (isObj(m.contactsArrayMessage)) return contactsText(Array.isArray(m.contactsArrayMessage.contacts) ? m.contactsArrayMessage.contacts : [])
   for (const [key, label] of MEDIA_LABEL) {
     const media = m[key]
     if (isObj(media)) {
@@ -569,15 +636,6 @@ export function extractEvolutionBody(message: unknown): string | null {
   }
   if (Object.keys(m).every((k) => SKIP_KEYS.has(k))) return null
   return UNSUPPORTED_LABEL
-}
-
-/** Texto simples de uma mensagem ao vivo, também dentro de "mensagem temporária"/"ver uma vez". */
-function plainTextOf(message: unknown): string | undefined {
-  const u = unwrapMessage(message)
-  if (!u) return undefined
-  if (typeof u.inner.conversation === 'string' && u.inner.conversation) return u.inner.conversation
-  const ext = u.inner.extendedTextMessage
-  return isObj(ext) && typeof ext.text === 'string' && ext.text ? ext.text : undefined
 }
 
 const MEDIA_FIELDS: [string, MediaKind][] = [

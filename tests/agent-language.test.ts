@@ -79,9 +79,9 @@ describe('prompt do agente', () => {
 
 describe('textos fixos', () => {
   it('passagem para humano segue o idioma', () => {
-    assert.equal(genericHandoffMessage('Ana'), 'Claro, já estou passando sua conversa para Ana.')
-    assert.equal(genericHandoffMessage('Ana', 'en'), "Of course, I'm passing your conversation to Ana now.")
-    assert.equal(genericHandoffMessage('Ana', 'es'), 'Claro, ya estoy pasando tu conversación a Ana.')
+    assert.equal(genericHandoffMessage('Ana'), 'Vou passar sua conversa para Ana, que te responde por aqui.')
+    assert.equal(genericHandoffMessage('Ana', 'en'), "I'm passing your conversation to Ana, who'll reply here.")
+    assert.equal(genericHandoffMessage('Ana', 'es'), 'Voy a pasar tu conversación a Ana, que te responde por aquí.')
     const hit = detectHandoffRule('quero desconto', ['Pedido de desconto'])
     assert.ok(hit)
     assert.match(hit.mensagem('Ana', 'es'), /condiciones especiales/)

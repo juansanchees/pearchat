@@ -1,25 +1,68 @@
 # Projeto compose "pearchat", com Caddy proprio nas portas 80/443 (o Zapfloo foi aposentado e fica parado). Uso:
 #   docker compose -p pearchat -f deploy/docker-compose.prod.yml --env-file deploy/.env.production up -d --build
+#
+# Endurecimento (onda 1): no-new-privileges em todos; cap_drop ALL e sistema de arquivos somente leitura so no app e no caddy;
+# logs com rotacao, limites de memoria/processos, redes separadas (borda x dados), imagens fixadas por variavel
+# (preenchida pelo deploy com a versao JA em uso), healthchecks.
+# NOMES de servicos e volumes NAO mudam (o WhatsApp conectado e a midia vivem neles).
+# ATENCAO: o primeiro deploy com este arquivo RECRIA caddy, evolution, evolution-db e evolution-redis (a configuracao mudou):
+# o WhatsApp desconecta e volta sozinho em ~1 min (sessoes ficam nos volumes). Faca em horario calmo.
+#
+# Valores ajustaveis sem editar este arquivo (em deploy/.env.production, todos opcionais):
+#   APP_STOP_GRACE (padrao 40s)     tempo para o app encerrar conexoes/jobs antes do SIGKILL (ver agente B / server.ts)
+#   APP_READ_ONLY (padrao true)     "false" volta o app para sistema de arquivos gravavel (alavanca de emergencia)
+#   APP_MEM_LIMIT (padrao 1g)       CADDY_IMAGE / EVOLUTION_IMAGE / EVOLUTION_DB_IMAGE / EVOLUTION_REDIS_IMAGE
 name: pearchat
+
+# Base de TODOS os servicos: sem novos privilegios, limite de processos e logs com rotacao.
+# cap_drop ALL vai so no caddy e no app. Evolution, Postgres e Redis da Evolution guardam as SESSOES do WhatsApp e nao ha
+# como testar aqui o que o entrypoint de cada imagem exige: ficam SEM cap_drop de proposito (decisao conservadora).
+# Para endurecer depois, num horario calmo e um servico por vez: cap_drop ALL + cap_add CHOWN DAC_OVERRIDE FOWNER SETGID SETUID.
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 512
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
 
 services:
   caddy:
-    image: caddy:2-alpine
+    <<: *hardening
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_logs:/var/log/caddy
     mem_limit: 128m
+    healthcheck:
+      # API de administracao do Caddy (so dentro do container): responde quando o servidor esta de pe e com config carregada.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/config/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     depends_on:
       - app
-    networks: [pearchat]
+    networks: [edge]
 
   app:
+    <<: *hardening
     build:
       context: ..
       dockerfile: Dockerfile
@@ -28,28 +71,53 @@ services:
         NEXT_PUBLIC_WA_MOCK: ${NEXT_PUBLIC_WA_MOCK:-false}
         NEXT_PUBLIC_META_APP_ID: ${NEXT_PUBLIC_META_APP_ID:-}
         NEXT_PUBLIC_META_CONFIG_ID: ${NEXT_PUBLIC_META_CONFIG_ID:-}
+    # "latest" e o que roda. O deploy (remote.sh) etiqueta a imagem em uso como "previous" antes de trocar e cada build
+    # tambem como <commit>; o rollback so move "latest" de volta. Nao mude esta etiqueta.
     image: pearchat-app:latest
-    restart: unless-stopped
     init: true
-    stop_grace_period: 40s
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    stop_grace_period: ${APP_STOP_GRACE:-40s}
     env_file: .env.production
     ports:
       # somente loopback (diagnostico na VPS); o acesso publico e pelo Caddy
       - "127.0.0.1:${PEARCHAT_PORT:-8088}:3000"
-    mem_limit: 1g
+    mem_limit: ${APP_MEM_LIMIT:-1g}
+    # Sistema de arquivos somente leitura: escrita so em /tmp, no cache do Next (tmpfs, uid 1000 = usuario "node") e no
+    # volume de midia. HOME=/tmp para o npx/prisma/tsx gravarem cache onde pode.
+    read_only: ${APP_READ_ONLY:-true}
+    tmpfs:
+      - /tmp:size=256m
+      - /app/.next/cache:size=256m,uid=1000,gid=1000
     environment:
       # Mídias das conversas (imagens, áudios, documentos): volume nomeado, precisa entrar no backup.
       MEDIA_DIR: /data/media
+      HOME: /tmp
+      CHECKPOINT_DISABLE: "1"
+      PRISMA_HIDE_UPDATE_MESSAGE: "1"
     volumes:
       - pearchat_media:/data/media
+      # Status do backup, SO LEITURA: um JSON minimo escrito pelo backup.sh (sem pacotes, sem chave). Quem le e o
+      # /api/health/check (alerta "backup_atrasado" para o monitor externo). Se a pasta nao existir, o Docker a cria vazia.
+      - ${BACKUP_STATUS_DIR:-/opt/pearchat-backups/status}:/data/backup-status:ro
+    healthcheck:
+      # /api/health devolve 503 com o banco fora (o healthcheck da imagem faz o mesmo; aqui vale mesmo se a imagem for antiga).
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     depends_on:
       - evolution
-    networks: [pearchat]
+    networks: [edge, pearchat]
 
   evolution:
-    image: evoapicloud/evolution-api:v2.3.7
+    <<: *hardening
+    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.3.7}
     restart: unless-stopped
     mem_limit: 1g
+    # (sem cap_drop, init e read_only de proposito: a Evolution guarda as sessoes do WhatsApp e nao ha como testar isso aqui)
     depends_on:
       - evolution-db
       - evolution-redis
@@ -74,12 +142,21 @@ services:
       CACHE_LOCAL_ENABLED: "false"
     volumes:
       - evolution_instances:/evolution/instances
+    healthcheck:
+      # GET / responde 200 quando a API esta de pe. Usa o node que ja vem na imagem (nao depende de curl/wget).
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     networks: [pearchat]
 
   evolution-db:
-    image: postgres:16-alpine
+    <<: *hardening
+    image: ${EVOLUTION_DB_IMAGE:-postgres:16-alpine}
     restart: unless-stopped
     mem_limit: 512m
+    # (sem cap_drop e sem read_only de proposito: o banco guarda as sessoes do WhatsApp e nao ha como testar a combinacao aqui)
     environment:
       POSTGRES_DB: evolution
       POSTGRES_USER: evolution
@@ -94,16 +171,27 @@ services:
     networks: [pearchat]
 
   evolution-redis:
-    image: redis:7-alpine
+    <<: *hardening
+    image: ${EVOLUTION_REDIS_IMAGE:-redis:7-alpine}
     restart: unless-stopped
     mem_limit: 256m
+    # (sem cap_drop de proposito: o entrypoint do redis troca de usuario e nao ha como testar aqui)
     volumes:
       - evolution_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
     networks: [pearchat]
 
 networks:
+  # Rede dos dados (chave e nome ANTIGOS mantidos): app, Evolution, Postgres e Redis da Evolution. O Caddy nao entra aqui.
   pearchat:
     name: pearchat_net
+  # Borda: so Caddy e app (o Caddy nao enxerga Redis, Postgres nem Evolution).
+  edge:
+    name: pearchat_edge
 
 volumes:
   pearchat_media:
@@ -112,6 +200,9 @@ volumes:
     name: pearchat_caddy_data
   caddy_config:
     name: pearchat_caddy_config
+  # NOVO: logs de acesso do Caddy (nao entra no backup).
+  caddy_logs:
+    name: pearchat_caddy_logs
   evolution_instances:
     name: pearchat_evolution_instances
   evolution_db_data:

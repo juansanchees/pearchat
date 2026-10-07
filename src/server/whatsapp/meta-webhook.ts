@@ -5,24 +5,14 @@ import { queueHistoryMessages } from './history-import'
 import { normalizeMetaPayload, parseMetaChanges, parseMetaHistory } from './normalize'
 import type { MetaChange } from './normalize'
 import { onlyDigits, toE164 } from './phone'
-import { disableAutomations, readSessionData, setStatus } from './session'
+import { disableAutomationsDefinitively, readSessionData, setStatus } from './session'
 import { applyTemplateStatusEvent } from './templates'
+import { arrivalForOrdering, BatchFailure, eachIsolated, phoneReplyTakesOver } from './webhook-common'
 
-// Processamento dos webhooks da Meta (depois de a rota já ter respondido 200). Nunca loga corpo de mensagem, telefone nem token.
+// Processamento dos webhooks da Meta a partir da caixa de entrada (WebhookInbox: a rota grava antes de responder 200).
+// Nunca loga corpo de mensagem, telefone nem token.
 
-/** Resposta do celular mais velha que isto não assume a conversa (é tratada como histórico). */
-const OUTBOUND_TAKEOVER_MAX_AGE_MS = 10 * 60_000
 const PARTNER_EVENT_TTL_MS = 7 * 24 * 3_600_000
-
-const g = globalThis as unknown as { __pearchat_meta_queue?: Promise<void> }
-
-/** Fila única por processo: mantém a ordem (mensagem antes do status) e não estoura o pool do banco. */
-export function enqueueMetaPayload(json: unknown): Promise<void> {
-  const prev = g.__pearchat_meta_queue ?? Promise.resolve()
-  const next = prev.then(() => processMetaPayload(json)).catch((e) => logError('meta-webhook', 'falha ao processar o lote', e))
-  g.__pearchat_meta_queue = next
-  return next
-}
 
 async function sessionByPhone(phoneNumberId: string) {
   return db.whatsAppSession.findFirst({
@@ -31,38 +21,65 @@ async function sessionByPhone(phoneNumberId: string) {
   })
 }
 
-export async function processMetaPayload(json: unknown): Promise<void> {
+/** Tratador da caixa de entrada para o provedor "meta". Lança se algo falhou (a caixa repete; tudo é idempotente). */
+export async function handleMetaPayload(json: unknown, ctx: { receivedAt: Date }): Promise<void> {
+  await processMetaPayload(json, ctx)
+}
+
+/**
+ * Processa um payload. Cada mensagem/status/campo é isolado: uma falha não impede as demais; no fim, se algo falhou,
+ * lança (a caixa de entrada repete o payload inteiro; o que já entrou é absorvido pela idempotência por id).
+ */
+export async function processMetaPayload(json: unknown, ctx: { receivedAt?: Date } = {}): Promise<void> {
+  const failures: unknown[] = []
+  let total = 0
+  const receivedAt = arrivalForOrdering(ctx.receivedAt ?? new Date())
   // 1) mensagens, status e ecos do celular
   for (const batch of normalizeMetaPayload(json)) {
+    total += batch.inbound.length + batch.echoes.length + batch.statuses.length
+    let session: Awaited<ReturnType<typeof sessionByPhone>>
     try {
-      const session = await sessionByPhone(batch.phoneNumberId)
-      if (!session) continue // número desconhecido: 200 sem efeito
-      const { workspaceId } = session
-      for (const m of batch.inbound) {
-        await ingestInboundMessage({
+      session = await sessionByPhone(batch.phoneNumberId)
+    } catch (e) {
+      failures.push(e)
+      continue
+    }
+    if (!session) continue // número desconhecido: sem efeito
+    const { workspaceId, connectedAt } = session
+    await eachIsolated(
+      batch.inbound,
+      (m) =>
+        ingestInboundMessage({
           workspaceId,
           from: m.from,
           nome: m.nome,
           body: m.body,
           providerMessageId: m.providerMessageId,
           timestamp: m.timestamp,
+          receivedAt,
           media: m.media,
-        })
-      }
-      for (const m of batch.echoes) {
-        const age = Date.now() - m.timestamp.getTime()
-        const afterConnect = !session.connectedAt || m.timestamp.getTime() >= session.connectedAt.getTime() - 60_000
+        }),
+      failures,
+    )
+    await eachIsolated(
+      batch.echoes,
+      async (m) => {
         await ingestOutboundFromPhone({
           workspaceId,
           to: m.to,
           body: m.body,
           providerMessageId: m.providerMessageId,
           timestamp: m.timestamp,
-          takeOver: age < OUTBOUND_TAKEOVER_MAX_AGE_MS && afterConnect,
+          receivedAt,
+          takeOver: phoneReplyTakesOver(m.timestamp, connectedAt),
           media: m.media,
         })
-      }
-      for (const s of batch.statuses) {
+      },
+      failures,
+    )
+    await eachIsolated(
+      batch.statuses,
+      async (s) => {
         if (s.status === 'falhou') console.error(`[wa/meta] mensagem falhou (código ${s.errorCode ?? '-'})`)
         await updateMessageStatus({
           workspaceId,
@@ -70,10 +87,9 @@ export async function processMetaPayload(json: unknown): Promise<void> {
           status: s.status,
           ...(s.status === 'falhou' ? { reason: `${s.errorTitle ?? 'Falha na entrega'}${s.errorCode ? ` (código ${s.errorCode})` : ''}` } : {}),
         })
-      }
-    } catch (e) {
-      logError('meta-webhook', 'lote de mensagens', e)
-    }
+      },
+      failures,
+    )
   }
 
   // 2) demais campos
@@ -82,8 +98,11 @@ export async function processMetaPayload(json: unknown): Promise<void> {
       await handleChange(change)
     } catch (e) {
       logError('meta-webhook', `campo ${change.field}`, e)
+      failures.push(e)
     }
+    total++
   }
+  if (failures.length) throw new BatchFailure(failures.length, total, failures[0])
 }
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : typeof v === 'number' ? String(v) : undefined)
@@ -134,7 +153,8 @@ async function handleAccountUpdate(change: MetaChange): Promise<void> {
       if (s.status === 'DESCONECTADO') continue
       await setStatus(s.workspaceId, DISCONNECTED.has(event) ? 'desconectado' : 'erro')
       await db.whatsAppSession.update({ where: { workspaceId: s.workspaceId }, data: { metaLastError: `Aviso da Meta: ${event}` } })
-      await disableAutomations(s.workspaceId)
+      // Aviso da Meta (conta removida/restrita) é definitivo: desliga e avisa.
+      await disableAutomationsDefinitively(s.workspaceId, `aviso da Meta ${event}`)
     }
     return
   }

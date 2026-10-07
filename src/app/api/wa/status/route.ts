@@ -3,7 +3,7 @@ import { unauthorizedResponse } from '@/server/auth/availability'
 import { statusToKind } from '@/lib/mappers'
 import { getApiSession } from '@/server/whatsapp/auth'
 import { getProvider } from '@/server/whatsapp'
-import { disableAutomations, getSession, setStatus, toStatusDTO } from '@/server/whatsapp/session'
+import { getSession, setStatus, toStatusDTO } from '@/server/whatsapp/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,8 +26,9 @@ export async function GET() {
         const numero = (await provider.fetchNumero?.(workspaceId).catch(() => undefined)) ?? row.numero
         row = await setStatus(workspaceId, 'conectado', { numero })
       } else if (real === 'desconectado' && current === 'conectado') {
+        // Só o status: a consulta não sabe se a queda é passageira. As automações ficam PAUSADAS (exigem CONECTADO) e
+        // voltam sozinhas ao reconectar; desligar de vez só por ação do dono ou logout informado pelo webhook (código 401).
         row = await setStatus(workspaceId, 'desconectado')
-        await disableAutomations(workspaceId)
       } else if (current === 'aguardando_qr') {
         // Na Evolution "connecting" também aparece enquanto espera a leitura: continua mostrando o QR.
         const stale = !row.lastQrAt || Date.now() - row.lastQrAt.getTime() > QR_TTL_MS

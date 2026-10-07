@@ -84,6 +84,38 @@ export function cleanReply(text: string): string {
     .trim()
 }
 
+// Mídia do cliente cujo conteúdo a IA NÃO tem (áudio sem transcrição, imagem sem visão, documento...). O rótulo curto
+// ("[Áudio]") deixava o modelo pequeno agradecer o áudio e presumir o assunto; marcado assim ele pede para escrever.
+const UNKNOWN_MEDIA: [label: string, marked: string][] = [
+  ['[Áudio]', '[Áudio sem transcrição: conteúdo desconhecido, você não ouviu]'],
+  ['[Imagem]', '[Imagem: conteúdo desconhecido, você não consegue ver]'],
+  ['[Vídeo]', '[Vídeo: conteúdo desconhecido, você não consegue ver]'],
+  ['[Documento]', '[Documento: conteúdo desconhecido, você não consegue abrir]'],
+  ['[mídia enviada]', '[Arquivo: conteúdo desconhecido, você não consegue abrir]'],
+]
+
+/**
+ * Marca no histórico as mídias do cliente sem conteúdo disponível. Não mexe em "[Áudio transcrito] ..." nem na mensagem
+ * que leva a imagem anexada (visão). Legenda junto do rótulo é preservada.
+ */
+export function markUnknownMedia(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((m) => {
+    if (m.role !== 'user' || m.image) return m
+    const content = m.content
+      .split('\n')
+      .map((line) => {
+        const t = line.trim()
+        for (const [label, marked] of UNKNOWN_MEDIA) {
+          if (t === label) return marked
+          if (t.startsWith(`${label} `)) return `${marked.slice(0, -1)}; o cliente escreveu junto:] ${t.slice(label.length + 1).trim()}`
+        }
+        return line
+      })
+      .join('\n')
+    return content === m.content ? m : { ...m, content }
+  })
+}
+
 async function postJson(url: string, headers: Record<string, string>, body: unknown, ms: number = timeoutMs()): Promise<unknown> {
   const res = await fetch(url, {
     method: 'POST',
@@ -386,6 +418,7 @@ export async function generateReply({
   const anthropic = process.env.ANTHROPIC_API_KEY
   const openai = process.env.OPENAI_API_KEY
   if (anthropic || openai) {
+    messages = markUnknownMedia(messages)
     let rodadas = 0
     const plain = (msgs: ChatMessage[]) => (anthropic ? callAnthropic(anthropic, system, msgs) : callOpenAi(openai as string, system, msgs))
     const structured = async (msgs: ChatMessage[]) => {

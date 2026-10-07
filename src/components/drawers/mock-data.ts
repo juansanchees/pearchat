@@ -14,6 +14,8 @@ export const AGENTE_INICIAL = {
   horario: 'Sempre' as Horario,
   idioma: 'auto' as Idioma,
   prompt: '',
+  ritmoNatural: true,
+  confirmarAgendamento: true,
 }
 
 export const HANDOFF_OPCOES = ['Pedido de desconto', 'Reclamação', 'Cliente pede um atendente', 'Pedido acima de R$ 500']

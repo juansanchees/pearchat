@@ -6,10 +6,10 @@ import type { ConnectionStatusKind } from '@/lib/types'
 import { logError } from '@/server/engine/util'
 import { MAX_INBOUND_BYTES, normalizeMime } from '@/server/media/mime'
 import { GraphError, graph, graphDownload, isGraphError } from './graph'
-import { ProviderUnsupportedError, WhatsAppProviderError, WindowClosedError } from './provider'
+import { ProviderUnsupportedError, uncertainError, WhatsAppProviderError, WindowClosedError } from './provider'
 import type { ContactRef, FetchedMedia, OutboundMedia, WhatsAppProvider } from './provider'
 import { recipientDigits } from './phone'
-import { disableAutomations, getSession, mergeSessionData, readSessionData, setStatus } from './session'
+import { disableAutomationsDefinitively, getSession, mergeSessionData, readSessionData, setStatus } from './session'
 import { countTemplateVars, templateUnsupportedReason } from './template-rules'
 
 // Provedor da API Oficial (Cloud API da Meta). Tudo passa por graph.ts (versão, appsecret_proof, retentativas).
@@ -156,7 +156,7 @@ async function handleAuthFailure(workspaceId: string, e: GraphError): Promise<vo
   try {
     await setStatus(workspaceId, 'erro')
     await db.whatsAppSession.update({ where: { workspaceId }, data: { metaLastError: `Token recusado pela Meta (código ${e.code ?? e.status}). Reconecte o WhatsApp.` } })
-    await disableAutomations(workspaceId)
+    await disableAutomationsDefinitively(workspaceId, 'token recusado pela Meta')
   } catch (err) {
     logError('meta', 'falha ao marcar a sessão com erro', err)
   }
@@ -229,6 +229,7 @@ async function sendCall<T>(workspaceId: string, run: (c: Creds) => Promise<T>, r
         throw new WhatsAppProviderError(describeSendError(err), err.status, null)
       }
     }
+    if (e.uncertain) throw uncertainError(`${describeSendError(e)} (envio sem confirmação)`)
     throw new WhatsAppProviderError(describeSendError(e), e.status, { code: e.code, fbtraceId: e.fbtraceId })
   }
 }
@@ -245,7 +246,8 @@ const messageBase = (to: ContactRef) => ({ messaging_product: 'whatsapp', recipi
 async function postMessage(c: Creds, payload: Record<string, unknown>): Promise<{ providerMessageId: string }> {
   const raw = await graph({ method: 'POST', path: `/${encodeURIComponent(c.phoneNumberId)}/messages`, token: c.token, body: payload })
   const parsed = sendSchema.safeParse(raw)
-  if (!parsed.success) throw new WhatsAppProviderError('Resposta inesperada da Meta', 502, null)
+  // 2xx sem id legível: a Meta aceitou, mas não dá para saber o id -> incerto (não reenvia às cegas).
+  if (!parsed.success) throw uncertainError('Resposta inesperada da Meta (envio sem confirmação)', 502)
   return { providerMessageId: parsed.data.messages[0]!.id }
 }
 

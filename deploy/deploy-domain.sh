@@ -1,31 +1,24 @@
 #!/usr/bin/env bash
-# Coloca o PearChat em https://pearchat.online com Caddy PROPRIO e aposenta (PARA) o Zapfloo.
-# UMA conexao SSH (a VPS bloqueia conexoes seguidas por ~1h): envia codigo + deploy/.env.production + Caddyfile
-# + zapfloo-stop.sh, extrai e dispara deploy/remote.sh (STOP_ZAPFLOO=1) em segundo plano; depois acompanha so por curl.
-# Uso (Git Bash): bash deploy/deploy-domain.sh
-# Pre-requisito: PUBLIC_URL=https://pearchat.online node deploy/gen-env.mjs (o .env.production ja deve ter as URLs https).
+# Coloca o PearChat em https://<dominio> com Caddy PROPRIO e aposenta (PARA) o Zapfloo.
+# UMA conexao SSH (a VPS bloqueia conexoes seguidas por ~1h): envia codigo + Caddyfile + zapfloo-stop.sh, extrai e
+# dispara deploy/remote.sh (STOP_ZAPFLOO=1) em segundo plano; depois acompanha so por curl.
+# Uso (Git Bash): bash deploy/deploy-domain.sh      (configuracao: deploy/.deploy.env, ver deploy/deploy.env.example)
+# Pre-requisito: o arquivo de ambiente JA EXISTE no servidor (/opt/pearchat/deploy/.env.production) com AUTH_URL=https://<dominio>.
+# Ele nunca e enviado por este script (ver docs/operacao/publicacao.md, "Primeira instalacao").
 set -euo pipefail
 cd "$(dirname "$0")/.."
-
-HOST="${PEARCHAT_HOST:-82.25.79.194}"
-KEY="${PEARCHAT_KEY:-$HOME/.ssh/pearchat_vps}"
-DOMAIN="${PEARCHAT_DOMAIN:-pearchat.online}"
+# shellcheck source=_common.sh
+. deploy/_common.sh
+deploy_load_config || exit 1
+deploy_check_clean_tree || exit 1
 OUT="${TMPDIR:-/tmp}/pearchat-domain-ssh.out"
 
-[ -f deploy/.env.production ] || { echo "falta deploy/.env.production (rode: PUBLIC_URL=https://$DOMAIN node deploy/gen-env.mjs)"; exit 1; }
-grep -q "^AUTH_URL='https://$DOMAIN'" deploy/.env.production || { echo "AUTH_URL do .env.production nao e https://$DOMAIN; rode: PUBLIC_URL=https://$DOMAIN node deploy/gen-env.mjs"; exit 1; }
 [ -f deploy/Caddyfile ] && [ -f deploy/zapfloo-stop.sh ] || { echo "faltam deploy/Caddyfile ou deploy/zapfloo-stop.sh"; exit 1; }
-
-REMOTE_CMD="mkdir -p /opt/pearchat && cd /opt/pearchat && rm -rf src prisma docker public && tar xzf - -C /opt/pearchat || { echo UPLOAD_FALHOU; exit 1; }; echo UPLOAD_OK; (STOP_ZAPFLOO=1 setsid nohup bash deploy/remote.sh > /dev/null 2>&1 < /dev/null &); echo REMOTE_DISPARADO"
 
 # Hash do commit enviado (vira /opt/pearchat/.deploy-commit; lido pelo backup e por /api/health).
 (git rev-parse HEAD 2>/dev/null || echo desconhecido) > .deploy-commit
 echo "==> Conexao SSH unica: upload + disparo de remote.sh (para o Zapfloo, sobe Caddy + app) em segundo plano"
-tar czf - \
-  --exclude=node_modules --exclude=.next --exclude=.git --exclude='.env' --exclude='.env.local' \
-  --exclude='.env.example' --exclude=docs --exclude='*.log' --exclude='*.tsbuildinfo' \
-  --exclude=next-env.d.ts --exclude=.claude . \
-| ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=30 "root@$HOST" "$REMOTE_CMD" | tee "$OUT"
+deploy_upload_and_run 'echo UPLOAD_OK; (STOP_ZAPFLOO=1 setsid nohup bash deploy/remote.sh > /dev/null 2>&1 < /dev/null &); echo REMOTE_DISPARADO' | tee "$OUT"
 
 if ! grep -q '^REMOTE_DISPARADO' "$OUT"; then
   echo "Envio falhou ou remote.sh nao foi disparado. Nada foi alterado na VPS alem do upload."
@@ -43,7 +36,7 @@ while [ $((SECONDS-START)) -lt $LIMIT ]; do
 done
 
 echo "==> curl -sI https://$DOMAIN/login"
-curl -sI -m 15 "https://$DOMAIN/login" | head -12 || true
+curl -sI -m 15 "https://$DOMAIN/login" | head -14 || true
 echo "==> http://$DOMAIN/login (deve redirecionar para https)"
 curl -s -o /dev/null -m 15 -w 'HTTP %{http_code} -> %{redirect_url}\n' "http://$DOMAIN/login" || true
 echo "==> https://www.$DOMAIN/login (deve redirecionar para https://$DOMAIN/login)"

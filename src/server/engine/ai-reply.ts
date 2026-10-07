@@ -4,6 +4,7 @@ import { generateReply, LlmError } from '@/server/agent/llm'
 import type { ChatMessage } from '@/server/agent/llm'
 import { detectReplyLanguage, FIXED, LIMITE_TODOS, parseIdiomaConfig, resolveReplyLanguage } from '@/server/agent/i18n'
 import { buildSystemPrompt, HANDOFF_MARKER } from '@/server/agent/prompt'
+import { finishAiReply } from '@/server/agent/finish'
 import { createToolRunner, miniCalendar } from '@/server/agent/tools'
 import { remarcarContext } from '@/server/calendar/confirmation'
 import { serviceTypesForPrompt } from '@/server/calendar/service-types'
@@ -16,12 +17,13 @@ import { loadConversationItem, toMessageDTO } from '@/server/messages/dto'
 import { emitToWorkspace } from '@/server/realtime/emit'
 import { canSendFreeformTo } from './freeform'
 import { automationAllowed } from '@/server/billing/entitlements'
-import { HANDOFF_BILLING_NOTE, HANDOFF_LIMIT_NOTE, HANDOFF_MODEL_NOTE, handoffRuleNote } from './handoff-reasons'
-import { contactRef, OutboundError, sendAndRecord } from './outbound'
+import { HANDOFF_BILLING_NOTE, HANDOFF_LIMIT_NOTE, handoffRuleNote } from './handoff-reasons'
+import { contactRef, OutboundAlreadySentError, OutboundCancelledError, OutboundError, sendAndRecord } from './outbound'
 import { cancelPendingFollowUps } from './followup'
 import { isManualNote, keepManual, plainNote } from './ai-job-notes'
 import { isNonReplyableBody } from '@/server/whatsapp/labels'
 import { agentMayReplyAt, detectHandoffRule, formatAgora, genericHandoffMessage, isStopRequest, ungroundedMoney } from './rules'
+import { aiConcurrency, engineLimiter, engineStopping } from './limiter'
 import { bumpUsage, displayName, engineDisabled, getConnected, log, logError, shortError } from './util'
 
 // Resposta da IA às conversas. Fluxo: ingestInboundMessage -> scheduleAiReply (debounce de 4 s) ->
@@ -29,13 +31,17 @@ import { bumpUsage, displayName, engineDisabled, getConnected, log, logError, sh
 
 export const AI_DEBOUNCE_MS = 4_000
 const SWEEP_SPACING_MS = 1_200
-const MAX_ATTEMPTS = 3
-const RETRY_DELAYS_MS = [15_000, 45_000]
+// Tentativas: 15 s, 45 s e uma última depois de 5 min (queda passageira do modelo/WhatsApp se resolve sozinha e o
+// cliente é respondido). Esgotou: a conversa passa para uma pessoa e a equipe é avisada (escalateAfterFailure).
+// Mensagem nova do cliente durante a espera antecipa a tentativa (scheduleAiReply empurra o job pendente).
+const MAX_ATTEMPTS = 4
+const RETRY_DELAYS_MS = [15_000, 45_000, 5 * 60_000]
 const HISTORY_LIMIT = 30
 const MAX_MESSAGE_CHARS = 1500 // trava o custo se o cliente colar um texto enorme
-const STALE_RUNNING_MS = 2 * 60_000 // o modelo tem timeout de 45 s: 2 min sem terminar = processo caiu
+// Job pode levar ~2,5 min (modelo 70 s + nova tentativa de preço 70 s + ferramentas): 5 min sem terminar = processo caiu.
+// Na subida do servidor os órfãos voltam na hora (recoverOrphanAiJobs); este prazo cobre outra instância que morreu.
+const STALE_RUNNING_MS = 5 * 60_000
 const SWEEP_LOOKBACK_MS = 24 * 3_600_000 // janela de 24 h do WhatsApp
-const CONCURRENCY = 4
 // Espera por transcrição/download de mídia antes de responder: até 3 vezes, 7 s cada (~20 s no total).
 const MEDIA_WAIT_MS = 7_000
 const MEDIA_WAIT_MAX = 3
@@ -161,7 +167,11 @@ export async function sweepPending(): Promise<number> {
     select: { workspaceId: true },
   })
   let total = 0
-  for (const a of agents) total += await enqueuePendingForWorkspace(a.workspaceId)
+  for (const a of agents) {
+    if (engineStopping()) break
+    // Uma vaga das tarefas do motor por workspace varrido (não monopoliza o pool nem as vagas da IA).
+    total += await engineLimiter('tarefas').run(() => enqueuePendingForWorkspace(a.workspaceId))
+  }
   return total
 }
 
@@ -222,7 +232,36 @@ async function responsavelNome(workspaceId: string): Promise<string> {
   return u?.nome.trim().split(/\s+/)[0] || 'o responsável'
 }
 
-type JobResult = { kind: 'done'; note?: string } | { kind: 'retry'; error: string } | { kind: 'wait'; note: string }
+/**
+ * `wait`: reagenda sem decidir. `consumeAttempt` = conta como tentativa (envio que saiu sem confirmação); sem ele a
+ * espera não gasta tentativa (mídia baixando, conferência de um envio anterior).
+ */
+type JobResult = { kind: 'done'; note?: string } | { kind: 'retry'; error: string } | { kind: 'wait'; note: string; delayMs?: number; consumeAttempt?: boolean }
+
+/** Chave de idempotência do envio da resposta de um job (Message.sendKey): o mesmo job nunca envia duas respostas. */
+export const aiSendKey = (jobId: string): string => `ai:${jobId}`
+/** Espera entre conferências de um envio sem confirmação (a reconciliação resolve em até ~3 min). */
+const DELIVERY_RECHECK_MS = 20_000
+const DELIVERY_WAIT_NOTE = 'aguardando-confirmacao:'
+/** Teto de conferências (~33 min: cobre o prazo máximo da reconciliação com a Evolution fora do ar). */
+const DELIVERY_WAIT_MAX = 100
+
+/**
+ * Revalidação IMEDIATAMENTE antes de enviar: pessoa assumiu (HUMANO) = não envia. Também não envia se o desligamento
+ * gracioso já devolveu este job à fila (o próximo processo o executa; sem isto sairiam duas respostas).
+ */
+async function humanGuard(conversationId: string, jobId?: string): Promise<string | null> {
+  if (jobId && releasedJobs.has(jobId)) return 'servidor desligando: o job voltou para a fila'
+  const c = await db.conversation.findUnique({ where: { id: conversationId }, select: { mode: true } })
+  if (!c) return 'conversa não existe'
+  return c.mode === 'HUMANO' ? 'virou modo humano antes do envio' : null
+}
+
+function deliveryWait(job: AiJob): JobResult {
+  const done = Number(new RegExp(`^${DELIVERY_WAIT_NOTE}(\\d+)`).exec(plainNote(job.error))?.[1] ?? 0)
+  if (done >= DELIVERY_WAIT_MAX) return { kind: 'done', note: 'envio sem confirmação: a reconciliação não concluiu a tempo' }
+  return { kind: 'wait', note: `${DELIVERY_WAIT_NOTE}${done + 1}`, delayMs: DELIVERY_RECHECK_MS }
+}
 
 async function finish(job: AiJob, status: 'feito' | 'erro', note?: string): Promise<void> {
   await db.aiJob.update({ where: { id: job.id }, data: { status, error: note ?? null } })
@@ -233,6 +272,8 @@ async function handoff(opts: {
   conv: Conversation & { contact: Contact }
   motivo: string
   message: string | null
+  /** Job que fez a passagem: o aviso ao cliente sai uma vez só por job (retomada após queda não repete). */
+  jobId?: string
 }): Promise<void> {
   const { session, conv, motivo, message } = opts
   const { workspaceId } = session
@@ -246,14 +287,16 @@ async function handoff(opts: {
         content: { kind: 'text', text: message },
         countAtendimento: true,
         emit: false,
+        ...(opts.jobId ? { sendKey: `${aiSendKey(opts.jobId)}:passagem` } : {}),
+        guard: () => humanGuard(conv.id, opts.jobId),
       })
     } catch (e) {
-      // Mesmo sem conseguir avisar o cliente, a conversa vai para a pessoa.
-      logError('ai', `aviso de passagem falhou (conversa ${conv.id})`, e)
+      // Mesmo sem conseguir avisar o cliente (ou já avisado/assumido), a conversa vai para a pessoa.
+      if (!(e instanceof OutboundAlreadySentError) && !(e instanceof OutboundCancelledError)) logError('ai', `aviso de passagem falhou (conversa ${conv.id})`, e)
     }
   }
   await db.conversation.update({ where: { id: conv.id }, data: { mode: 'HUMANO', typing: false } })
-  const msg = message ? await db.message.findFirst({ where: { conversationId: conv.id }, orderBy: { createdAt: 'desc' } }) : null
+  const msg = message ? await db.message.findFirst({ where: { conversationId: conv.id }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }) : null
   if (msg && msg.direction === 'OUT') {
     emitToWorkspace(workspaceId, 'message.received', { workspaceId, conversationId: conv.id, message: toMessageDTO(msg) })
   }
@@ -286,8 +329,20 @@ async function execute(job: AiJob): Promise<JobResult> {
   const session = await getConnected(workspaceId)
   if (!session) return { kind: 'done', note: 'cancelado: WhatsApp desconectado' }
 
+  // Este job já enviou (retomada depois de queda/reinício, ou envio sem confirmação): nunca gera/envia de novo às cegas.
+  const prior = await db.message.findFirst({ where: { conversationId, sendKey: aiSendKey(job.id) }, select: { status: true, createdAt: true } })
+  if (prior && prior.status === 'PENDENTE') return deliveryWait(job)
+  if (prior && prior.status !== 'FALHOU') {
+    // O cliente escreveu de novo enquanto este envio era conferido: a nova mensagem ganha um job próprio já.
+    const newest = await db.message.findFirst({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { direction: true, createdAt: true } })
+    if (newest?.direction === 'IN' && newest.createdAt > prior.createdAt) {
+      await db.aiJob.create({ data: { workspaceId, conversationId, status: AI_JOB.pendente, runAt: new Date(Date.now() + AI_DEBOUNCE_MS) } })
+    }
+    return { kind: 'done', note: 'já enviada por este job' }
+  }
+
   // Envios que falharam (OUT/FALHOU) não contam: senão a nova tentativa acharia que a conversa já foi respondida.
-  const recent = await db.message.findMany({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: { createdAt: 'desc' }, take: HISTORY_LIMIT })
+  const recent = await db.message.findMany({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: HISTORY_LIMIT })
   const last = recent[0]
   if (!last || last.direction !== 'IN') return { kind: 'done', note: 'nada a responder (já respondida)' }
   // Histórico importado do WhatsApp não gera resposta sozinho; só um pedido de uma pessoa ("Responder com a IA") o responde.
@@ -332,7 +387,7 @@ async function execute(job: AiJob): Promise<JobResult> {
   // Modo restrito (teste vencido / pagamento atrasado além da carência / assinatura cancelada e vencida): a IA não
   // responde; a conversa vai para uma pessoa em silêncio (nada é dito ao cliente) e o dono é avisado como em qualquer passagem.
   if (!(await automationAllowed(workspaceId))) {
-    await handoff({ session, conv, motivo: 'assinatura inativa', message: null })
+    await handoff({ session, conv, jobId: job.id, motivo: 'assinatura inativa', message: null })
     return { kind: 'done', note: HANDOFF_BILLING_NOTE }
   }
 
@@ -341,14 +396,14 @@ async function execute(job: AiJob): Promise<JobResult> {
   if (quota.limite !== null && quota.usadas >= quota.limite) {
     // Avisa o cliente UMA vez (sem falar de plano/limite) antes de passar para a equipe.
     const jaAvisou = await db.message.findFirst({ where: { conversationId, author: 'IA', body: { in: LIMITE_TODOS } }, select: { id: true } })
-    await handoff({ session, conv, motivo: 'limite do plano', message: jaAvisou ? null : FIXED[lang].limite })
+    await handoff({ session, conv, jobId: job.id, motivo: 'limite do plano', message: jaAvisou ? null : FIXED[lang].limite })
     return { kind: 'done', note: HANDOFF_LIMIT_NOTE }
   }
 
   // Regras de passagem por palavra-chave: antes de chamar o modelo.
   const hit = detectHandoffRule(customerText, agent.handoffRules)
   if (hit) {
-    await handoff({ session, conv, motivo: hit.motivo, message: hit.mensagem(responsavel, lang) })
+    await handoff({ session, conv, jobId: job.id, motivo: hit.motivo, message: hit.mensagem(responsavel, lang) })
     return { kind: 'done', note: handoffRuleNote(hit.motivo) }
   }
 
@@ -369,6 +424,7 @@ async function execute(job: AiJob): Promise<JobResult> {
     ? {
         calendario: miniCalendar(nowDate),
         clienteNome: displayName(conv.contact.nome, conv.contact) || null,
+        confirmar: agent.confirmarAgendamento,
         contexto: [...(await remarcarContext(workspaceId, conv.contactId, nowDate)), ...(await discardedWriteNotice(conversationId, new Date(nowDate.getTime() - 15 * 60_000)))],
       }
     : undefined
@@ -414,40 +470,58 @@ async function execute(job: AiJob): Promise<JobResult> {
   }
   await saveToolLog(job, runner)
 
+  // Acabamento (src/server/agent/finish.ts): estilo, passagem quando a resposta promete ação da equipe e, com o ritmo
+  // natural ligado, "digitando…" + pausa proporcional ao texto. Fica ANTES da revalidação: mensagem nova na pausa descarta.
+  const fin = await finishAiReply(texto, { history, tom: tomFromDb(agent.tom), agentName: agent.nome, pace: agent.ritmoNatural ? { session, to } : null })
+
   // Revalida: a conversa pode ter virado HUMANO, a IA ter sido desligada, ou chegado mais mensagens.
   const [conv2, el2, newest] = await Promise.all([
     db.conversation.findFirst({ where: { id: conversationId, workspaceId }, select: { mode: true } }),
     loadAgentFor(workspaceId, new Date(), { ignoreSchedule: manual }),
-    db.message.findFirst({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: { createdAt: 'desc' }, select: { id: true } }),
+    db.message.findFirst({ where: { conversationId, ...NOT_FAILED_OUT }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { id: true } }),
   ])
   if (!conv2 || conv2.mode === 'HUMANO') return { kind: 'done', note: 'cancelado: virou modo humano durante a geração' }
   if (!el2.ok) return { kind: 'done', note: `cancelado: ${el2.reason}` }
   if (newest?.id !== last.id) return { kind: 'done', note: 'superado: chegou mensagem nova durante a geração' }
 
-  if (texto.includes(HANDOFF_MARKER)) {
-    await handoff({ session, conv, motivo: 'regra de passagem (decisão da IA)', message: genericHandoffMessage(responsavel, lang) })
-    return { kind: 'done', note: HANDOFF_MODEL_NOTE }
+  if (fin.kind === 'handoff') {
+    await handoff({ session, conv, jobId: job.id, motivo: fin.motivo, message: fin.message ?? genericHandoffMessage(responsavel, lang) })
+    return { kind: 'done', note: fin.note }
   }
 
+  let sent: Message
   try {
-    const sent = await sendAndRecord({
+    sent = await sendAndRecord({
       session,
       conversationId,
       to,
       author: 'IA',
-      content: { kind: 'text', text: stripRepeatedGreeting(texto, history) },
+      content: { kind: 'text', text: stripRepeatedGreeting(fin.texto, history) },
       countAtendimento: true,
       emit: false,
+      sendKey: aiSendKey(job.id),
+      // Pessoa assumiu entre a revalidação e o envio: não envia.
+      guard: () => humanGuard(conversationId, job.id),
     })
-    await db.conversation.update({ where: { id: conversationId }, data: { mode: 'IA', typing: false, unread: 0 } })
+  } catch (e) {
+    if (e instanceof OutboundCancelledError) return { kind: 'done', note: `cancelado: ${e.message}` }
+    if (e instanceof OutboundAlreadySentError) return { kind: 'done', note: 'já enviada por este job' }
+    return { kind: 'retry', error: e instanceof OutboundError ? e.message : shortError(e) }
+  }
+  // A mensagem saiu (ou pode ter saído): daqui em diante nada pode levar a reenviar.
+  try {
+    // Nunca sobrescreve HUMANO: se uma pessoa assumiu durante o envio, a conversa continua com ela (A1).
+    await db.conversation.updateMany({ where: { id: conversationId, OR: [{ mode: null }, { mode: { not: 'HUMANO' } }] }, data: { mode: 'IA', typing: false, unread: 0 } })
     await bumpUsage(workspaceId, { respostasIa: 1 })
     emitToWorkspace(workspaceId, 'message.received', { workspaceId, conversationId, message: toMessageDTO(sent) })
     const item = await loadConversationItem(workspaceId, conversationId)
     if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })
-    return { kind: 'done' }
   } catch (e) {
-    return { kind: 'retry', error: e instanceof OutboundError ? e.message : shortError(e) }
+    logError('ai', `pós-envio falhou (job ${job.id}); a resposta foi enviada`, e)
   }
+  // Sem confirmação do provedor: espera a reconciliação (confirma = pronto; não confirmado = gera e envia de novo).
+  if (sent.uncertainSince) return { kind: 'wait', note: `${DELIVERY_WAIT_NOTE}0`, delayMs: DELIVERY_RECHECK_MS, consumeAttempt: true }
+  return { kind: 'done' }
 }
 
 /**
@@ -465,6 +539,55 @@ function tomFromDb(tom: string): 'Amigável' | 'Profissional' | 'Direto' {
   return tom === 'profissional' ? 'Profissional' : tom === 'direto' ? 'Direto' : 'Amigável'
 }
 
+// Jobs que ESTE processo está executando (desligamento gracioso devolve à fila o que não terminou a tempo) e os que já
+// foram devolvidos (não enviam nem gravam mais nada: o job pertence ao próximo processo).
+const gr = globalThis as unknown as { __pearchat_ai_running?: Set<string>; __pearchat_ai_released?: Set<string> }
+const runningJobs = (gr.__pearchat_ai_running ??= new Set<string>())
+const releasedJobs = (gr.__pearchat_ai_released ??= new Set<string>())
+
+export const HANDOFF_FAILURE_MOTIVO = 'a IA não conseguiu responder (falha temporária)'
+
+/**
+ * A IA esgotou as tentativas (modelo fora do ar, WhatsApp recusando...): a conversa vai para uma pessoa, em silêncio para
+ * o cliente, e a equipe é avisada (sem isso o cliente ficaria sem resposta e ninguém saberia).
+ */
+async function escalateAfterFailure(job: AiJob): Promise<void> {
+  const { workspaceId, conversationId } = job
+  const conv = await db.conversation.findFirst({ where: { id: conversationId, workspaceId }, include: { contact: true } })
+  if (!conv || conv.mode === 'HUMANO') return
+  const r = await db.conversation.updateMany({ where: { id: conversationId, OR: [{ mode: null }, { mode: { not: 'HUMANO' } }] }, data: { mode: 'HUMANO', typing: false } })
+  if (r.count !== 1) return
+  const item = await loadConversationItem(workspaceId, conversationId)
+  if (item) emitToWorkspace(workspaceId, 'conversation.updated', { workspaceId, conversation: item })
+  emitToWorkspace(workspaceId, 'handoff.requested', { workspaceId, conversationId, contactName: conv.contact.nome, motivo: HANDOFF_FAILURE_MOTIVO })
+  await notifySpaceAttention(workspaceId, { contato: conv.contact.nome, motivo: HANDOFF_FAILURE_MOTIVO })
+  log('ai', `passagem para humano após falhas (conversa ${conversationId})`)
+}
+
+/** Desligamento gracioso: devolve à fila os jobs deste processo que ainda estão executando (sem duplicar: ver sendKey). */
+export async function releaseRunningAiJobs(): Promise<number> {
+  const ids = Array.from(runningJobs)
+  if (ids.length === 0) return 0
+  for (const id of ids) releasedJobs.add(id)
+  const r = await db.aiJob.updateMany({ where: { id: { in: ids }, status: AI_JOB.executando }, data: { status: AI_JOB.pendente, runAt: new Date() } })
+  return r.count
+}
+
+export const runningAiJobCount = (): number => runningJobs.size
+
+/**
+ * Na subida do servidor (instância única): jobs "executando" reivindicados ANTES desta subida são de um processo que
+ * morreu; voltam para a fila na hora (sem esperar o prazo de job preso). Reenvio duplicado é impedido pela sendKey.
+ */
+export async function recoverOrphanAiJobs(processStart: Date): Promise<number> {
+  const r = await db.aiJob.updateMany({
+    where: { status: AI_JOB.executando, runAt: { lt: processStart } },
+    data: { status: AI_JOB.pendente, runAt: new Date() },
+  })
+  if (r.count > 0) log('ai', `${r.count} job(s) de um processo anterior devolvido(s) à fila`)
+  return r.count
+}
+
 /** Reivindica e executa um job. Devolve false se outra instância o levou. */
 async function runJob(job: AiJob): Promise<boolean> {
   // Uma execução por conversa: se outro job da mesma conversa está executando (outra instância, ou job
@@ -474,6 +597,7 @@ async function runJob(job: AiJob): Promise<boolean> {
     data: { status: AI_JOB.executando, attempts: { increment: 1 }, runAt: new Date() },
   })
   if (claim.count !== 1) return false
+  runningJobs.add(job.id)
   const attempts = job.attempts + 1
   const { workspaceId, conversationId } = job
 
@@ -485,12 +609,18 @@ async function runJob(job: AiJob): Promise<boolean> {
   }
 
   try {
-    if (result.kind === 'done') {
+    if (releasedJobs.has(job.id)) {
+      // Devolvido à fila pelo desligamento: o resultado desta execução não vale (o job roda de novo no próximo processo).
+      log('ai', `job ${job.id} devolvido à fila durante o desligamento; resultado descartado`)
+    } else if (result.kind === 'done') {
       await finish(job, 'feito', result.note)
     } else if (result.kind === 'wait') {
-      // Espera por mídia não gasta tentativa: devolve a contagem e reagenda.
-      await db.aiJob.update({ where: { id: job.id }, data: { status: AI_JOB.pendente, attempts: job.attempts, runAt: new Date(Date.now() + MEDIA_WAIT_MS), error: keepManual(job.error, result.note) } })
-      log('ai', `job ${job.id} aguardando mídia (${result.note})`)
+      // Espera (mídia baixando, conferência de envio) não gasta tentativa, salvo envio que saiu sem confirmação.
+      await db.aiJob.update({
+        where: { id: job.id },
+        data: { status: AI_JOB.pendente, attempts: result.consumeAttempt ? attempts : job.attempts, runAt: new Date(Date.now() + (result.delayMs ?? MEDIA_WAIT_MS)), error: keepManual(job.error, result.note) },
+      })
+      log('ai', `job ${job.id} aguardando (${result.note})`)
     } else if (attempts < MAX_ATTEMPTS) {
       const wait = RETRY_DELAYS_MS[attempts - 1] ?? 45_000
       await db.aiJob.update({
@@ -501,8 +631,11 @@ async function runJob(job: AiJob): Promise<boolean> {
     } else {
       await finish(job, 'erro', result.error)
       logError('ai', `job ${job.id} esgotou tentativas`, new Error(result.error))
+      await escalateAfterFailure(job).catch((e) => logError('ai', 'passar para humano após falhas', e))
     }
   } finally {
+    runningJobs.delete(job.id)
+    releasedJobs.delete(job.id)
     // Em qualquer saída (inclusive passagem/cancelamento) a conversa não fica "digitando".
     try {
       const c = await db.conversation.findFirst({ where: { id: conversationId, workspaceId }, select: { typing: true } })
@@ -554,7 +687,8 @@ export async function runDueAiJobs(): Promise<number> {
   await recoverStaleJobs(new Date(startedAt))
   const tried = new Set<string>()
   let ran = 0
-  while (Date.now() - startedAt < RUN_BUDGET_MS) {
+  const concurrency = aiConcurrency()
+  while (Date.now() - startedAt < RUN_BUDGET_MS && !engineStopping()) {
     const dueAll = await db.aiJob.findMany({
       where: { status: AI_JOB.pendente, runAt: { lte: new Date() }, ...(tried.size > 0 ? { id: { notIn: Array.from(tried) } } : {}) },
       orderBy: { runAt: 'asc' },
@@ -565,9 +699,10 @@ export async function runDueAiJobs(): Promise<number> {
     const due = dueAll.filter((j) => !seen.has(j.conversationId) && seen.add(j.conversationId))
     if (due.length === 0) break
     for (const j of due) tried.add(j.id)
-    for (let i = 0; i < due.length; i += CONCURRENCY) {
-      const batch = due.slice(i, i + CONCURRENCY)
-      const res = await Promise.allSettled(batch.map((j) => runJob(j)))
+    for (let i = 0; i < due.length && !engineStopping(); i += concurrency) {
+      const batch = due.slice(i, i + concurrency)
+      // Cada job ocupa uma vaga da faixa da IA no semáforo do motor (dimensionado pelo connection_limit).
+      const res = await Promise.allSettled(batch.map((j) => engineLimiter('ia').run(() => runJob(j))))
       for (const r of res) {
         if (r.status === 'fulfilled' && r.value) ran++
         else if (r.status === 'rejected') logError('ai', 'job falhou', r.reason)

@@ -276,6 +276,10 @@ export function useConversations(preferredId: string | null = null) {
   useRawSocketEvent('disconnect', () => {
     socketWasDown.current = true
   })
+  // Recusa temporária no handshake (servidor sem banco) também perde eventos: ao conectar, recarrega a lista.
+  useRawSocketEvent('connect_error', () => {
+    socketWasDown.current = true
+  })
   useRawSocketEvent('connect', () => {
     if (!socketWasDown.current) return
     socketWasDown.current = false

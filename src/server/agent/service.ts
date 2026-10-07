@@ -5,7 +5,8 @@ import type { AgentDTO, AgentHorario, AgentTestResultDTO, AgentTom, KnowledgeIte
 import { generateReply, hasLlmKey, simulateReply } from './llm'
 import { detectHandoffRule, formatAgora, genericHandoffMessage } from '@/server/engine/rules'
 import { serviceTypesForPrompt } from '@/server/calendar/service-types'
-import { buildSystemPrompt, HANDOFF_MARKER } from './prompt'
+import { buildSystemPrompt } from './prompt'
+import { finishReply } from './finish'
 import { detectReplyLanguage, FIXED, IDIOMA_CONFIG_VALUES, parseIdiomaConfig, resolveReplyLanguage } from './i18n'
 import { createToolRunner, miniCalendar } from './tools'
 
@@ -18,7 +19,7 @@ const HORARIO_FROM_DB = invert(HORARIO_DB)
 
 /** Prompt padrão (spec 05) quando o agente ainda não tem instruções salvas. */
 export function defaultPrompt(nome: string, empresa: string): string {
-  return `Você é ${nome}, atendente virtual de ${empresa}. Atenda com simpatia e objetividade, em até 3 frases. Tire dúvidas sobre produtos, serviços, preços, horários e agendamentos. Antes de confirmar um pedido ou agendamento, confirme os detalhes com o cliente. Não ofereça descontos; se o cliente pedir, passe a conversa para o dono do negócio.`
+  return `Você é ${nome}, atendente virtual de ${empresa}. Tire dúvidas sobre produtos, serviços, preços, horários e agendamentos. Antes de confirmar um pedido ou agendamento, confirme os detalhes com o cliente. Não ofereça descontos; se o cliente pedir, passe a conversa para o dono do negócio.`
 }
 
 export const agentUpdateSchema = z.object({
@@ -29,6 +30,8 @@ export const agentUpdateSchema = z.object({
   handoffRules: z.array(z.string().trim().min(1).max(120)).max(20),
   canSchedule: z.boolean().optional(),
   idioma: z.enum(IDIOMA_CONFIG_VALUES).optional(),
+  ritmoNatural: z.boolean().optional(),
+  confirmarAgendamento: z.boolean().optional(),
 })
 export type AgentUpdate = z.infer<typeof agentUpdateSchema>
 
@@ -46,9 +49,20 @@ export const agentTestSchema = z.object({
   handoffRules: z.array(z.string().max(120)).max(20).optional(),
   canSchedule: z.boolean().optional(),
   idioma: z.enum(IDIOMA_CONFIG_VALUES).optional(),
+  confirmarAgendamento: z.boolean().optional(),
 })
 
-function toAgentDTO(a: { nome: string; tom: string; prompt: string; horario: string; handoffRules: string[]; canSchedule: boolean; idioma: string }): AgentDTO {
+function toAgentDTO(a: {
+  nome: string
+  tom: string
+  prompt: string
+  horario: string
+  handoffRules: string[]
+  canSchedule: boolean
+  idioma: string
+  ritmoNatural: boolean
+  confirmarAgendamento: boolean
+}): AgentDTO {
   return {
     nome: a.nome,
     tom: TOM_FROM_DB[a.tom] ?? 'Amigável',
@@ -57,6 +71,8 @@ function toAgentDTO(a: { nome: string; tom: string; prompt: string; horario: str
     handoffRules: a.handoffRules,
     canSchedule: a.canSchedule,
     idioma: parseIdiomaConfig(a.idioma),
+    ritmoNatural: a.ritmoNatural,
+    confirmarAgendamento: a.confirmarAgendamento,
   }
 }
 
@@ -92,6 +108,8 @@ export async function updateAgent(workspaceId: string, input: AgentUpdate): Prom
     handoffRules: input.handoffRules,
     ...(input.canSchedule === undefined ? {} : { canSchedule: input.canSchedule }),
     ...(input.idioma === undefined ? {} : { idioma: input.idioma }),
+    ...(input.ritmoNatural === undefined ? {} : { ritmoNatural: input.ritmoNatural }),
+    ...(input.confirmarAgendamento === undefined ? {} : { confirmarAgendamento: input.confirmarAgendamento }),
   }
   const agent = await db.aiAgent.upsert({ where: { workspaceId }, create: { workspaceId, ...data }, update: data })
   return toAgentDTO(agent)
@@ -168,7 +186,7 @@ export async function testAgent(
     agora: formatAgora(new Date()),
     idioma,
     idiomaDetectado: idioma === 'auto' ? detectReplyLanguage(historico) : null,
-    agenda: runner ? { calendario: miniCalendar(new Date()), clienteNome: 'Cliente de teste' } : undefined,
+    agenda: runner ? { calendario: miniCalendar(new Date()), clienteNome: 'Cliente de teste', confirmar: input.confirmarAgendamento ?? agent.confirmarAgendamento } : undefined,
   })
   const r = await generateReply({
     system,
@@ -176,12 +194,14 @@ export async function testAgent(
     simulate: () => simulateReply(input.mensagem, tom, kb),
     tools: runner ?? undefined,
   })
-  if (r.texto.includes(HANDOFF_MARKER)) {
-    return { resposta: genericHandoffMessage(responsavel, lang), handoff: true, simulado: r.simulado }
+  // Mesmo acabamento do motor (finish.ts): estilo e passagem (pelo marcador ou por promessa da equipe). Sem a pausa de digitação.
+  const fin = finishReply(r.texto, { history: [{ role: 'user', content: input.mensagem }], tom, agentName: nome })
+  if (fin.kind === 'handoff') {
+    return { resposta: fin.message ?? genericHandoffMessage(responsavel, lang), handoff: true, simulado: r.simulado }
   }
   // Escritas na agenda só são simuladas no teste: deixa isso explícito para o dono.
   const nota = runner && runner.simulated.length > 0 ? `
 
 [simulação] ${runner.simulated.join('; ')}. Nada foi gravado na agenda.` : ''
-  return { resposta: `${r.texto}${nota}`, handoff: false, simulado: r.simulado }
+  return { resposta: `${fin.texto}${nota}`, handoff: false, simulado: r.simulado }
 }

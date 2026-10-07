@@ -60,10 +60,20 @@ write_status() { # $1 = true|false, $2 = erro
   "pacote": "$(bk_json_str "$(basename "${PKG:-}")")",
   "duracaoSeg": $((SECONDS - T0)),
   "remoto": "$REMOTE_STATE",
+  "chaveImpressao": "$(bk_key_fingerprint "$KEY_FILE")",
   "erro": "$(bk_json_str "$2")"
 }
 JSON
   mv -f "$tmp" "$STATUS_FILE"
+  # Copia MINIMA do status para o app ler (pasta montada SOMENTE LEITURA em /data/backup-status; alimenta o alerta
+  # "backup_atrasado" de /api/health/check). So resultado e horario: sem chave, sem caminho de pacote, sem mensagens de erro.
+  local pub="$BACKUP_ROOT/status"
+  if mkdir -p "$pub" 2>/dev/null; then
+    chmod 755 "$pub" 2>/dev/null || true
+    if printf '{"ok": %s, "ultimoOkEpoch": %s, "quandoEpoch": %s, "remoto": "%s"}\n' "$1" "${prev_ok:-0}" "$now" "$REMOTE_STATE" > "$pub/.backup.tmp"; then
+      chmod 644 "$pub/.backup.tmp" && mv -f "$pub/.backup.tmp" "$pub/backup.json" || true
+    fi
+  fi
 }
 
 cleanup_stage() {
@@ -172,6 +182,12 @@ done
 STEP="copia do .env.production"
 cp -- "$ENV_FILE" "$STAGE/data/env.production"
 [ -f "$APP_DIR/.deploy-commit" ] && cp -- "$APP_DIR/.deploy-commit" "$STAGE/data/deploy-commit.txt"
+# Configuracao do backup e do monitor (canais de alerta, destino externo): ajuda a reconstruir a VPS. NAO inclui a
+# credencial do rclone (~/.config/rclone/rclone.conf): essa o dono guarda a parte (docs/operacao/).
+[ -f /etc/pearchat-backup.conf ] && cp -- /etc/pearchat-backup.conf "$STAGE/data/etc-pearchat-backup.conf"
+[ -f /etc/pearchat-monitor.conf ] && cp -- /etc/pearchat-monitor.conf "$STAGE/data/etc-pearchat-monitor.conf"
+# Lista das imagens em uso (versao exata para reconstruir igual): so nomes, sem segredos.
+docker ps --filter "label=com.docker.compose.project=$COMPOSE_PROJECT" --format '{{.Names}} {{.Image}}' > "$STAGE/data/imagens-em-uso.txt" 2>/dev/null || true
 APP_VERSION="$(tr -d '[:space:]' < "$APP_DIR/.deploy-commit" 2>/dev/null || true)"; APP_VERSION="${APP_VERSION:-desconhecida}"
 
 # ---------- 5) verificacao dos componentes ----------
@@ -249,14 +265,17 @@ if [ -n "${BACKUP_REMOTE:-}" ]; then
       dest="${BACKUP_REMOTE#rclone:}"; dest="${dest%/}"
       if ! command -v rclone >/dev/null 2>&1; then
         warn "BACKUP_REMOTE definido, mas rclone nao esta instalado: copia externa NAO feita"
-      elif rclone copy "$FINAL_DIR" "$dest/$STAMP" --quiet 2>>"$LOG"; then
-        REMOTE_STATE="ok"; log "copia externa ok em $dest/$STAMP"
+      elif ! rclone copy "$FINAL_DIR" "$dest/$STAMP" --quiet 2>>"$LOG"; then
+        warn "rclone copy falhou: copia externa NAO feita"
+      elif ! rclone check "$FINAL_DIR" "$dest/$STAMP" --one-way --quiet 2>>"$LOG"; then
+        # Confere no DESTINO (tamanho e hash, quando o provedor tem): copia que nao confere nao conta como backup.
+        warn "copia externa enviada, mas a conferencia (rclone check) FALHOU: nao confie nesta copia"
+      else
+        REMOTE_STATE="ok"; log "copia externa ok e conferida em $dest/$STAMP"
         if [[ "${BACKUP_REMOTE_KEEP_DAYS:-}" =~ ^[1-9][0-9]*$ ]]; then
           rclone delete "$dest" --min-age "${BACKUP_REMOTE_KEEP_DAYS}d" --include '*.tar.enc' --include 'manifest.json' --quiet 2>>"$LOG" || warn "limpeza remota falhou"
           rclone rmdirs "$dest" --leave-root --quiet 2>>"$LOG" || true
         fi
-      else
-        warn "rclone copy falhou: copia externa NAO feita"
       fi ;;
     *) warn "BACKUP_REMOTE deve ter o formato rclone:<remote>:<caminho>" ;;
   esac
