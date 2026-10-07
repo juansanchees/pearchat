@@ -149,6 +149,10 @@ model Workspace {
   disparosSilencioAtivo  Boolean  @default(true)
   disparosSilencioInicio Int      @default(21)
   disparosSilencioFim    Int      @default(8)
+  // Clientes de outros países (migration 0024). ddiPadrao: DDI acrescentado a número digitado SEM DDI (nunca a número que
+  // já vem com DDI). timezone: fuso IANA do negócio (agenda, lembretes, silêncio, horário de atendimento, link público, IA).
+  ddiPadrao              String   @default("55")
+  timezone               String   @default("America/Sao_Paulo")
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
