@@ -142,6 +142,8 @@ model Workspace {
   horarioAtendimento     String?
   // Logo do negócio deste WhatsApp: `/api/logo/<id opaco>` (arquivo em MEDIA_DIR/logos/<workspaceId>/), como User.fotoUrl.
   logoUrl                String?
+  // Resposta do onboarding ("Só eu" | "2 a 5" | "6 ou mais"); só guardada, sem uso nas regras.
+  tamanhoEquipe          String?
   plano                  Plan     @default(PRO)
   statusAssinatura       String   @default("ativa")
   disparosAtivos         Boolean  @default(false)
