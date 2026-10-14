@@ -9,6 +9,11 @@ import { totpAt, base32Encode } from '../src/server/security/totp'
 import { reserve, markSuccess } from '../src/server/security/rate-limit'
 import { primaryLogin, secondFactorLogin } from '../src/server/security/login'
 import { beginSetup, confirmSetup, disableMfa, regenerateRecovery, readChallenge } from '../src/server/security/mfa'
+import { deviceTokenFor } from '../src/server/security/device'
+
+// Dispositivo confiável da conta: com o serviço de e-mail configurado, um navegador novo pediria o código por e-mail
+// (tests/security/dispositivo.test.ts); aqui o assunto é o TOTP, então o navegador é sempre reconhecido.
+const trusted = async (userId: string) => ({ delay: false, deviceToken: await deviceTokenFor(userId) })
 
 const schema = new URL(process.env.DATABASE_URL ?? 'postgres://x/y').searchParams.get('schema')
 assert.match(schema ?? '', /^pearchat_test_/, 'rode apenas em um schema de teste')
@@ -97,7 +102,7 @@ describe('login e verificação em duas etapas', () => {
     const b = await primaryLogin(`nao-existe-${uniq()}@teste.local`, 'qualquer-coisa', ip(), { delay: false })
     assert.deepEqual(a, { kind: 'invalid' })
     assert.deepEqual(b, { kind: 'invalid' })
-    const ok = await primaryLogin(u.email, u.password, ip(), { delay: false })
+    const ok = await primaryLogin(u.email, u.password, ip(), await trusted(u.id))
     assert.equal(ok.kind, 'ok')
   })
 
@@ -105,7 +110,7 @@ describe('login e verificação em duas etapas', () => {
     const u = await makeUser()
     const setup = await beginSetup(u.id)
     // Antes de confirmar o código, o 2FA ainda NÃO vale no login.
-    assert.equal((await primaryLogin(u.email, u.password, ip(), { delay: false })).kind, 'ok')
+    assert.equal((await primaryLogin(u.email, u.password, ip(), await trusted(u.id))).kind, 'ok')
     const t1 = nextNow()
     assert.rejects(confirmSetup(u.id, '000000', t1))
     const recovery = await confirmSetup(u.id, totpAt(setup.secret, t1), t1)
@@ -168,7 +173,7 @@ describe('login e verificação em duas etapas', () => {
     assert.equal(after.totpEnabledAt, null)
     assert.equal(after.sessionVersion, before + 1)
     assert.equal(await db.recoveryCode.count({ where: { userId: u.id } }), 0)
-    assert.equal((await primaryLogin(u.email, u.password, ip(), { delay: false })).kind, 'ok')
+    assert.equal((await primaryLogin(u.email, u.password, ip(), await trusted(u.id))).kind, 'ok')
   })
 
   it('o segundo fator conta no mesmo limite do login (5 códigos errados bloqueiam)', async () => {

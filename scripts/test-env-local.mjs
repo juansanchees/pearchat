@@ -31,7 +31,7 @@ const env = {
   // Segredos SÓ de teste local (montados em tempo de execução para nenhum varredor confundir com chave real).
   AUTH_SECRET: localSecret,
   NEXTAUTH_SECRET: localSecret,
-  ENCRYPTION_KEY: Buffer.from(localSecret).toString('base64'),
+  ENCRYPTION_KEY: Buffer.from(localSecret.padEnd(32, '0').slice(0, 32)).toString('base64'), // 32 bytes (AES-GCM)
   AUTH_URL: `http://127.0.0.1:${port}`,
   NEXT_PUBLIC_APP_URL: `http://127.0.0.1:${port}`,
   PORT: port,
