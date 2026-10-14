@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers'
 import NextAuth, { CredentialsSignin } from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import Google from 'next-auth/providers/google'
@@ -9,6 +10,7 @@ import { authorizeGoogleSignIn, googleAccountHasTwoFactor } from '@/lib/auth-goo
 import { googleLoginCredentials } from '@/lib/google-login'
 import { judgeSession, markSessionCheckFailed } from '@/server/auth/availability'
 import { resolveActiveSpace } from '@/server/spaces/org'
+import { DEVICE_COOKIE, deviceCookieOptions, deviceTokenFor, deviceTokenFromCookieHeader } from '@/server/security/device'
 import { primaryLogin, secondFactorLogin } from '@/server/security/login'
 import { clientIpFromHeaders } from '@/server/security/hash'
 
@@ -28,6 +30,14 @@ export class RateLimitedError extends CredentialsSignin {
 }
 export class ChallengeExpiredError extends CredentialsSignin {
   code = 'challenge_expired'
+}
+/** Senha certa, mas falta o segundo passo (aplicativo autenticador ou código por e-mail de dispositivo novo). */
+export class SecondFactorRequiredError extends CredentialsSignin {
+  code = 'second_factor'
+}
+/** O código por e-mail expirou ou travou (5 erros): precisa de um novo ("Reenviar código"). */
+export class CodeLockedError extends CredentialsSignin {
+  code = 'code_locked'
 }
 
 const google = googleLoginCredentials()
@@ -107,6 +117,19 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       return true
     },
   },
+  events: {
+    // Entrada pelo Google não pede o código por e-mail (o Google já confirmou a identidade); o navegador passa a ser
+    // um dispositivo confiável, como depois do código. Melhor esforço: falhar aqui nunca impede a entrada.
+    async signIn({ user, account }) {
+      if (account?.provider !== 'google' || !user?.id) return
+      try {
+        const token = await deviceTokenFor(user.id)
+        if (token) cookies().set(DEVICE_COOKIE, token, deviceCookieOptions())
+      } catch (e) {
+        console.warn('[auth] dispositivo confiável (Google) não gravado:', e instanceof Error ? e.name : 'erro')
+      }
+    },
+  },
   providers: [
     Credentials({
       credentials: { email: {}, password: {}, challenge: {}, code: {} },
@@ -120,14 +143,20 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
           if (r.kind === 'ok') return r.user
           if (r.kind === 'blocked') throw new RateLimitedError()
           if (r.kind === 'expired') throw new ChallengeExpiredError()
+          if (r.codeLocked) throw new CodeLockedError()
           return null
         }
         const parsed = credentialsSchema.safeParse(raw)
         if (!parsed.success) return null
-        const r = await primaryLogin(parsed.data.email, parsed.data.password, ip)
+        // Dispositivo confiável: o cookie `pc_dev` deste navegador (a ação do formulário repassa os cabeçalhos).
+        const deviceToken = deviceTokenFromCookieHeader(request?.headers?.get('cookie'))
+        // Não envia código daqui: quem chama a rota direto (sem a tela) não tem onde digitá-lo; o formulário já enviou.
+        const r = await primaryLogin(parsed.data.email, parsed.data.password, ip, { deviceToken, sendCode: false })
         if (r.kind === 'ok') return r.user
         if (r.kind === 'blocked') throw new RateLimitedError()
-        return null // inclui "mfa": senha certa com 2FA ativo NÃO gera sessão; só o segundo passo gera
+        // "mfa": senha certa com 2FA ou de um dispositivo novo NÃO gera sessão; só o segundo passo gera.
+        if (r.kind === 'mfa') throw new SecondFactorRequiredError()
+        return null
       },
     }),
     // Só pede openid/email/profile; a Agenda é conectada à parte (/api/calendar/google/*).
