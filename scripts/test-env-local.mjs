@@ -3,7 +3,7 @@
 // WhatsApp falso, motor desligado (ligue com --engine), chaves externas VAZIAS. Nunca toca no banco de produção.
 // Banco: por padrão postgresql://pearchat@127.0.0.1:5499/pearchat (subido à mão, ver docs/interno/RETOMADA.md §3);
 // outro endereço em LOCAL_PG_URL (sem "?schema="). Primeiro: `node scripts/test-env-local.mjs --schema a -- npx prisma migrate deploy`.
-// Uso: node scripts/test-env-local.mjs [--schema a] [--port 3048] [--engine] -- <comando...>
+// Uso: node scripts/test-env-local.mjs [--schema a] [--port 3048] [--engine] [--mail] -- <comando...>
 // Ex.: node scripts/test-env-local.mjs --schema a -- npx tsx --test tests/internacional/fuso.test.ts
 import { spawn } from 'node:child_process'
 
@@ -11,11 +11,13 @@ const args = process.argv.slice(2)
 let schema = process.env.SCHEMA || 'a'
 let port = process.env.PORT || '3048'
 let engine = 'true'
+let mail = false
 const cmd = []
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--schema') schema = args[++i]
   else if (args[i] === '--port') port = args[++i]
   else if (args[i] === '--engine') engine = 'false'
+  else if (args[i] === '--mail') mail = true
   else if (args[i] === '--') { cmd.push(...args.slice(i + 1)); break }
   else cmd.push(args[i])
 }
@@ -47,7 +49,10 @@ const env = {
   GOOGLE_CLIENT_SECRET: '',
   AUTH_GOOGLE_ID: '',
   AUTH_GOOGLE_SECRET: '',
-  RESEND_API_KEY: '',
+  // --mail: serviço de e-mail "configurado" em modo simulado (MAIL_DRY_RUN): códigos e links vão para o log, nada é enviado.
+  RESEND_API_KEY: mail ? 'simulado' : '',
+  MAIL_FROM: mail ? 'PearChat <teste@localhost>' : '',
+  MAIL_DRY_RUN: mail ? 'true' : '',
   META_APP_ID: '',
   META_APP_SECRET: '',
   META_CONFIG_ID: '',
