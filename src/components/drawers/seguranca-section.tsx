@@ -2,19 +2,20 @@
 
 import { useEffect, useState } from 'react'
 import { signOut } from 'next-auth/react'
-import { Check, Copy, DownloadSimple, ShieldCheck, SignOut } from '@phosphor-icons/react'
+import { Check, Copy, DeviceMobile, DownloadSimple, ShieldCheck, SignOut } from '@phosphor-icons/react'
 import { useAppState } from '@/components/app/app-state'
 import { api } from './api'
 import { Section } from './parts'
 
-type State = { enabled: boolean; hasPassword: boolean; recoveryLeft: number }
+type State = { enabled: boolean; hasPassword: boolean; recoveryLeft: number; newDeviceCode?: boolean }
 type Setup = { secret: string; qr: string }
 type Mode = 'idle' | 'askpwd' | 'setup' | 'codes' | 'disable' | 'regen'
 
 const box = 'flex flex-col gap-3 rounded-md border border-light-divider px-[14px] py-3'
 const hint = 'text-[11.5px] text-light-neutral-500'
 
-// Seção "Segurança" das Configurações: verificação em duas etapas (TOTP) e "sair de todos os dispositivos".
+// Seção "Segurança" das Configurações: verificação em duas etapas (TOTP), código por e-mail em dispositivo novo
+// (informativo; sempre ligado quando há serviço de e-mail) e "sair de todos os dispositivos".
 export function SegurancaSection() {
   const { toast } = useAppState()
   const [st, setSt] = useState<State | null>(null)
@@ -303,6 +304,22 @@ export function SegurancaSection() {
             </div>
           </div>
         )}
+      </div>
+
+      <div className={box}>
+        <div className="flex items-center gap-3">
+          <DeviceMobile size={18} className="flex-none text-light-accent-300" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-medium leading-[1.25]">Dispositivo novo</div>
+            <div className={hint}>
+              Ao entrar de um navegador ou aparelho que não reconhecemos, pedimos um código enviado ao seu e-mail.
+              {st?.enabled && ' Com a verificação em duas etapas ativa, vale o código do aplicativo.'}
+            </div>
+            <div className={hint}>
+              {st && st.newDeviceCode === false ? 'Indisponível até o e-mail ser configurado.' : 'Para esquecer todos os dispositivos, use Sair de todos os dispositivos.'}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className={box}>

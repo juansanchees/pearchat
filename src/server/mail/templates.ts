@@ -104,6 +104,30 @@ export function verificationCodeEmail({ code, nome }: { code: string; nome?: str
   return { subject: `${code} é o seu código do PearChat`, html, text }
 }
 
+/** Código para entrar de um dispositivo (navegador ou aparelho) que o PearChat ainda não reconhece. */
+export function loginCodeEmail({ code, nome }: { code: string; nome?: string }): MailContent {
+  const spaced = code.split('').join(' ')
+  const primeiro = nome?.trim().split(/\s+/)[0]
+  const oi = primeiro ? `Oi, ${escapeHtml(primeiro)}! ` : ''
+  const html = layout(
+    `Seu código para entrar: ${code}. Vale por 10 minutos.`,
+    h1('Seu código para entrar no PearChat') +
+      p(`${oi}Alguém entrou com a sua senha em um navegador ou aparelho que ainda não reconhecemos. Se foi você, digite este código para continuar:`) +
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:6px 0 20px;"><tr>` +
+      `<td align="center" bgcolor="#f0faea" style="background:#f0faea;border:1px solid #b9e3a6;border-radius:12px;padding:20px 8px;font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:36px;line-height:1;font-weight:700;letter-spacing:10px;color:#1d2117;">${escapeHtml(code)}</td>` +
+      `</tr></table>` +
+      muted('O código vale por <strong>10 minutos</strong>. Por segurança, não o compartilhe com ninguém.') +
+      `<hr style="border:0;border-top:1px solid #eef0e3;margin:20px 0 14px;">` +
+      muted('Não foi você? Alguém sabe a sua senha: troque-a agora em <strong>Esqueci minha senha</strong> na tela de entrada.'),
+  )
+  const text =
+    `Seu código para entrar no PearChat\n\n${primeiro ? `Oi, ${primeiro}! ` : ''}Alguém entrou com a sua senha em um navegador ou aparelho que ainda não reconhecemos. Se foi você, digite este código:\n\n    ${spaced}\n\n` +
+    `Ele vale por 10 minutos. Não o compartilhe com ninguém.\n` +
+    `Não foi você? Alguém sabe a sua senha: troque-a agora em "Esqueci minha senha" na tela de entrada.\n` +
+    textFooter()
+  return { subject: 'Seu código para entrar no PearChat', html, text }
+}
+
 export function welcomeEmail({ nome }: { nome?: string }): MailContent {
   const base = appBaseUrl()
   const primeiro = nome?.trim().split(/\s+/)[0]

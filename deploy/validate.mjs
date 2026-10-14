@@ -8,6 +8,9 @@
 // (POST /api/wa/disconnect e /api/wa/connect). Por isso só rodam com VALIDATE_WA_RESET=1 e SÓ se a conta NÃO tiver um
 // WhatsApp conectado/conectando: se tiver, os dois passos são recusados (PULADO) para nunca derrubar um número de verdade.
 //
+// Com o serviço de e-mail configurado, o login por credenciais daqui cai no "código por e-mail de dispositivo novo" (não
+// há como digitar o código): o passo de login aparece como PULADO e as etapas autenticadas também, sem falhar.
+//
 // Com https o Auth.js usa __Secure-authjs.session-token e __Host-authjs.csrf-token; o jar abaixo guarda qualquer nome.
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -157,6 +160,7 @@ await step('Socket.io SEM sessão é recusado', () =>
 
 // ---------- verificações AUTENTICADAS (conta de fumaça) ----------
 let waConnected = null
+let secondFactor = false
 if (HAS_ACCOUNT) {
   await step('login (CSRF + credentials)', async () => {
     const c = await req('GET', '/api/auth/csrf')
@@ -165,6 +169,14 @@ if (HAS_ACCOUNT) {
     const r = await req('POST', '/api/auth/callback/credentials', {
       form: { csrfToken, email: EMAIL, password: PASS, callbackUrl: BASE + '/', json: 'true' },
     })
+    // Com e-mail configurado, um login de "dispositivo novo" (este script nunca tem o cookie de dispositivo confiável)
+    // exige o código enviado por e-mail: o Auth.js devolve ?code=second_factor e não cria sessão. É o esperado: as
+    // etapas que dependem de sessão são PULADAS, sem falhar a validação. (O mesmo vale para conta com 2FA.)
+    const loc = r.headers.get('location') ?? ''
+    if (/[?&]code=second_factor\b/.test(loc)) {
+      secondFactor = true
+      return { ok: true, skipped: true, info: `PULADO: login exige código por e-mail (esperado com e-mail configurado); callback HTTP ${r.status}, sem sessão` }
+    }
     const s = await req('GET', '/api/auth/session')
     const names = [...jar.keys()].filter((k) => /session-token/.test(k))
     const csrfNames = [...jar.keys()].filter((k) => /csrf-token/.test(k))
@@ -172,7 +184,12 @@ if (HAS_ACCOUNT) {
     const nameOk = names.some((n) => n === expected || n.startsWith(expected + '.'))
     return { ok: !!s.json?.user && nameOk, info: `callback HTTP ${r.status}; sessão=${s.json?.user ? 'válida' : 'vazia'}; cookie=${names.join(',') || 'nenhum'} (esperado ${expected}); csrf=${csrfNames.join(',') || 'nenhum'}` }
   })
-  const loggedIn = results.find((r) => r.name.startsWith('login'))?.ok
+  const loggedIn = results.find((r) => r.name.startsWith('login'))?.ok && !secondFactor
+  if (secondFactor) {
+    for (const name of ['GET /api/me', 'GET /api/conversations', 'Socket.io autenticado (/api/socket)', 'GET /api/wa/status (conta de fumaça)']) {
+      results.push({ name, ok: true, skipped: true, info: 'PULADO: sem sessão (login exige código por e-mail)' })
+    }
+  }
   if (loggedIn) {
     await step('GET /api/me', async () => {
       const r = await req('GET', '/api/me')

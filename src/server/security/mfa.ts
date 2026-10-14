@@ -11,17 +11,29 @@ import { hmac, safeEqual } from './hash'
 import { generateSecret, matchStep, otpauthUrl } from './totp'
 
 // ---------- Desafio do segundo fator ----------
-// Token assinado (HMAC-SHA256 com AUTH_SECRET), 5 min, ligado ao usuário, de uso único (jti consumido no sucesso).
-// Não é uma sessão: nenhuma rota do app aceita este valor.
+// Token assinado (HMAC-SHA256 com AUTH_SECRET), ligado ao usuário, de uso único (jti consumido no sucesso).
+// Não é uma sessão: nenhuma rota do app aceita este valor. Tipo `t`: 'totp' (aplicativo autenticador, 5 min) ou
+// 'email' (código enviado ao e-mail ao entrar de um dispositivo novo, 10 min, o mesmo prazo do código).
 
 export const CHALLENGE_TTL_MS = 5 * 60_000
+export const EMAIL_CHALLENGE_TTL_MS = 10 * 60_000
 export const MFA_COOKIE = 'pc_mfa'
 
-type ChallengePayload = { u: string; e: number; j: string; r: boolean; cb: string }
+export type ChallengeMethod = 'totp' | 'email'
+/** `m`: e-mail mascarado (só no tipo 'email'), para a tela mostrar para onde o código foi. */
+export type ChallengePayload = { u: string; e: number; j: string; r: boolean; cb: string; t: ChallengeMethod; m?: string }
 const sign = (body: string) => createHmac('sha256', process.env.AUTH_SECRET ?? '').update(`mfa-challenge\u0000${body}`).digest('base64url')
 
-export function issueChallenge(userId: string, opts: { remember: boolean; callbackUrl: string }, now = Date.now()): string {
-  const p: ChallengePayload = { u: userId, e: now + CHALLENGE_TTL_MS, j: randomBytes(16).toString('base64url'), r: opts.remember, cb: opts.callbackUrl }
+export const challengeTtlMs = (method: ChallengeMethod) => (method === 'email' ? EMAIL_CHALLENGE_TTL_MS : CHALLENGE_TTL_MS)
+
+export function issueChallenge(
+  userId: string,
+  opts: { remember: boolean; callbackUrl: string; method?: ChallengeMethod; emailMasked?: string },
+  now = Date.now(),
+): string {
+  const t = opts.method ?? 'totp'
+  const p: ChallengePayload = { u: userId, e: now + challengeTtlMs(t), j: randomBytes(16).toString('base64url'), r: opts.remember, cb: opts.callbackUrl, t }
+  if (t === 'email' && opts.emailMasked) p.m = opts.emailMasked
   const body = Buffer.from(JSON.stringify(p)).toString('base64url')
   return `${body}.${sign(body)}`
 }
@@ -34,6 +46,7 @@ export function readChallenge(token: string, now = Date.now()): ChallengePayload
   try {
     const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as ChallengePayload
     if (typeof p.u !== 'string' || typeof p.j !== 'string' || typeof p.e !== 'number' || p.e < now) return null
+    if (p.t !== 'email') p.t = 'totp' // desafios emitidos antes do campo `t` eram sempre do aplicativo
     return p
   } catch {
     return null
@@ -138,7 +151,13 @@ export async function mfaState(userId: string) {
     select: { totpEnabledAt: true, passwordHash: true, _count: { select: { recoveryCodes: { where: { usedAt: null } } } } },
   })
   if (!u) throw new MfaError('Usuário não encontrado', 404)
-  return { enabled: !!u.totpEnabledAt, hasPassword: !!u.passwordHash, recoveryLeft: u._count.recoveryCodes }
+  return {
+    enabled: !!u.totpEnabledAt,
+    hasPassword: !!u.passwordHash,
+    recoveryLeft: u._count.recoveryCodes,
+    // Código por e-mail ao entrar de um dispositivo novo: sempre ligado quando há serviço de e-mail (sem interruptor).
+    newDeviceCode: mailConfigured(),
+  }
 }
 
 /** Gera um segredo pendente (ainda não vale no login) e devolve a chave + QR. A chave só sai aqui, durante a ativação. */

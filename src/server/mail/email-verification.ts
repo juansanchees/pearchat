@@ -5,6 +5,8 @@
 //  - `emailverify-sent:<userId>`  um registro por envio (expires = envio + 1 h): base do limite de 60 s / 5 por hora
 //  - `emailverify-try:<userId>`   um registro por tentativa de verificação do código vigente (limite: 5)
 // Os limites vêm do banco, então sobrevivem a reinício e valem entre instâncias.
+// O mecanismo é genérico por prefixo (`emailCodeFlow`): o código de "dispositivo novo" do login usa `logincode:`
+// (src/server/security/login-code.ts) com as mesmas regras.
 //
 // Quem é obrigado a verificar (needsEmailVerification): e-mail configurado E conta sem emailVerified E
 // (existe código pendente OU a conta foi criada em/depois de EMAIL_VERIFICATION_SINCE). Sem a variável,
@@ -13,7 +15,7 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'crypto'
 import { db } from '@/lib/db'
 import { mailConfigured, sendMail } from './send'
-import { verificationCodeEmail, welcomeEmail } from './templates'
+import { type MailContent, verificationCodeEmail, welcomeEmail } from './templates'
 
 export const CODE_TTL_MS = 10 * 60_000
 export const RESEND_COOLDOWN_MS = 60_000
@@ -21,112 +23,146 @@ export const SENDS_PER_HOUR = 5
 export const MAX_ATTEMPTS = 5
 const HOUR_MS = 3_600_000
 
-const codeId = (userId: string) => `emailverify:${userId}`
-const sentId = (userId: string) => `emailverify-sent:${userId}`
-const tryId = (userId: string) => `emailverify-try:${userId}`
-
-const hashCode = (userId: string, code: string) =>
-  createHash('sha256').update(`${process.env.AUTH_SECRET ?? ''}:emailverify:${userId}:${code}`).digest('hex')
-
 export type IssueResult =
   | { ok: true; sent: boolean; retryAfter: number }
   | { ok: false; reason: 'cooldown' | 'hourly'; retryAfter: number }
-
-/** Segundos até poder pedir outro código (0 = já pode) e se o limite por hora foi atingido. */
-export async function sendState(userId: string): Promise<{ retryAfter: number; reason?: 'cooldown' | 'hourly' }> {
-  const now = Date.now()
-  const rows = await db.verificationToken.findMany({
-    where: { identifier: sentId(userId), expires: { gt: new Date(now) } },
-    select: { expires: true },
-    orderBy: { expires: 'asc' },
-  })
-  if (!rows.length) return { retryAfter: 0 }
-  const sentTimes = rows.map((r) => r.expires.getTime() - HOUR_MS)
-  const last = Math.max(...sentTimes)
-  const cooldown = Math.max(0, Math.ceil((last + RESEND_COOLDOWN_MS - now) / 1000))
-  if (rows.length >= SENDS_PER_HOUR) {
-    const hourly = Math.max(0, Math.ceil((Math.min(...sentTimes) + HOUR_MS - now) / 1000))
-    return { retryAfter: Math.max(hourly, cooldown), reason: 'hourly' }
-  }
-  return cooldown > 0 ? { retryAfter: cooldown, reason: 'cooldown' } : { retryAfter: 0 }
-}
-
-/** Existe código vigente (não expirado) para o usuário? */
-export async function hasActiveCode(userId: string): Promise<boolean> {
-  const row = await db.verificationToken.findFirst({
-    where: { identifier: codeId(userId), expires: { gt: new Date() } },
-    select: { identifier: true },
-  })
-  return !!row
-}
-
-/** Gera um código novo (invalida o anterior), respeitando os limites, e o envia por e-mail. */
-export async function issueEmailCode(user: { id: string; email: string; nome: string }): Promise<IssueResult> {
-  const state = await sendState(user.id)
-  if (state.retryAfter > 0 && state.reason) return { ok: false, reason: state.reason, retryAfter: state.retryAfter }
-
-  const now = Date.now()
-  const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
-  await db.$transaction([
-    db.verificationToken.deleteMany({ where: { identifier: { in: [codeId(user.id), tryId(user.id)] } } }),
-    db.verificationToken.deleteMany({ where: { identifier: sentId(user.id), expires: { lte: new Date(now) } } }),
-    db.verificationToken.create({
-      data: { identifier: codeId(user.id), token: hashCode(user.id, code), expires: new Date(now + CODE_TTL_MS) },
-    }),
-    db.verificationToken.create({
-      data: { identifier: sentId(user.id), token: randomBytes(12).toString('hex'), expires: new Date(now + HOUR_MS) },
-    }),
-  ])
-
-  const mail = verificationCodeEmail({ code, nome: user.nome })
-  const res = await sendMail({ to: user.email, ...mail })
-  return { ok: true, sent: res.ok, retryAfter: Math.ceil(RESEND_COOLDOWN_MS / 1000) }
-}
 
 export type VerifyResult =
   | { ok: true }
   | { ok: false; reason: 'incorrect'; remaining: number }
   | { ok: false; reason: 'expired' | 'locked' }
 
-/** Confere o código. Cada chamada gasta uma tentativa ANTES de comparar (vale também sob concorrência). */
-export async function verifyEmailCode(user: { id: string; email: string; nome: string }, input: string): Promise<VerifyResult> {
-  const row = await db.verificationToken.findFirst({ where: { identifier: codeId(user.id) } })
-  if (!row || row.expires.getTime() < Date.now()) {
-    return { ok: false, reason: 'expired' } // a linha fica: continua contando como "verificação pendente"
+type CodeUser = { id: string; email: string; nome: string }
+
+/**
+ * Código de 6 dígitos por e-mail, genérico por PREFIXO de identificador (`<prefixo>:<userId>`, `<prefixo>-sent:`,
+ * `<prefixo>-try:`): hash com pepper (AUTH_SECRET), 10 min, reenvio 60 s / 5 por hora, 5 tentativas, uso único.
+ * Usado pela verificação de e-mail do cadastro (`emailverify`) e pelo código de dispositivo novo (`logincode`).
+ */
+export function emailCodeFlow(prefix: string, makeMail: (d: { code: string; nome?: string }) => MailContent) {
+  const codeId = (userId: string) => `${prefix}:${userId}`
+  const sentId = (userId: string) => `${prefix}-sent:${userId}`
+  const tryId = (userId: string) => `${prefix}-try:${userId}`
+  const hashCode = (userId: string, code: string) =>
+    createHash('sha256').update(`${process.env.AUTH_SECRET ?? ''}:${prefix}:${userId}:${code}`).digest('hex')
+
+  /** Segundos até poder pedir outro código (0 = já pode) e se o limite por hora foi atingido. */
+  async function sendState(userId: string): Promise<{ retryAfter: number; reason?: 'cooldown' | 'hourly' }> {
+    const now = Date.now()
+    const rows = await db.verificationToken.findMany({
+      where: { identifier: sentId(userId), expires: { gt: new Date(now) } },
+      select: { expires: true },
+      orderBy: { expires: 'asc' },
+    })
+    if (!rows.length) return { retryAfter: 0 }
+    const sentTimes = rows.map((r) => r.expires.getTime() - HOUR_MS)
+    const last = Math.max(...sentTimes)
+    const cooldown = Math.max(0, Math.ceil((last + RESEND_COOLDOWN_MS - now) / 1000))
+    if (rows.length >= SENDS_PER_HOUR) {
+      const hourly = Math.max(0, Math.ceil((Math.min(...sentTimes) + HOUR_MS - now) / 1000))
+      return { retryAfter: Math.max(hourly, cooldown), reason: 'hourly' }
+    }
+    return cooldown > 0 ? { retryAfter: cooldown, reason: 'cooldown' } : { retryAfter: 0 }
   }
 
-  await db.verificationToken.create({
-    data: { identifier: tryId(user.id), token: randomBytes(12).toString('hex'), expires: row.expires },
-  })
-  const used = await db.verificationToken.count({ where: { identifier: tryId(user.id) } })
-  if (used > MAX_ATTEMPTS) {
-    await clearCode(user.id)
-    return { ok: false, reason: 'locked' }
+  /** Existe código vigente (não expirado) para o usuário? */
+  async function hasActiveCode(userId: string): Promise<boolean> {
+    const row = await db.verificationToken.findFirst({
+      where: { identifier: codeId(userId), expires: { gt: new Date() } },
+      select: { identifier: true },
+    })
+    return !!row
   }
 
-  const a = Buffer.from(hashCode(user.id, input), 'hex')
-  const b = Buffer.from(row.token, 'hex')
-  const match = a.length === b.length && timingSafeEqual(a, b)
-  if (!match) {
-    if (used >= MAX_ATTEMPTS) {
-      await clearCode(user.id)
+  /** Existe linha de código (vigente ou não)? */
+  async function hasPendingCode(userId: string): Promise<boolean> {
+    const row = await db.verificationToken.findFirst({ where: { identifier: codeId(userId) }, select: { identifier: true } })
+    return !!row
+  }
+
+  /** Gera um código novo (invalida o anterior), respeitando os limites, e o envia por e-mail. */
+  async function issue(user: CodeUser): Promise<IssueResult> {
+    const state = await sendState(user.id)
+    if (state.retryAfter > 0 && state.reason) return { ok: false, reason: state.reason, retryAfter: state.retryAfter }
+
+    const now = Date.now()
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
+    await db.$transaction([
+      db.verificationToken.deleteMany({ where: { identifier: { in: [codeId(user.id), tryId(user.id)] } } }),
+      db.verificationToken.deleteMany({ where: { identifier: sentId(user.id), expires: { lte: new Date(now) } } }),
+      db.verificationToken.create({
+        data: { identifier: codeId(user.id), token: hashCode(user.id, code), expires: new Date(now + CODE_TTL_MS) },
+      }),
+      db.verificationToken.create({
+        data: { identifier: sentId(user.id), token: randomBytes(12).toString('hex'), expires: new Date(now + HOUR_MS) },
+      }),
+    ])
+
+    const res = await sendMail({ to: user.email, ...makeMail({ code, nome: user.nome }) })
+    return { ok: true, sent: res.ok, retryAfter: Math.ceil(RESEND_COOLDOWN_MS / 1000) }
+  }
+
+  /** Confere o código. Cada chamada gasta uma tentativa ANTES de comparar (vale também sob concorrência). Uso único. */
+  async function verify(userId: string, input: string): Promise<VerifyResult> {
+    const row = await db.verificationToken.findFirst({ where: { identifier: codeId(userId) } })
+    if (!row || row.expires.getTime() < Date.now()) {
+      return { ok: false, reason: 'expired' } // a linha fica: continua contando como "pendente"
+    }
+
+    await db.verificationToken.create({
+      data: { identifier: tryId(userId), token: randomBytes(12).toString('hex'), expires: row.expires },
+    })
+    const used = await db.verificationToken.count({ where: { identifier: tryId(userId) } })
+    if (used > MAX_ATTEMPTS) {
+      await clearCode(userId)
       return { ok: false, reason: 'locked' }
     }
-    return { ok: false, reason: 'incorrect', remaining: MAX_ATTEMPTS - used }
+
+    const a = Buffer.from(hashCode(userId, String(input ?? '')), 'hex')
+    const b = Buffer.from(row.token, 'hex')
+    const match = a.length === b.length && timingSafeEqual(a, b)
+    if (!match) {
+      if (used >= MAX_ATTEMPTS) {
+        await clearCode(userId)
+        return { ok: false, reason: 'locked' }
+      }
+      return { ok: false, reason: 'incorrect', remaining: MAX_ATTEMPTS - used }
+    }
+
+    // Uso único: só segue quem de fato consumiu o código.
+    const consumed = await db.verificationToken.deleteMany({ where: { identifier: codeId(userId), token: row.token } })
+    if (consumed.count !== 1) return { ok: false, reason: 'expired' }
+    await db.verificationToken.deleteMany({ where: { identifier: { in: [tryId(userId), sentId(userId)] } } })
+    return { ok: true }
   }
 
-  // Uso único: só segue quem de fato consumiu o código.
-  const consumed = await db.verificationToken.deleteMany({ where: { identifier: codeId(user.id), token: row.token } })
-  if (consumed.count !== 1) return { ok: false, reason: 'expired' }
-  await db.user.update({ where: { id: user.id }, data: { emailVerified: new Date() } })
-  await db.verificationToken.deleteMany({ where: { identifier: { in: [tryId(user.id), sentId(user.id)] } } })
-  void sendWelcome(user)
-  return { ok: true }
+  /** Invalida o código vigente sem apagar a linha (só um novo código destrava). */
+  async function clearCode(userId: string) {
+    await db.verificationToken.updateMany({ where: { identifier: codeId(userId) }, data: { token: randomBytes(32).toString('hex') } })
+  }
+
+  return { sendState, hasActiveCode, hasPendingCode, issue, verify }
 }
 
-/** Invalida o código vigente sem apagar a linha (a conta segue "pendente"; só um novo código destrava). */
-async function clearCode(userId: string) {
-  await db.verificationToken.updateMany({ where: { identifier: codeId(userId) }, data: { token: randomBytes(32).toString('hex') } })
+// ---------- Verificação de e-mail do cadastro ----------
+
+const signupFlow = emailCodeFlow('emailverify', verificationCodeEmail)
+
+export const sendState = signupFlow.sendState
+export const hasActiveCode = signupFlow.hasActiveCode
+
+/** Gera um código novo (invalida o anterior), respeitando os limites, e o envia por e-mail. */
+export function issueEmailCode(user: CodeUser): Promise<IssueResult> {
+  return signupFlow.issue(user)
+}
+
+/** Confere o código; no acerto marca o e-mail como verificado e manda as boas-vindas. */
+export async function verifyEmailCode(user: CodeUser, input: string): Promise<VerifyResult> {
+  const r = await signupFlow.verify(user.id, input)
+  if (!r.ok) return r
+  await db.user.update({ where: { id: user.id }, data: { emailVerified: new Date() } })
+  void sendWelcome(user)
+  return { ok: true }
 }
 
 /** E-mail de boas-vindas (melhor esforço; só se o serviço de e-mail estiver configurado). */
@@ -142,8 +178,7 @@ export async function needsEmailVerification(userId: string): Promise<boolean> {
   if (!user || user.emailVerified) return false
   const since = process.env.EMAIL_VERIFICATION_SINCE ? new Date(process.env.EMAIL_VERIFICATION_SINCE) : null
   if (since && !Number.isNaN(since.getTime()) && user.createdAt >= since) return true
-  const pending = await db.verificationToken.findFirst({ where: { identifier: codeId(userId) }, select: { identifier: true } })
-  return !!pending
+  return signupFlow.hasPendingCode(userId)
 }
 
 // ---------------------------------------------------------------------------------------------------------------
